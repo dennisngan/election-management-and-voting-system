@@ -448,6 +448,8 @@ ColumnLayout {
                 implicitHeight: Math.max(92, contentHeight + topPadding + bottomPadding)
                 text: page.canEdit ? page.form.reason : page.selected.reason || ""
                 textFormat: TextEdit.PlainText
+                tabChangesFocus: true
+                clip: true
                 wrapMode: TextEdit.WordWrap
                 selectByMouse: true
                 enabled: !page.editorState.busy
@@ -596,6 +598,8 @@ ColumnLayout {
                 selectByMouse: true
                 text: page.editorState.report_text || ""
                 textFormat: TextEdit.PlainText
+                tabChangesFocus: true
+                clip: true
                 wrapMode: TextEdit.WrapAnywhere
                 Accessible.name: page.t("stock_report")
                 onActiveFocusChanged: if (activeFocus)
