@@ -22,7 +22,7 @@ from reportlab.platypus import (  # type: ignore[import-untyped]
 from sqlalchemy.orm import Session
 
 from election.server.models import Account
-from election.server.queue import queue_snapshot
+from election.server.queue import queue_freshness, queue_snapshot
 from election.server.report_fonts import font_for_pdf
 
 type ReportLocale = Literal["tc", "sc", "en"]
@@ -407,18 +407,13 @@ def queue_reports_router(
             default=None,
         )
         event_at = datetime.fromisoformat(current["event_at"]) if current else None
-        due_at = event_at + timedelta(minutes=30) if event_at else None
-        elapsed = (generated_at - event_at).total_seconds() if event_at else 0
         projection = {
             "scope": snapshot["context"],
             "items": items,
             "current": current,
             "revision": revision,
             "revision_state": "current" if revision == snapshot["revision"] else "historical",
-            "missing": current is None,
-            "due_at": due_at,
-            "reminder_due": due_at is not None and generated_at >= due_at,
-            "overdue_periods": max(0, int(elapsed // (30 * 60))),
+            **queue_freshness(event_at, generated_at),
             "title": LABELS[locale]["title"],
             "labels": LABELS[locale],
             "locale": locale,

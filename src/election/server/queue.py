@@ -86,6 +86,22 @@ def current_event(events: list[QueueEvent]) -> QueueEvent | None:
     return max(events, key=lambda event: (event.event_at, event.revision), default=None)
 
 
+def queue_freshness(event_at: datetime | None, now: datetime) -> dict[str, Any]:
+    """One event-time reminder calculation for live views and historical reports."""
+    timestamp = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo else now
+    observed = event_at
+    if observed is not None and observed.tzinfo:
+        observed = observed.astimezone(UTC).replace(tzinfo=None)
+    due_at = observed + timedelta(minutes=30) if observed else None
+    elapsed = (timestamp - observed).total_seconds() if observed else 0
+    return {
+        "missing": observed is None,
+        "due_at": as_utc(due_at),
+        "reminder_due": due_at is not None and timestamp >= due_at,
+        "overdue_periods": max(0, int(elapsed // (30 * 60))),
+    }
+
+
 def queue_snapshot(db: Session, actor: Account, station_id: int, now: datetime) -> dict[str, Any]:
     """Authorized station history and freshness; missing never implies zero queue."""
     station, constituency, election = station_scope(db, actor, station_id)
@@ -98,8 +114,6 @@ def queue_snapshot(db: Session, actor: Account, station_id: int, now: datetime) 
     events = station_events(db, station_id)
     current = current_event(events)
     timestamp = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo else now
-    due_at = current.event_at + timedelta(minutes=30) if current else None
-    elapsed = (timestamp - current.event_at).total_seconds() if current else 0
     return {
         "context": {
             "election": {"id": election.id, "name": election.name, "status": election.status},
@@ -114,10 +128,7 @@ def queue_snapshot(db: Session, actor: Account, station_id: int, now: datetime) 
         "items": [queue_event_view(event) for event in events],
         "revision": events[-1].revision if events else 0,
         "server_time": as_utc(timestamp),
-        "missing": current is None,
-        "due_at": as_utc(due_at),
-        "reminder_due": due_at is not None and timestamp >= due_at,
-        "overdue_periods": max(0, int(elapsed // (30 * 60))),
+        **queue_freshness(current.event_at if current else None, timestamp),
     }
 
 

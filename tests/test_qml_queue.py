@@ -92,7 +92,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 import election.desktop.__main__ as desktop_entry
 from election.desktop.controller import DesktopController
 
@@ -122,8 +122,10 @@ try:
     queue = controller.property('queue')
     queue.open(setup['station_id'], setup['role'])
     wait(lambda: not queue.property('state')['busy'])
+    frame = QSignalSpy(window.frameSwapped)
     window.setProperty('currentPage', 'queue')
-    application.processEvents()
+    window.requestUpdate()
+    wait(lambda: frame.count() > 0)
     current_revision = window.findChild(QQuickItem, 'queueCurrentRevision')
     assert current_revision.property('value') == '1', (
         'Backdated history changed observation provenance'
@@ -151,7 +153,11 @@ try:
     preview = window.findChild(QQuickItem, 'queuePreview')
     assert preview.property('visible') is True
     preview.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
-    wait(lambda: preview.property('activeFocus'))
+    def preview_is_visible_and_focused():
+        center = preview.mapToScene(QPointF(preview.width() / 2, preview.height() / 2))
+        return (preview.property('activeFocus') and 0 < center.x() < window.width()
+            and 0 < center.y() < window.height())
+    wait(preview_is_visible_and_focused)
     center = preview.mapToScene(QPointF(preview.width() / 2, preview.height() / 2)).toPoint()
     QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
     wait(lambda: bool(queue.property('state').get('report_text')))
