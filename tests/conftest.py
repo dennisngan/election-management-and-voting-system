@@ -126,7 +126,9 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
             lifespan="on",
             log_level="warning",
             access_log=False,
-            timeout_keep_alive=1,
+            # Match the production server. A test-only one-second idle timeout can
+            # close a reused Qt connection before a large-directory command arrives.
+            timeout_keep_alive=5,
             timeout_graceful_shutdown=1,
         )
     )
