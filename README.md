@@ -147,8 +147,8 @@ prove the desktop interaction. A successful export, import, or
 process start alone does not prove the full workflow.
 
 Record the actual environment, commands, results, and GUI evidence for each ticket. Windows packaging
-and the packaged-client smoke test remain separate delivery work; this README does not claim a
-Windows build, GUI check, or passing test run has already occurred.
+and the packaged-client smoke test remain separate delivery work. Actual Windows verification is
+pending ticket 27; per-ticket evidence records the completed development checks.
 
 ## Native macOS validation
 

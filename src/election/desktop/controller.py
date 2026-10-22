@@ -73,6 +73,10 @@ class DesktopController(QObject):
         self._state["clock"] = datetime.now(HKT).strftime("%Y-%m-%d %H:%M:%S HKT")
         self.stateChanged.emit()
 
+    def _invalidate_pending_replies(self) -> None:
+        self._generation += 1
+        self._refreshing = False
+
     @Slot(str)
     def setLocale(self, locale: str) -> None:
         if locale in TRANSLATIONS:
@@ -101,8 +105,7 @@ class DesktopController(QObject):
                 self._state["error"] = "request_failed"
                 self.stateChanged.emit()
                 return False
-            self._generation += 1
-            self._refreshing = False
+            self._invalidate_pending_replies()
             self._state["server_url"] = normalized
             self._state["connection"] = "pending"
             self._state["last_refresh"] = "—"
@@ -206,6 +209,7 @@ class DesktopController(QObject):
         ):
             self._error("request_failed")
             return
+        self._invalidate_pending_replies()
         self._token = token
         self._state["account"] = account
         self._state["expires"] = expires.astimezone(HKT).strftime("%Y-%m-%d %H:%M HKT")
@@ -244,6 +248,7 @@ class DesktopController(QObject):
         if not current or not 12 <= len(password) <= 128:
             self._error("min_password")
             return
+        self._invalidate_pending_replies()
         self._state.update(busy=True, error="", notice="")
         self.stateChanged.emit()
 
@@ -290,8 +295,7 @@ class DesktopController(QObject):
 
     def _clear_session(self) -> None:
         self._token = ""
-        self._generation += 1
-        self._refreshing = False
+        self._invalidate_pending_replies()
         self._state.update(
             phase="signed_out",
             account={},

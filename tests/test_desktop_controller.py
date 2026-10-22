@@ -1,5 +1,6 @@
 """Exercise public desktop slots over real HTTPS/MySQL; native controls use Computer."""
 
+import asyncio
 import socket
 import ssl
 import threading
@@ -15,7 +16,7 @@ from uuid import uuid4
 import pytest
 import uvicorn
 from fastapi import Request, Response
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer
 
 from election.desktop.controller import DesktopController
 from election.manage import bootstrap_account
@@ -40,6 +41,14 @@ class HttpsServer:
     clock: ControlledClock
     requests: list[tuple[str, str]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    hold_profile: bool = False
+    hold_password_response: bool = False
+    profile_entered: threading.Event = field(default_factory=threading.Event)
+    release_profile: threading.Event = field(default_factory=threading.Event)
+    profile_finished: threading.Event = field(default_factory=threading.Event)
+    password_committed: threading.Event = field(default_factory=threading.Event)
+    release_password_response: threading.Event = field(default_factory=threading.Event)
+    delayed_profile_status: int | None = None
 
     def request_count(self, method: str, path: str) -> int:
         with self.lock:
@@ -82,7 +91,22 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
         # Observe only public method/path, never credentials, bodies, or authorization headers.
         with endpoint.lock:
             endpoint.requests.append((request.method, request.url.path))
-        return await call_next(request)
+        delayed_profile = (
+            request.method == "GET" and request.url.path == "/api/auth/me" and endpoint.hold_profile
+        )
+        if delayed_profile:
+            endpoint.hold_profile = False
+            endpoint.profile_entered.set()
+            await asyncio.to_thread(endpoint.release_profile.wait, 5)
+        response = await call_next(request)
+        if delayed_profile:
+            endpoint.delayed_profile_status = response.status_code
+            endpoint.profile_finished.set()
+        if request.method == "POST" and request.url.path == "/api/auth/password":
+            endpoint.password_committed.set()
+            if endpoint.hold_password_response:
+                await asyncio.to_thread(endpoint.release_password_response.wait, 5)
+        return response
 
     server = uvicorn.Server(
         uvicorn.Config(
@@ -106,6 +130,8 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
         wait_for(qt_app, lambda: server.started)
         yield endpoint
     finally:
+        endpoint.release_profile.set()
+        endpoint.release_password_response.set()
         server.should_exit = True
         wait_for(qt_app, lambda: not thread.is_alive())
         thread.join(timeout=0)
@@ -354,3 +380,35 @@ def test_incompatible_https_service_reports_failure_without_a_stuck_loading_stat
         service.shutdown()
         service.server_close()
         worker.join(timeout=3)
+
+
+@pytest.mark.parametrize("old_profile_arrives_first", [True, False])
+def test_password_rotation_ignores_a_delayed_old_session_refresh(
+    desktop: DesktopController,
+    https_server: HttpsServer,
+    account: dict[str, str],
+    qt_app: QCoreApplication,
+    old_profile_arrives_first: bool,
+) -> None:
+    https_server.hold_profile = True
+    https_server.hold_password_response = old_profile_arrives_first
+    sign_in(desktop, https_server, account, qt_app)
+    wait_for(qt_app, https_server.profile_entered.is_set)
+    desktop.changePassword(INITIAL_PASSWORD, PERSONAL_PASSWORD, PERSONAL_PASSWORD)
+    wait_for(qt_app, https_server.password_committed.is_set)
+    if not old_profile_arrives_first:
+        wait_for(qt_app, lambda: state_of(desktop)["phase"] == "workspace")
+    https_server.release_profile.set()
+    wait_for(qt_app, https_server.profile_finished.is_set)
+    assert https_server.delayed_profile_status == 401
+    # Keep processing Qt's event queue after the server releases the old response.
+    # This is an asynchronous transport barrier, not a block of the GUI thread.
+    settled = threading.Event()
+    QTimer.singleShot(300, settled.set)
+    wait_for(qt_app, settled.is_set)
+    https_server.release_password_response.set()
+    wait_for(qt_app, lambda: not state_of(desktop)["busy"])
+    assert state_of(desktop)["phase"] == "workspace"
+    assert state_of(desktop)["account"]["must_change_password"] is False
+    assert state_of(desktop)["notice"] == "password_change_success"
+    assert state_of(desktop)["error"] == ""
