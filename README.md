@@ -9,6 +9,8 @@ Ticket 01 establishes real-server sign-in, first-password change, revocable sess
 workspace shell. Ticket 02 adds Administrator draft elections, single-seat constituencies and
 independent candidate lists, with three-language forms, replay-safe creates and revision conflicts.
 Ticket 03 adds scoped polling stations, issuance counters and same-constituency counting destinations.
+Tickets 04 and 05 add staff administration, assigned-station workspaces, election schedules and
+single-election activation; their current verification status is recorded in the local tickets.
 Later polling, stock, reporting, and counting features are delivered by subsequent
 tickets; illustrative design-preview figures are not application data.
 
@@ -23,6 +25,20 @@ Open **Station setup** to choose an election and constituency, create polling st
 station's issuance counters. A station counts locally or sends to a local-counting station in the same
 constituency. A receiving station with configured senders cannot be redirected until those senders
 are reassigned. Station codes are unique within their constituency; counter codes within their station.
+
+Open **Staff accounts** to create an individual account with a temporary password, choose its role
+and permitted stations, edit or disable it, or reset its password. Administrative account changes
+revoke that account's existing sessions. A reset requires a password change at its next sign-in.
+The last enabled Administrator cannot be disabled or demoted. Polling Officers, Counting Officers
+and Supervisors see their assigned station contexts; Administrator access alone grants no operational
+approval authority. Passwords are cleared from the forms and excluded from audit history.
+
+Open **Election schedule** to enter an election date, opening and closing date/time in Hong Kong time,
+and a reporting interval from 1 to 1,440 minutes. Closing may fall on the following day. Save the
+schedule before confirming activation. Activation requires a candidate and a station in every
+constituency, with a counter in every station. The backend atomically permits one active election;
+the desktop labels it separately from the selected draft. Active configuration is read-only, while
+other drafts remain available. A planned time does not itself open or close a station.
 
 ## Development prerequisites
 
@@ -70,9 +86,13 @@ uv run --all-groups --locked python -m election.manage tls-dev
 
 The database helper creates the `election-system-mysql` container, binds it to
 `127.0.0.1:13307`, and retains its data in a named Docker volume. It generates private credentials in
-`.runtime/mysql.env` and connection settings in `.env`, including a separate `election_test` database
-URL under `ELECTION_TEST_DATABASE_URL`. It refuses to overwrite an existing `.env` on first setup;
-repeated use starts the existing development container. No account has a fixed default password.
+`.runtime/mysql.env` and connection settings in `.env`. It provisions two separate test databases:
+`election_test` under `ELECTION_TEST_DATABASE_URL`, and `election_lifecycle_test` under
+`ELECTION_LIFECYCLE_TEST_DATABASE_URL`. It refuses to overwrite an existing `.env` on first setup.
+Repeated use starts the existing development container and ensures both test databases and grants
+exist. For older project-generated settings, it appends the missing lifecycle URL without replacing
+any existing values. Custom settings must supply that URL explicitly; the helper will not guess a
+different server or credentials. No account has a fixed default password.
 
 Wait for the container's health status to become `healthy` before running migrations:
 
@@ -155,9 +175,16 @@ uv run --all-groups mypy src/election
 uv run --all-groups pytest
 ```
 
-Integration tests require their dedicated real MySQL database configured through
-`ELECTION_TEST_DATABASE_URL`. Follow the test configuration rather than pointing tests at operational
-data. API checks prove persisted authentication/session behavior; native GUI checks and screenshots
+Integration tests require dedicated real MySQL databases configured through
+`ELECTION_TEST_DATABASE_URL` and `ELECTION_LIFECYCLE_TEST_DATABASE_URL`. The local `mysql-dev` command
+above provisions both. For a separate MySQL service, create and grant access to distinct test databases
+and set both URLs in private `.env` or environment variables. The ordinary test database name must end
+in `_test`; the lifecycle database name must end in `_lifecycle_test`.
+
+Lifecycle API and desktop checks use their own database because they change the single active-election
+pointer and reset synthetic activation state between cases. They must not share the development
+database or the ordinary test database. Follow the test configuration rather than pointing tests at
+operational data. API checks prove persisted authentication/session behavior; native GUI checks and screenshots
 prove the desktop interaction. A successful export, import, or
 process start alone does not prove the full workflow.
 

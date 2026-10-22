@@ -25,8 +25,10 @@ ApplicationWindow {
     readonly property color muted: "#65758b"
     readonly property color accent: "#1967d2"
     readonly property color line: "#e1e7f0"
+    readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
     onSignedInChanged: if (!signedIn) currentPage = "account"
+    onAdministratorChanged: if (!administrator) currentPage = "account"
     onCurrentPageChanged: Qt.callLater(function() { if (scroll.contentItem) scroll.contentItem.contentY = 0 })
 
     function t(key) { return words[key] || key }
@@ -123,7 +125,13 @@ ApplicationWindow {
                 Layout.maximumWidth: 480
                 spacing: 3
                 Label { text: window.t("app_name"); color: window.ink; font.pixelSize: 20; font.weight: Font.Medium; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-                Caption { text: window.t("election_management"); font.pixelSize: 11 }
+                Caption {
+                    text: window.signedIn ? window.t(window.state.account.role || "") + " · " + (window.state.account.username || "") : window.t("election_management")
+                    font.pixelSize: 11
+                    Layout.fillWidth: true
+                    wrapMode: Text.NoWrap
+                    elide: Text.ElideRight
+                }
             }
             Item { Layout.fillWidth: true }
             RowLayout {
@@ -217,6 +225,22 @@ ApplicationWindow {
                     Material.roundedScale: Material.FullScale
                     onClicked: { window.currentPage = "stations"; controller.configuration.open() }
                 }
+                Button {
+                    text: window.t("election_schedule"); Layout.fillWidth: true
+                    visible: window.administrator
+                    highlighted: window.currentPage === "schedule"; flat: true
+                    Material.background: window.currentPage === "schedule" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    onClicked: { window.currentPage = "schedule"; controller.lifecycle.open() }
+                }
+                Button {
+                    text: window.t("staff_accounts"); Layout.fillWidth: true
+                    visible: window.administrator
+                    highlighted: window.currentPage === "staff"; flat: true
+                    Material.background: window.currentPage === "staff" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    onClicked: { window.currentPage = "staff"; controller.staff.open() }
+                }
                 Button { text: window.t("polling"); Layout.fillWidth: true; flat: true; enabled: false }
                 Button { text: window.t("counting"); Layout.fillWidth: true; flat: true; enabled: false }
                 Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
@@ -237,6 +261,23 @@ ApplicationWindow {
                 width: scroll.availableWidth
                 spacing: 0
                 Item { Layout.preferredHeight: 24 }
+                FormPanel {
+                    visible: window.state.phase === "workspace"
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 16
+                    implicitHeight: activeContext.implicitHeight + 24
+                    color: "#edf3fc"
+                    RowLayout {
+                        id: activeContext
+                        anchors.fill: parent; anchors.margins: 12
+                        FormCaption { text: window.t("active_election"); Layout.fillWidth: false }
+                        Label {
+                            text: window.state.active_election ? window.state.active_election.name : window.t("no_active_election")
+                            textFormat: Text.PlainText
+                            color: window.ink; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                        }
+                    }
+                }
                 Rectangle {
                     visible: !!window.state.error || !!window.state.notice
                     onVisibleChanged: if (visible) Qt.callLater(function() { window.revealField(window.activeFocusItem) })
@@ -380,17 +421,26 @@ ApplicationWindow {
                         }
                     }
                     Panel {
+                        visible: !window.state.election
                         Layout.fillWidth: true
                         implicitHeight: emptyLayout.implicitHeight + 48
                         ColumnLayout {
                             id: emptyLayout
                             anchors.fill: parent; anchors.margins: 24; spacing: 12
-                            Label { text: window.t("no_election"); font.pixelSize: 19; color: window.ink; font.weight: Font.Medium; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-                            Caption { text: window.t("no_election_detail"); Layout.fillWidth: true; font.pixelSize: 14 }
+                            Label { text: window.t("no_active_election"); font.pixelSize: 19; color: window.ink; font.weight: Font.Medium; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                            Caption { text: window.t("activation_guidance"); Layout.fillWidth: true; font.pixelSize: 14 }
                             Rectangle { Layout.fillWidth: true; height: 1; color: window.line; Layout.topMargin: 8; Layout.bottomMargin: 8 }
                             Detail { caption: window.t("linked_server"); value: window.state.server_url; Layout.fillWidth: true }
                             Caption { text: window.t("no_idle_lock"); Layout.fillWidth: true }
                         }
+                    }
+                    StationWorkspace {
+                        visible: !window.administrator
+                        Layout.fillWidth: true
+                        workspace: controller.workspace
+                        words: window.words
+                        onVisibleChanged: if (visible) controller.workspace.open()
+                        onReveal: control => window.revealField(control)
                     }
                 }
                 ElectionSetup {
@@ -400,6 +450,22 @@ ApplicationWindow {
                     config: controller.configuration
                     words: window.words
                     stationMode: window.currentPage === "stations"
+                    onReveal: control => window.revealField(control)
+                }
+                StaffPage {
+                    visible: window.state.phase === "workspace" && window.currentPage === "staff" && window.administrator
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
+                    staff: controller.staff
+                    words: window.words
+                    onReveal: control => window.revealField(control)
+                }
+                LifecyclePage {
+                    visible: window.state.phase === "workspace" && window.currentPage === "schedule" && window.administrator
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
+                    lifecycle: controller.lifecycle
+                    words: window.words
                     onReveal: control => window.revealField(control)
                 }
                 Item { Layout.preferredHeight: 12 }

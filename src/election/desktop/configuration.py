@@ -71,15 +71,46 @@ class ConfigurationController(QObject):
         self._available = False
         self._state: dict[str, Any] = {}
         self._keys: dict[str, str] = {}
+        self._live_election: dict[str, Any] | None = None
         self.reset()
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return deepcopy(self._state)
+        state = deepcopy(self._state)
+        current = self._current_election()
+        selected = state["selected"]["election"]
+        state["election_status"] = current.get("status", "draft")
+        state["read_only"] = self._read_only()
+        state["newer_revision"] = bool(
+            selected and current.get("revision") != selected.get("revision")
+        )
+        return state
+
+    def _current_election(self) -> dict[str, Any]:
+        selected: dict[str, Any] = self._state["selected"]["election"]
+        if not selected:
+            return {}
+        if self._live_election and self._live_election.get("id") == selected["id"]:
+            return self._live_election
+        return next(
+            (row for row in self._state["elections"] if row.get("id") == selected["id"]), selected
+        )
+
+    def _read_only(self) -> bool:
+        return bool(
+            self._state["selected"]["election"]
+            and self._current_election().get("status") != "draft"
+        )
+
+    def sync_active_election(self, election: dict[str, Any] | None) -> None:
+        if self._live_election != election:
+            self._live_election = deepcopy(election)
+            self.stateChanged.emit()
 
     def reset(self) -> None:
         self._generation += 1
         self._available = False
+        self._live_election = None
         self._keys = {kind: str(uuid4()) for kind in KINDS}
         self._state = {
             "busy": False,
@@ -190,6 +221,10 @@ class ConfigurationController(QObject):
     def load(self, kind: str, row_id: int, discard: bool) -> bool:
         if not self._available or self._state["busy"] or kind not in KINDS:
             return False
+        if kind != "election" and row_id == 0 and self._read_only():
+            self._state["error"] = "read_only_election"
+            self.stateChanged.emit()
+            return False
         parent = PARENTS[kind]
         if parent is not None and not self._state["selected"][parent]:
             return False
@@ -221,6 +256,7 @@ class ConfigurationController(QObject):
             or kind not in KINDS
             or field not in FIELDS[kind]
             or not self._state["editing"][kind]
+            or self._read_only()
         ):
             return
         self._state["forms"][kind][field] = value
@@ -243,6 +279,10 @@ class ConfigurationController(QObject):
             or kind not in KINDS
             or not self._state["editing"][kind]
         ):
+            return
+        if self._read_only():
+            self._state["error"] = "read_only_election"
+            self.stateChanged.emit()
             return
         payload = self._state["forms"][kind].copy()
         valid = bool(payload["name"].strip()) and len(payload["name"]) <= 160

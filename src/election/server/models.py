@@ -18,6 +18,7 @@ class Account(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     must_change_password: Mapped[bool] = mapped_column(Boolean)
     enabled: Mapped[bool] = mapped_column(Boolean)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
 
 

@@ -14,7 +14,10 @@ from PySide6.QtNetwork import (
 )
 
 from election.desktop.configuration import ConfigurationController
+from election.desktop.lifecycle import LifecycleController
+from election.desktop.staff import StaffController
 from election.desktop.translations import TRANSLATIONS
+from election.desktop.workspace import WorkspaceController
 
 HKT = timezone(timedelta(hours=8), "HKT")
 ResultHandler = Callable[[dict[str, Any]], None]
@@ -41,11 +44,22 @@ class DesktopController(QObject):
             "election": None,
             "constituency": None,
             "station": None,
+            "active_election": None,
+            "capabilities": {},
         }
         self._token = ""
         self._configuration = ConfigurationController(self._authorized_request, self)
+        self._lifecycle = LifecycleController(self._authorized_request, self)
+        self._lifecycle.stateChanged.connect(self._lifecycle_changed)
+        self._staff = StaffController(self._authorized_request, self)
+        self._staff.accessChanged.connect(self._access_changed)
+        self._workspace = WorkspaceController(self._authorized_request, self)
+        self._workspace.contextChanged.connect(self._workspace_changed)
         self._generation = 0
         self._refreshing = False
+        self._active_refreshing = False
+        self._active_generation = 0
+        self._last_lifecycle_active: dict[str, Any] | None = None
         self._manager = QNetworkAccessManager(self)
         self._ssl = QSslConfiguration.defaultConfiguration()
         if ca_file:
@@ -75,6 +89,72 @@ class DesktopController(QObject):
     def configuration(self) -> ConfigurationController:
         return self._configuration
 
+    @Property(QObject, constant=True)
+    def lifecycle(self) -> LifecycleController:
+        return self._lifecycle
+
+    @Property(QObject, constant=True)
+    def staff(self) -> StaffController:
+        return self._staff
+
+    @Property(QObject, constant=True)
+    def workspace(self) -> WorkspaceController:
+        return self._workspace
+
+    def _workspace_changed(self) -> None:
+        context = self._workspace.property("state")["selected"]
+        self._state["election"] = context.get("election") or self._state["active_election"]
+        self._state["constituency"] = context.get("constituency")
+        self._state["station"] = context.get("station")
+        self._state["capabilities"] = context.get("capabilities", {})
+        self.stateChanged.emit()
+
+    def _apply_active_election(self, election: dict[str, Any] | None) -> None:
+        self._state["active_election"] = election
+        if not self._workspace.property("state")["selected"]:
+            self._state["election"] = election
+        self._configuration.sync_active_election(election)
+        self.stateChanged.emit()
+
+    def _lifecycle_changed(self) -> None:
+        if self._state["phase"] == "workspace":
+            election = self._lifecycle.property("state").get("active_election")
+            if isinstance(election, dict) and election != self._last_lifecycle_active:
+                self._last_lifecycle_active = election
+                self._active_generation += 1
+                self._apply_active_election(election)
+
+    def _refresh_active_election(self) -> None:
+        if self._active_refreshing or self._state["phase"] != "workspace":
+            return
+        self._active_refreshing = True
+        generation = self._active_generation
+
+        def loaded(data: dict[str, Any]) -> None:
+            self._active_refreshing = False
+            if generation != self._active_generation:
+                return
+            election = data.get("election")
+            if election is not None and (
+                not isinstance(election, dict) or type(election.get("id")) is not int
+            ):
+                self._error("request_failed")
+                return
+            self._apply_active_election(election)
+
+        def failed(code: str) -> None:
+            self._active_refreshing = False
+            if generation != self._active_generation:
+                return
+            self._error(code)
+
+        self._authorized_request("/api/active-election", "GET", None, loaded, failed)
+
+    def _access_changed(self) -> None:
+        self._clear_session()
+        self._state.update(error="access_changed", notice="")
+        self.stateChanged.emit()
+
     def _authorized_request(
         self,
         path: str,
@@ -92,10 +172,19 @@ class DesktopController(QObject):
 
     def _configuration_access(self) -> None:
         account = self._state["account"]
-        self._configuration.set_available(
+        administrator = (
             self._state["phase"] == "workspace"
             and account.get("role") == "administrator"
             and not account.get("must_change_password", True)
+        )
+        self._configuration.set_available(administrator)
+        self._lifecycle.set_available(administrator)
+        account_id = account.get("id", 0)
+        self._staff.set_available(administrator, account_id if type(account_id) is int else 0)
+        self._workspace.set_available(
+            self._state["phase"] == "workspace"
+            and not account.get("must_change_password", True)
+            and account.get("role") in ("polling_officer", "counting_officer", "supervisor")
         )
 
     def _tick(self) -> None:
@@ -105,6 +194,7 @@ class DesktopController(QObject):
     def _invalidate_pending_replies(self) -> None:
         self._generation += 1
         self._refreshing = False
+        self._active_refreshing = False
 
     @Slot(str)
     def setLocale(self, locale: str) -> None:
@@ -323,13 +413,17 @@ class DesktopController(QObject):
             self._state["account"] = data
             self._configuration_access()
             self._configuration.refresh()
+            self._lifecycle.refresh()
+            self._staff.refresh()
+            self._workspace.refresh()
+            self._refresh_active_election()
             self.stateChanged.emit()
 
         self._request("/api/health", "GET", None, healthy, failed)
 
     def _clear_session(self) -> None:
         self._token = ""
-        self._configuration.reset()
+        self._last_lifecycle_active = None
         self._invalidate_pending_replies()
         self._state.update(
             phase="signed_out",
@@ -339,7 +433,13 @@ class DesktopController(QObject):
             election=None,
             constituency=None,
             station=None,
+            active_election=None,
+            capabilities={},
         )
+        self._configuration.reset()
+        self._lifecycle.reset()
+        self._staff.reset()
+        self._workspace.reset()
         self.eraseSecrets.emit()
 
     @Slot()

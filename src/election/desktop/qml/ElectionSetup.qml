@@ -56,6 +56,7 @@ ColumnLayout {
         }
     }
     Label { visible: page.stationMode; text: page.t("station_setup_hint"); color: "#65758b"; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+    FormCaption { visible: page.editorState.read_only; text: page.t("read_only_election") }
     ConfigurationSection {
         kind: "election"; config: page.config; words: page.words; editorState: page.editorState
         editAllowed: !page.stationMode

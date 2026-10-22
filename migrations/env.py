@@ -7,7 +7,9 @@ from sqlalchemy import create_engine, pool
 
 from election.server import (  # noqa: F401 -- register tables with Base.metadata
     configuration_models,
+    lifecycle_models,
     models,
+    staff_models,
     station_models,
 )
 from election.server.config import Settings

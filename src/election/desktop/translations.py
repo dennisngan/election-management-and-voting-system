@@ -103,8 +103,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "候選人編號須為正整數。請勿只輸入空白。"
         ),
         "revision_conflict": (
-            "其他職員已儲存較新的版本。您的未儲存內容已保留；"
-            "請重新載入已儲存資料後核對。"
+            "其他職員已儲存較新的版本。您的未儲存內容已保留；請重新載入已儲存資料後核對。"
         ),
         "duplicate_configuration": (
             "此代號或候選人編號已在目前的選舉、選區或投票站內使用，請改用其他值。"
@@ -143,13 +142,82 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "receiving_from": "指定送往此站的來源投票站",
         "invalid_counting_destination": "請選擇同一選舉及選區內採用本站點票的其他投票站。",
         "receiver_in_use": (
-            "其他投票站已指定送往此站。請先更改這些來源站的點票目的地，"
-            "才可將此站改為送往其他站。"
+            "其他投票站已指定送往此站。請先更改這些來源站的點票目的地，才可將此站改為送往其他站。"
         ),
         "station_configuration_validation": (
             "名稱須為 1 至 160 個字元，代號須為 1 至 32 個字元，且不可只有空白。"
             "送往其他站時，必須選擇接收站。"
         ),
+        "schedule_not_configured": "尚未設定選舉時間表。",
+        "schedule_required": "請先儲存完整的選舉時間表，才可啟用選舉。",
+        "active_election_conflict": "請先完成目前進行中的選舉，才可啟用另一選舉。",
+        "election_configuration_incomplete": "啟用前請補齊選區、候選人、投票站及發票櫃台資料。",
+        "schedule_validation": (
+            "請以香港時間 YYYY-MM-DD HH:mm 輸入有效日期及時間。結束時間須晚於開始時間，"
+            "報告間隔須為 1 至 1440 分鐘。"
+        ),
+        "schedule_saved": "選舉時間表已儲存。",
+        "election_activated": "選舉已啟用。",
+        "unsaved_schedule": "時間表有未儲存的內容。請先儲存後再啟用選舉。",
+        "staff_accounts": "職員帳戶",
+        "unsaved_staff_changes": "請先儲存或重新載入帳戶變更，再重設密碼。",
+        "no_audit_events": "尚無帳戶變更記錄。",
+        "election_status": "選舉狀態",
+        "read_only_election": "此選舉已啟用或完成，只可在此檢視。",
+        "newer_saved_version": "已有較新的儲存版本。您的輸入已保留；請重新載入後核對。",
+        "wrong_active_election": "此票站不屬於目前進行中的選舉，請重新整理並選擇可用票站。",
+        "new_account": "新增帳戶",
+        "select_account": "請選擇帳戶",
+        "no_accounts": "尚未新增職員帳戶。",
+        "display_name": "顯示名稱",
+        "account_enabled": "啟用帳戶",
+        "station_assignments": "票站指派",
+        "no_station_options": "尚無可指派的投票站。請先完成票站設定。",
+        "no_assigned_stations": "目前沒有可用的指派投票站。請聯絡管理員。",
+        "save_account": "儲存帳戶",
+        "temporary_password": "臨時密碼",
+        "confirm_temporary_password": "確認臨時密碼",
+        "reset_password": "重設密碼",
+        "reset_password_hint": (
+            "重設後所有登入時段將失效。職員須使用新臨時密碼登入，並先更改密碼。"
+        ),
+        "staff_changes_hint": "儲存變更後，此職員須重新登入。",
+        "staff_saved": "職員帳戶已儲存。",
+        "password_reset_success": "臨時密碼已重設。職員須重新登入並更改密碼。",
+        "access_changed": "您的權限或票站指派已更改，請重新登入。",
+        "staff_validation": (
+            "帳戶名稱須為 1 至 64 個字元，顯示名稱須為 1 至 120 個字元，且不可只有空白。"
+            "臨時密碼須為 12 至 128 個字元。"
+        ),
+        "username_exists": "此帳戶名稱已被使用，請改用其他名稱。",
+        "account_not_found": "找不到所選帳戶，請重新整理。",
+        "invalid_station_assignment": ("請指派現有投票站，且不可重複。管理員帳戶不可指派票站。"),
+        "last_administrator_required": "最少須保留一個已啟用的管理員帳戶。",
+        "operational_role_required": "此功能只供投票站職員、點票人員或主管使用。",
+        "station_access_denied": "您未獲指派此投票站，無法存取其工作內容。",
+        "audit_history": "帳戶變更記錄",
+        "staff_created": "已建立職員帳戶",
+        "staff_updated": "已更新職員帳戶",
+        "staff_password_reset": "已重設職員密碼",
+        "station_context": "票站工作區",
+        "active_election": "進行中的選舉",
+        "activation_guidance": "請由管理員在「選舉時間表」檢查設定並啟用選舉。",
+        "no_active_election": "目前沒有進行中的選舉。",
+        "selected_election": "所選選舉",
+        "election_schedule": "選舉時間表",
+        "election_date": "選舉日期",
+        "planned_opening": "預定投票開始時間",
+        "planned_closing": "預定投票結束時間",
+        "reporting_interval": "報告間隔（分鐘）",
+        "schedule_time_hint": (
+            "香港時間 YYYY-MM-DD HH:mm；結束時間須晚於開始時間；"
+            "報告間隔為 1 至 1440 分鐘。跨日結束時，請輸入結束當日日期。"
+        ),
+        "save_schedule": "儲存時間表",
+        "activate_election": "啟用選舉",
+        "activation_confirmation": "啟用所選選舉供所有票站使用？同一時間只可進行一場選舉。",
+        "active": "進行中",
+        "finalized": "已完成",
     },
     "sc": {
         "app_name": "选举管理及投票系统",
@@ -253,8 +321,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "候选人编号须为正整数。请勿只输入空白。"
         ),
         "revision_conflict": (
-            "其他职员已保存较新的版本。您的未保存内容已保留；"
-            "请重新载入已保存资料后核对。"
+            "其他职员已保存较新的版本。您的未保存内容已保留；请重新载入已保存资料后核对。"
         ),
         "duplicate_configuration": (
             "此代号或候选人编号已在当前的选举、选区或投票站内使用，请改用其他值。"
@@ -293,13 +360,82 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "receiving_from": "指定送往此站的来源投票站",
         "invalid_counting_destination": "请选择同一选举及选区内采用本站点票的其他投票站。",
         "receiver_in_use": (
-            "其他投票站已指定送往此站。请先更改这些来源站的点票目的地，"
-            "才可将此站改为送往其他站。"
+            "其他投票站已指定送往此站。请先更改这些来源站的点票目的地，才可将此站改为送往其他站。"
         ),
         "station_configuration_validation": (
             "名称须为 1 至 160 个字符，代号须为 1 至 32 个字符，且不可只有空白。"
             "送往其他站时，必须选择接收站。"
         ),
+        "schedule_not_configured": "尚未设置选举时间表。",
+        "schedule_required": "请先保存完整的选举时间表，才可启用选举。",
+        "active_election_conflict": "请先完成当前进行中的选举，才可启用另一选举。",
+        "election_configuration_incomplete": "启用前请补齐选区、候选人、投票站及发票柜台资料。",
+        "schedule_validation": (
+            "请以香港时间 YYYY-MM-DD HH:mm 输入有效日期及时间。结束时间须晚于开始时间，"
+            "报告间隔须为 1 至 1440 分钟。"
+        ),
+        "schedule_saved": "选举时间表已保存。",
+        "election_activated": "选举已启用。",
+        "unsaved_schedule": "时间表有未保存的内容。请先保存后再启用选举。",
+        "staff_accounts": "职员账户",
+        "unsaved_staff_changes": "请先保存或重新载入账户更改，再重设密码。",
+        "no_audit_events": "尚无账户更改记录。",
+        "election_status": "选举状态",
+        "read_only_election": "此选举已启用或完成，只可在此查看。",
+        "newer_saved_version": "已有较新的保存版本。您的输入已保留；请重新载入后核对。",
+        "wrong_active_election": "此票站不属于当前进行中的选举，请刷新并选择可用票站。",
+        "new_account": "新增账户",
+        "select_account": "请选择账户",
+        "no_accounts": "尚未新增职员账户。",
+        "display_name": "显示名称",
+        "account_enabled": "启用账户",
+        "station_assignments": "票站指派",
+        "no_station_options": "尚无可指派的投票站。请先完成票站设置。",
+        "no_assigned_stations": "当前没有可用的指派投票站。请联系管理员。",
+        "save_account": "保存账户",
+        "temporary_password": "临时密码",
+        "confirm_temporary_password": "确认临时密码",
+        "reset_password": "重设密码",
+        "reset_password_hint": (
+            "重设后所有登录会话将失效。职员须使用新临时密码登录，并先更改密码。"
+        ),
+        "staff_changes_hint": "保存更改后，此职员须重新登录。",
+        "staff_saved": "职员账户已保存。",
+        "password_reset_success": "临时密码已重设。职员须重新登录并更改密码。",
+        "access_changed": "您的权限或票站指派已更改，请重新登录。",
+        "staff_validation": (
+            "账户名称须为 1 至 64 个字符，显示名称须为 1 至 120 个字符，且不可只有空白。"
+            "临时密码须为 12 至 128 个字符。"
+        ),
+        "username_exists": "此账户名称已被使用，请改用其他名称。",
+        "account_not_found": "找不到所选账户，请刷新。",
+        "invalid_station_assignment": ("请指派现有投票站，且不可重复。管理员账户不可指派票站。"),
+        "last_administrator_required": "最少须保留一个已启用的管理员账户。",
+        "operational_role_required": "此功能只供投票站职员、点票人员或主管使用。",
+        "station_access_denied": "您未获指派此投票站，无法访问其工作内容。",
+        "audit_history": "账户更改记录",
+        "staff_created": "已建立职员账户",
+        "staff_updated": "已更新职员账户",
+        "staff_password_reset": "已重设职员密码",
+        "station_context": "票站工作区",
+        "active_election": "进行中的选举",
+        "activation_guidance": "请由管理员在“选举时间表”检查设置并启用选举。",
+        "no_active_election": "当前没有进行中的选举。",
+        "selected_election": "所选选举",
+        "election_schedule": "选举时间表",
+        "election_date": "选举日期",
+        "planned_opening": "预定投票开始时间",
+        "planned_closing": "预定投票结束时间",
+        "reporting_interval": "报告间隔（分钟）",
+        "schedule_time_hint": (
+            "香港时间 YYYY-MM-DD HH:mm；结束时间须晚于开始时间；"
+            "报告间隔为 1 至 1440 分钟。跨日结束时，请输入结束当日日期。"
+        ),
+        "save_schedule": "保存时间表",
+        "activate_election": "启用选举",
+        "activation_confirmation": "启用所选选举供所有票站使用？同一时间只可进行一场选举。",
+        "active": "进行中",
+        "finalized": "已完成",
     },
     "en": {
         "app_name": "Election Management and Voting System",
@@ -460,5 +596,100 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Names need 1–160 characters and codes 1–32 characters; neither can be blank. "
             "Sending requires a receiving station."
         ),
+        "schedule_not_configured": "No election schedule configured.",
+        "schedule_required": "Save a complete election schedule before activating the election.",
+        "active_election_conflict": "Finish the current active election before activating another.",
+        "election_configuration_incomplete": (
+            "Complete constituency, candidate, polling station and issuance counter setup "
+            "before activation."
+        ),
+        "schedule_validation": (
+            "Enter valid dates and times in HKT as YYYY-MM-DD HH:mm. The end must be later "
+            "than the start, with a reporting interval of 1–1440 minutes."
+        ),
+        "schedule_saved": "Election schedule saved.",
+        "election_activated": "Election activated.",
+        "unsaved_schedule": "This schedule has unsaved changes. Save it before activation.",
+        "staff_accounts": "Staff accounts",
+        "unsaved_staff_changes": "Save or reload account changes before resetting the password.",
+        "no_audit_events": "No account changes recorded yet.",
+        "election_status": "Election status",
+        "read_only_election": "This election is active or finalized and can only be viewed here.",
+        "newer_saved_version": (
+            "A newer saved revision is available. Your entries are kept; reload to review."
+        ),
+        "wrong_active_election": (
+            "This station is outside the active election. Refresh and select an available station."
+        ),
+        "new_account": "New account",
+        "select_account": "Select an account",
+        "no_accounts": "No staff accounts have been added.",
+        "display_name": "Display name",
+        "account_enabled": "Account enabled",
+        "station_assignments": "Station assignments",
+        "no_station_options": (
+            "No polling stations available to assign. Complete Station setup first."
+        ),
+        "no_assigned_stations": (
+            "No assigned polling stations are available. Contact an Administrator."
+        ),
+        "save_account": "Save account",
+        "temporary_password": "Temporary password",
+        "confirm_temporary_password": "Confirm temporary password",
+        "reset_password": "Reset password",
+        "reset_password_hint": (
+            "Resetting revokes all sessions. Staff must sign in with the new temporary password "
+            "and change it before continuing."
+        ),
+        "staff_changes_hint": "Saving changes requires this staff member to sign in again.",
+        "staff_saved": "Staff account saved.",
+        "password_reset_success": (
+            "Temporary password reset. Staff must sign in again and change it."
+        ),
+        "access_changed": "Your access or station assignments changed. Sign in again.",
+        "staff_validation": (
+            "Usernames need 1–64 characters and display names 1–120 characters; "
+            "neither can be blank. "
+            "Temporary passwords need 12–128 characters."
+        ),
+        "username_exists": "That username is already in use. Choose another.",
+        "account_not_found": "Selected account not found. Refresh the list.",
+        "invalid_station_assignment": (
+            "Assign existing polling stations without duplicates. "
+            "Administrator accounts cannot have station assignments."
+        ),
+        "last_administrator_required": "At least one enabled Administrator account must remain.",
+        "operational_role_required": (
+            "This function requires a Polling Officer, Counting Officer or Supervisor role."
+        ),
+        "station_access_denied": "You are not assigned to this polling station's workspace.",
+        "audit_history": "Account change history",
+        "staff_created": "Staff account created",
+        "staff_updated": "Staff account updated",
+        "staff_password_reset": "Staff password reset",
+        "station_context": "Station workspace",
+        "active_election": "Active election",
+        "activation_guidance": (
+            "An Administrator can review and activate an election in Election schedule."
+        ),
+        "no_active_election": "No active election.",
+        "selected_election": "Selected election",
+        "election_schedule": "Election schedule",
+        "election_date": "Election date",
+        "planned_opening": "Scheduled opening",
+        "planned_closing": "Scheduled closing",
+        "reporting_interval": "Reporting interval (minutes)",
+        "schedule_time_hint": (
+            "HKT, YYYY-MM-DD HH:mm. The end must be later than the start. "
+            "Reporting interval: 1–1440 minutes. For next-day closing, enter the closing date."
+        ),
+        "save_schedule": "Save schedule",
+        "activate_election": "Activate election",
+        "activation_confirmation": (
+            "Activate the selected election for all polling stations? "
+            "Only one election can be active at a time."
+        ),
+        "active": "Active",
+        "finalized": "Finalized",
     },
 }

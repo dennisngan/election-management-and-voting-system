@@ -52,6 +52,7 @@ Rectangle {
         implicitHeight: 48
         selectByMouse: true
         enabled: !card.editorState.busy
+        readOnly: card.editorState.read_only
         Material.containerStyle: Material.Outlined
         onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { card.reveal(field) })
     }
@@ -75,7 +76,7 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             Label { text: card.t(card.plural); font.pixelSize: 20; font.weight: Font.Medium; color: "#25344b"; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-            Action { text: card.t(card.newKey); flat: true; visible: card.editAllowed; enabled: card.parentReady && !card.editorState.busy; onClicked: card.choose(card.kind, 0) }
+            Action { text: card.t(card.newKey); flat: true; visible: card.editAllowed; enabled: card.parentReady && !card.editorState.busy && (card.kind === "election" || !card.editorState.read_only); onClicked: card.choose(card.kind, 0) }
         }
         TextCaption {
             visible: !card.parentReady
@@ -123,9 +124,10 @@ Rectangle {
             spacing: 10
             RowLayout {
                 Layout.fillWidth: true
-                TextCaption { text: card.selected.id ? card.t("draft") + " · " + card.t("revision") + " " + card.selected.revision + (card.editorState.dirty[card.kind] ? " •" : "") : card.t("editing_new") }
+                TextCaption { text: card.selected.id ? card.t(card.editorState.election_status) + " · " + card.t("revision") + " " + card.selected.revision + (card.editorState.dirty[card.kind] ? " •" : "") : card.t("editing_new") }
                 Action { text: card.t("reload_saved"); flat: true; visible: !!card.selected.id; onClicked: card.choose(card.kind, card.selected.id) }
             }
+            TextCaption { visible: card.kind === "election" && card.editorState.newer_revision; text: card.t("newer_saved_version") }
             TextCaption { text: card.t(card.nameKey) }
             Input {
                 objectName: card.kind + "Name"
@@ -146,7 +148,7 @@ Rectangle {
                 id: modePicker
                 visible: card.kind === "station"
                 Layout.fillWidth: true
-                enabled: !card.editorState.busy
+                enabled: !card.editorState.busy && !card.editorState.read_only
                 model: ["local", "send"]
                 currentIndex: card.form.counting_mode === "send" ? 1 : 0
                 displayText: card.t(currentIndex === 1 ? "send_to_destination" : "local_counting")
@@ -164,7 +166,7 @@ Rectangle {
                 id: destinationPicker
                 visible: card.kind === "station" && card.form.counting_mode === "send"
                 Layout.fillWidth: true
-                enabled: !card.editorState.busy
+                enabled: !card.editorState.busy && !card.editorState.read_only
                 model: card.destinations()
                 textRole: "name"
                 currentIndex: {
@@ -206,7 +208,7 @@ Rectangle {
                 highlighted: true
                 Layout.fillWidth: true
                 Layout.topMargin: 6
-                enabled: !card.editorState.busy && (!card.selected.id || card.editorState.dirty[card.kind])
+                enabled: !card.editorState.busy && !card.editorState.read_only && (!card.selected.id || card.editorState.dirty[card.kind])
                 onClicked: card.config.save(card.kind)
             }
         }

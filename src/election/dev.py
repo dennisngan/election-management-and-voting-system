@@ -15,6 +15,47 @@ def write_private(path: Path, content: str | bytes) -> None:
     path.chmod(0o600)
 
 
+def _ensure_lifecycle_test_url(env_file: Path) -> None:
+    from dotenv import dotenv_values
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.exc import ArgumentError
+
+    path = Path(".env")
+    settings = dotenv_values(path, interpolate=False)
+    key = "ELECTION_LIFECYCLE_TEST_DATABASE_URL"
+    if key in settings:
+        return
+    generated = dotenv_values(env_file, interpolate=False)
+    try:
+        source = make_url(settings.get("ELECTION_TEST_DATABASE_URL") or "")
+    except ArgumentError, ValueError:
+        raise SystemExit(
+            "Set ELECTION_LIFECYCLE_TEST_DATABASE_URL explicitly; existing test settings "
+            "cannot be identified as project-generated local MySQL settings"
+        ) from None
+    if not (
+        source.drivername == "mysql+pymysql"
+        and source.username == "election"
+        and bool(source.password)
+        and source.password == generated.get("MYSQL_PASSWORD")
+        and source.host == "127.0.0.1"
+        and source.port == 13307
+        and source.database == "election_test"
+    ):
+        raise SystemExit(
+            "Set ELECTION_LIFECYCLE_TEST_DATABASE_URL explicitly; existing test settings "
+            "do not match this project's generated local MySQL settings"
+        )
+    lifecycle_url = source.set(database="election_lifecycle_test").render_as_string(
+        hide_password=False
+    )
+    existing = path.read_bytes()
+    separator = b"" if not existing or existing.endswith(b"\n") else b"\n"
+    with path.open("ab") as output:
+        output.write(separator + f"{key}={lifecycle_url}\n".encode())
+    path.chmod(0o600)
+
+
 def mysql_dev() -> None:
     runtime = Path(".runtime").resolve()
     runtime.mkdir(exist_ok=True)
@@ -36,9 +77,11 @@ def mysql_dev() -> None:
             Path(".env"),
             f"ELECTION_DATABASE_URL={base}election\n"
             f"ELECTION_TEST_DATABASE_URL={base}election_test\n"
+            f"ELECTION_LIFECYCLE_TEST_DATABASE_URL={base}election_lifecycle_test\n"
             "ELECTION_SERVER_URL=https://localhost:8443\n"
             "ELECTION_CA_FILE=.runtime/tls/ca.pem\n",
         )
+    _ensure_lifecycle_test_url(env_file)
     existing = subprocess.run(
         ["docker", "container", "inspect", "election-system-mysql"],
         capture_output=True,
@@ -115,7 +158,9 @@ def mysql_dev() -> None:
             'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot',
         ],
         input="CREATE DATABASE IF NOT EXISTS election_test CHARACTER SET utf8mb4;\n"
-        "GRANT ALL PRIVILEGES ON election_test.* TO 'election'@'%';\n",
+        "GRANT ALL PRIVILEGES ON election_test.* TO 'election'@'%';\n"
+        "CREATE DATABASE IF NOT EXISTS election_lifecycle_test CHARACTER SET utf8mb4;\n"
+        "GRANT ALL PRIVILEGES ON election_lifecycle_test.* TO 'election'@'%';\n",
         text=True,
         check=True,
     )
