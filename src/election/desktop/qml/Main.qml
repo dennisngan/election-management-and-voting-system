@@ -254,11 +254,22 @@ ApplicationWindow {
                     }
                 }
                 Button {
+                    id: stockNavigation
                     text: window.t("received_stock"); Layout.fillWidth: true; flat: true
                     visible: !window.administrator
                     highlighted: window.currentPage === "stock"
                     Material.background: window.currentPage === "stock" ? "#dceaff" : "transparent"
                     Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: stockNavigation.text
+                        textFormat: Text.PlainText
+                        font: stockNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     onClicked: {
                         window.currentPage = "stock"
                         controller.workspace.open()
