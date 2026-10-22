@@ -18,7 +18,7 @@ Rectangle {
     readonly property var selected: editorState.selected[kind]
     readonly property var form: editorState.forms[kind]
     readonly property bool editing: editorState.editing[kind]
-    readonly property string plural: kind === "election" ? "draft_elections" : listKey
+    readonly property string plural: kind === "election" ? "saved_elections" : listKey
     readonly property string nameKey: kind + "_name"
     readonly property string newKey: "new_" + kind
     readonly property string saveKey: "save_" + kind

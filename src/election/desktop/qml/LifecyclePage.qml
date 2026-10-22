@@ -345,7 +345,7 @@ ColumnLayout {
         message: page.t("unsaved_changes")
         acceptLabel: page.t("discard_changes")
         rejectLabel: page.t("keep_editing")
-        onAccepted: page.lifecycle.loadElection(page.pendingElectionId, true)
+        onConfirmed: page.lifecycle.loadElection(page.pendingElectionId, true)
     }
     ConfirmationDialog {
         id: activationDialog
@@ -353,6 +353,6 @@ ColumnLayout {
         message: page.t("activation_confirmation") + "\n\n" + (page.selected.name || "")
         acceptLabel: page.t("activate_election")
         rejectLabel: page.t("keep_editing")
-        onAccepted: page.lifecycle.activate()
+        onConfirmed: page.lifecycle.activate()
     }
 }

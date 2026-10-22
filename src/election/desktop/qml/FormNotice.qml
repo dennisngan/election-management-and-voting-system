@@ -13,7 +13,15 @@ Rectangle {
     implicitHeight: message.implicitHeight + 28
     radius: 10
     color: error ? "#fceceb" : "#e8f5ef"
-    onErrorChanged: if (error && visible) Qt.callLater(function() { noticeBox.reveal(noticeBox) })
+    function revealFeedback() {
+        Qt.callLater(function() {
+            if ((!noticeBox.error && !noticeBox.notice) || !noticeBox.visible) return
+            noticeBox.forceActiveFocus(Qt.OtherFocusReason)
+            noticeBox.reveal(noticeBox)
+        })
+    }
+    onErrorChanged: if (error) revealFeedback()
+    onNoticeChanged: if (notice && !error) revealFeedback()
     Label {
         id: message
         anchors.fill: parent

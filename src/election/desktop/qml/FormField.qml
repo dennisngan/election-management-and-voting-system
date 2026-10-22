@@ -12,5 +12,7 @@ TextField {
     selectByMouse: true
     enabled: !working
     Material.containerStyle: Material.Outlined
-    onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { control.reveal(control) })
+    onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+        if (control.activeFocus) control.reveal(control)
+    })
 }

@@ -63,7 +63,7 @@ class StaffPasswordReset(BaseModel):
     revision: int = Field(strict=True, ge=1)
 
 
-def staff_view(db: Session, account: Account) -> dict[str, Any]:
+def staff_snapshot(account: Account, station_ids: list[int]) -> dict[str, Any]:
     return {
         "id": account.id,
         "username": account.username,
@@ -72,14 +72,19 @@ def staff_view(db: Session, account: Account) -> dict[str, Any]:
         "enabled": account.enabled,
         "must_change_password": account.must_change_password,
         "revision": account.revision,
-        "station_ids": list(
-            db.scalars(
-                select(StationAssignment.station_id)
-                .where(StationAssignment.account_id == account.id)
-                .order_by(StationAssignment.station_id)
-            )
-        ),
+        "station_ids": station_ids,
     }
+
+
+def staff_view(db: Session, account: Account) -> dict[str, Any]:
+    station_ids = list(
+        db.scalars(
+            select(StationAssignment.station_id)
+            .where(StationAssignment.account_id == account.id)
+            .order_by(StationAssignment.station_id)
+        )
+    )
+    return staff_snapshot(account, station_ids)
 
 
 def station_context(db: Session, account: Account, station: PollingStation) -> dict[str, Any]:
@@ -87,6 +92,15 @@ def station_context(db: Session, account: Account, station: PollingStation) -> d
     assert constituency is not None
     election = db.get(Election, constituency.election_id)
     assert election is not None
+    return station_context_view(staff_view(db, account), station, constituency, election)
+
+
+def station_context_view(
+    account: dict[str, Any],
+    station: PollingStation,
+    constituency: Constituency,
+    election: Election,
+) -> dict[str, Any]:
     return {
         "election": {"id": election.id, "name": election.name, "status": election.status},
         "constituency": {
@@ -101,11 +115,11 @@ def station_context(db: Session, account: Account, station: PollingStation) -> d
             "counting_mode": station.counting_mode,
             "destination_station_id": station.destination_station_id,
         },
-        "account": staff_view(db, account),
+        "account": account,
         "capabilities": {
-            "prepare_polling": account.role == "polling_officer",
-            "prepare_counting": account.role == "counting_officer",
-            "approve": account.role == "supervisor",
+            "prepare_polling": account["role"] == "polling_officer",
+            "prepare_counting": account["role"] == "counting_officer",
+            "approve": account["role"] == "supervisor",
         },
     }
 
@@ -210,12 +224,15 @@ def staff_router(
 
     @router.get("")
     def list_accounts(db: Database, actor: Admin) -> dict[str, Any]:
-        return {
-            "items": [
-                staff_view(db, row)
-                for row in db.scalars(select(Account).order_by(Account.id.desc()))
-            ]
-        }
+        accounts = db.scalars(select(Account).order_by(Account.id.desc())).all()
+        station_ids: dict[int, list[int]] = {}
+        for account_id, station_id in db.execute(
+            select(StationAssignment.account_id, StationAssignment.station_id).order_by(
+                StationAssignment.account_id, StationAssignment.station_id
+            )
+        ):
+            station_ids.setdefault(account_id, []).append(station_id)
+        return {"items": [staff_snapshot(row, station_ids.get(row.id, [])) for row in accounts]}
 
     @router.post("", status_code=201)
     def create_account(data: StaffCreate, db: Database, actor: Admin) -> dict[str, Any]:
@@ -246,10 +263,17 @@ def staff_router(
 
     @router.get("/station-options")
     def station_options(db: Database, actor: Admin) -> dict[str, Any]:
+        account = staff_view(db, actor)
+        stations = db.execute(
+            select(PollingStation, Constituency, Election)
+            .join(Constituency, PollingStation.constituency_id == Constituency.id)
+            .join(Election, Constituency.election_id == Election.id)
+            .order_by(PollingStation.id)
+        )
         return {
             "items": [
-                station_context(db, actor, row)
-                for row in db.scalars(select(PollingStation).order_by(PollingStation.id))
+                station_context_view(account, station, constituency, election)
+                for station, constituency, election in stations
             ]
         }
 

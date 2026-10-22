@@ -468,6 +468,6 @@ ColumnLayout {
         message: page.t("unsaved_changes")
         acceptLabel: page.t("discard_changes")
         rejectLabel: page.t("keep_editing")
-        onAccepted: page.staff.loadAccount(page.pendingAccountId, true)
+        onConfirmed: page.staff.loadAccount(page.pendingAccountId, true)
     }
 }

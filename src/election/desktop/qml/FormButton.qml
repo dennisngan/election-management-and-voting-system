@@ -11,5 +11,7 @@ Button {
     font.weight: Font.Medium
     enabled: !working
     Material.roundedScale: Material.FullScale
-    onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { control.reveal(control) })
+    onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+        if (control.activeFocus) control.reveal(control)
+    })
 }
