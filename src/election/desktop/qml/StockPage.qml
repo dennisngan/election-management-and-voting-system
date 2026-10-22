@@ -59,6 +59,10 @@ ColumnLayout {
     function languageName(code) {
         return code === "sc" ? "简体中文" : code === "en" ? "English" : "繁體中文"
     }
+    function moveFocus(control, forward) {
+        var next = control.nextItemInFocusChain(forward)
+        if (next) next.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason)
+    }
     function exportReport(format) {
         if (!hasSelected || editorState.busy) return
         pendingFormat = format
@@ -448,7 +452,9 @@ ColumnLayout {
                 implicitHeight: Math.max(92, contentHeight + topPadding + bottomPadding)
                 text: page.canEdit ? page.form.reason : page.selected.reason || ""
                 textFormat: TextEdit.PlainText
-                tabChangesFocus: true
+                Keys.priority: Keys.BeforeItem
+                Keys.onTabPressed: event => { page.moveFocus(correctionReason, true); event.accepted = true }
+                Keys.onBacktabPressed: event => { page.moveFocus(correctionReason, false); event.accepted = true }
                 clip: true
                 wrapMode: TextEdit.WordWrap
                 selectByMouse: true
@@ -598,7 +604,9 @@ ColumnLayout {
                 selectByMouse: true
                 text: page.editorState.report_text || ""
                 textFormat: TextEdit.PlainText
-                tabChangesFocus: true
+                Keys.priority: Keys.BeforeItem
+                Keys.onTabPressed: event => { page.moveFocus(reportText, true); event.accepted = true }
+                Keys.onBacktabPressed: event => { page.moveFocus(reportText, false); event.accepted = true }
                 clip: true
                 wrapMode: TextEdit.WrapAnywhere
                 Accessible.name: page.t("stock_report")
