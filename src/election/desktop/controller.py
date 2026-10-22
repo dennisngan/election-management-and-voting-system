@@ -314,6 +314,9 @@ class DesktopController(QObject):
                 status = int(
                     reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 0
                 )
+                if 200 <= status < 300 and reply.error() != QNetworkReply.NetworkError.NoError:
+                    failure("certificate_error" if ssl_failed else "disconnected")
+                    return
                 raw = bytes(reply.readAll().data())
                 if binary and 200 <= status < 300:
                     success(

@@ -442,3 +442,45 @@ def test_reloading_a_corrected_receipt_updates_the_saved_list_and_protects_older
             assert editor.property("state")["historical"] is True
             editor.setField("reason", "歷史版本不可直接編輯")
             assert editor.property("state")["dirty"] is False
+
+
+def test_a_truncated_https_stock_download_reports_failure_and_preserves_the_previous_export(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+) -> None:
+    station = stock_stations(admin)[0]
+    account = staff_account(admin, [station["id"]])
+    with ready_client(database_url, account) as api:
+        created = api.post(
+            f"/api/workspace/stations/{station['id']}/stock", json=stock_payload()
+        )
+        assert created.status_code == 201
+        with stock_editor(https_server, qt_app, account, station["id"]) as (_, editor):
+            assert editor.loadReceipt(created.json()["id"], False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+            before = editor.property("state")
+            destination = tmp_path / "previous-reviewed-export.pdf"
+            original_bytes = b"Existing reviewed export must survive a failed network transfer."
+            destination.write_bytes(original_bytes)
+            https_server.truncate_next_report = True
+            editor.download("pdf", str(destination), "tc")
+            wait_for(qt_app, lambda: setup_idle(editor), timeout=12)
+            failed = editor.property("state")
+            assert failed["error"] == "disconnected"
+            assert failed["notice"] != "stock_exported"
+            assert failed["export_path"] == ""
+            assert destination.read_bytes() == original_bytes
+            assert failed["forms"] == before["forms"]
+            assert failed["selected"] == before["selected"]
+            editor.download("pdf", str(destination), "tc")
+            wait_for(qt_app, lambda: setup_idle(editor))
+            assert editor.property("state")["error"] == ""
+            assert editor.property("state")["notice"] == "stock_exported"
+            assert editor.property("state")["export_path"] == str(destination)
+            exported = "\n".join(page.extract_text() for page in PdfReader(destination).pages)
+            assert "選票接收及儲備報表" in exported
+            assert "普通系列 A" in exported
+            assert editor.property("state")["forms"] == before["forms"]

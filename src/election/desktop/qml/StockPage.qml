@@ -209,7 +209,7 @@ ColumnLayout {
     }
 
     FormPanel {
-        visible: page.editorState.editing
+        visible: !!page.editorState.station_id && (page.canEdit || page.hasSelected)
         implicitHeight: receiptForm.implicitHeight + 40
         ColumnLayout {
             id: receiptForm

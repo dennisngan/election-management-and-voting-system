@@ -16,6 +16,7 @@ from fastapi import Request, Response
 from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication, QEvent
 from sqlalchemy.engine import make_url
+from starlette.responses import StreamingResponse
 
 from election.desktop.controller import DesktopController
 from election.manage import bootstrap_account
@@ -97,6 +98,20 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
             endpoint.password_committed.set()
             if endpoint.hold_password_response:
                 await asyncio.to_thread(endpoint.release_password_response.wait, 5)
+        if (
+            request.method == "GET"
+            and request.url.path.endswith("/statement.pdf")
+            and response.status_code == 200
+            and endpoint.truncate_next_report
+        ):
+            # The authorized real report route has completed; fail only its transport.
+            # A mismatched length makes Uvicorn close TLS after sending HTTP 200 headers.
+            endpoint.truncate_next_report = False
+            return StreamingResponse(
+                iter([b"%PDF-1.4\ntruncated"]),
+                media_type="application/pdf",
+                headers={"Content-Length": "4096"},
+            )
         return response
 
     server = uvicorn.Server(

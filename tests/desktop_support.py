@@ -35,6 +35,7 @@ class HttpsServer:
     hold_profile: bool = False
     hold_password_response: bool = False
     hold_configuration_list: bool = False
+    truncate_next_report: bool = False
     configuration_list_entered: threading.Event = field(default_factory=threading.Event)
     release_configuration_list: threading.Event = field(default_factory=threading.Event)
     profile_entered: threading.Event = field(default_factory=threading.Event)
