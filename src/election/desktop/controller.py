@@ -13,6 +13,7 @@ from PySide6.QtNetwork import (
     QSslConfiguration,
 )
 
+from election.desktop.configuration import ConfigurationController
 from election.desktop.translations import TRANSLATIONS
 
 HKT = timezone(timedelta(hours=8), "HKT")
@@ -42,6 +43,7 @@ class DesktopController(QObject):
             "station": None,
         }
         self._token = ""
+        self._configuration = ConfigurationController(self._authorized_request, self)
         self._generation = 0
         self._refreshing = False
         self._manager = QNetworkAccessManager(self)
@@ -68,6 +70,33 @@ class DesktopController(QObject):
     @Property(dict, notify=stateChanged)
     def texts(self) -> dict[str, str]:
         return TRANSLATIONS[self._state["locale"]]
+
+    @Property(QObject, constant=True)
+    def configuration(self) -> ConfigurationController:
+        return self._configuration
+
+    def _authorized_request(
+        self,
+        path: str,
+        method: str,
+        payload: dict[str, Any] | None,
+        success: ResultHandler,
+        failure: Callable[[str], None],
+    ) -> None:
+        def failed(code: str) -> None:
+            failure(code)
+            if code == "session_expired":
+                self._error(code)
+
+        self._request(path, method, payload, success, failed, token=self._token)
+
+    def _configuration_access(self) -> None:
+        account = self._state["account"]
+        self._configuration.set_available(
+            self._state["phase"] == "workspace"
+            and account.get("role") == "administrator"
+            and not account.get("must_change_password", True)
+        )
 
     def _tick(self) -> None:
         self._state["clock"] = datetime.now(HKT).strftime("%Y-%m-%d %H:%M:%S HKT")
@@ -117,7 +146,7 @@ class DesktopController(QObject):
         self,
         path: str,
         method: str,
-        payload: dict[str, str] | None,
+        payload: dict[str, Any] | None,
         success: ResultHandler,
         failure: Callable[[str], None],
         *,
@@ -137,6 +166,8 @@ class DesktopController(QObject):
             )
         if method == "POST":
             reply = self._manager.post(request, QByteArray(json.dumps(payload).encode()))
+        elif method == "PUT":
+            reply = self._manager.put(request, QByteArray(json.dumps(payload).encode()))
         elif method == "DELETE":
             reply = self._manager.sendCustomRequest(request, QByteArray(b"DELETE"))
         else:
@@ -217,6 +248,7 @@ class DesktopController(QObject):
         self._state["busy"] = False
         self._state["error"] = ""
         self._state["connection"] = "connected"
+        self._configuration_access()
         self.stateChanged.emit()
         self.refresh()
 
@@ -289,12 +321,15 @@ class DesktopController(QObject):
 
         def profile(data: dict[str, Any]) -> None:
             self._state["account"] = data
+            self._configuration_access()
+            self._configuration.refresh()
             self.stateChanged.emit()
 
         self._request("/api/health", "GET", None, healthy, failed)
 
     def _clear_session(self) -> None:
         self._token = ""
+        self._configuration.reset()
         self._invalidate_pending_replies()
         self._state.update(
             phase="signed_out",

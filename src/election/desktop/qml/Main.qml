@@ -25,6 +25,8 @@ ApplicationWindow {
     readonly property color muted: "#65758b"
     readonly property color accent: "#1967d2"
     readonly property color line: "#e1e7f0"
+    property string currentPage: "account"
+    onSignedInChanged: if (!signedIn) currentPage = "account"
 
     function t(key) { return words[key] || key }
     function submitLogin() { controller.signIn(serverField.text, usernameField.text, passwordField.text) }
@@ -179,14 +181,32 @@ ApplicationWindow {
             Layout.preferredWidth: 208
             Layout.fillHeight: true
             color: "#edf3fc"
+            ScrollView {
+                id: sidebarScroll
+                anchors.fill: parent
+                clip: true
+                contentWidth: availableWidth
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ColumnLayout {
-                anchors.fill: parent; anchors.margins: 18; spacing: 8
+                width: sidebarScroll.availableWidth - 36
+                x: 18; y: 18
+                height: Math.max(implicitHeight, sidebarScroll.availableHeight - 36)
+                spacing: 8
                 Caption { text: window.t("workspace"); Layout.topMargin: 10; Layout.bottomMargin: 12 }
                 Button {
                     text: window.t("account"); Layout.fillWidth: true
-                    highlighted: true; flat: true
-                    Material.background: "#dceaff"
+                    highlighted: window.currentPage === "account"; flat: true
+                    Material.background: window.currentPage === "account" ? "#dceaff" : "transparent"
                     Material.roundedScale: Material.FullScale
+                    onClicked: window.currentPage = "account"
+                }
+                Button {
+                    text: window.t("election_setup"); Layout.fillWidth: true
+                    visible: window.state.account.role === "administrator"
+                    highlighted: window.currentPage === "setup"; flat: true
+                    Material.background: window.currentPage === "setup" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    onClicked: { window.currentPage = "setup"; controller.configuration.open() }
                 }
                 Button { text: window.t("polling"); Layout.fillWidth: true; flat: true; enabled: false }
                 Button { text: window.t("counting"); Layout.fillWidth: true; flat: true; enabled: false }
@@ -194,6 +214,7 @@ ApplicationWindow {
                 Item { Layout.fillHeight: true }
                 Caption { text: window.t("role") + " · " + window.t(window.state.account.role || ""); Layout.fillWidth: true }
                 Button { text: window.t("logout"); flat: true; Layout.fillWidth: true; onClicked: controller.signOut() }
+            }
             }
         }
         ScrollView {
@@ -319,7 +340,7 @@ ApplicationWindow {
                 }
 
                 ColumnLayout {
-                    visible: window.state.phase === "workspace"
+                    visible: window.state.phase === "workspace" && window.currentPage === "account"
                     Layout.fillWidth: true
                     Layout.leftMargin: 32; Layout.rightMargin: 32; Layout.bottomMargin: 28
                     spacing: 24
@@ -362,6 +383,14 @@ ApplicationWindow {
                             Caption { text: window.t("no_idle_lock"); Layout.fillWidth: true }
                         }
                     }
+                }
+                ElectionSetup {
+                    visible: window.state.phase === "workspace" && window.currentPage === "setup" && window.state.account.role === "administrator"
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
+                    config: controller.configuration
+                    words: window.words
+                    onReveal: control => window.revealField(control)
                 }
                 Item { Layout.preferredHeight: 12 }
             }

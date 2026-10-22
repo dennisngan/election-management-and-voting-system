@@ -5,7 +5,10 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from election.server import models  # noqa: F401 -- register tables with Base.metadata
+from election.server import (  # noqa: F401 -- register tables with Base.metadata
+    configuration_models,
+    models,
+)
 from election.server.config import Settings
 from election.server.db import Base
 

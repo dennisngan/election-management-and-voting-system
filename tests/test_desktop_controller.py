@@ -1,182 +1,25 @@
 """Exercise public desktop slots over real HTTPS/MySQL; native controls use Computer."""
 
-import asyncio
 import socket
 import ssl
 import threading
-import time
-from collections.abc import Awaitable, Callable, Iterator
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from typing import Any, cast
-from uuid import uuid4
 
 import pytest
-import uvicorn
-from fastapi import Request, Response
 from PySide6.QtCore import QCoreApplication, QEvent, QTimer
 
 from election.desktop.controller import DesktopController
-from election.manage import bootstrap_account
-from election.server.app import create_app
-
-INITIAL_PASSWORD = "Initial-Desktop-Password-42!"
-PERSONAL_PASSWORD = "Personal-Desktop-Password-84!"
-TLS_DIRECTORY = Path(".runtime/tls").resolve()
-
-
-@dataclass
-class ControlledClock:
-    value: datetime = datetime(2026, 10, 22, 6, 0, tzinfo=UTC)
-
-    def __call__(self) -> datetime:
-        return self.value
-
-
-@dataclass
-class HttpsServer:
-    url: str
-    clock: ControlledClock
-    requests: list[tuple[str, str]] = field(default_factory=list)
-    lock: threading.Lock = field(default_factory=threading.Lock)
-    hold_profile: bool = False
-    hold_password_response: bool = False
-    profile_entered: threading.Event = field(default_factory=threading.Event)
-    release_profile: threading.Event = field(default_factory=threading.Event)
-    profile_finished: threading.Event = field(default_factory=threading.Event)
-    password_committed: threading.Event = field(default_factory=threading.Event)
-    release_password_response: threading.Event = field(default_factory=threading.Event)
-    delayed_profile_status: int | None = None
-
-    def request_count(self, method: str, path: str) -> int:
-        with self.lock:
-            return self.requests.count((method, path))
-
-
-@pytest.fixture(scope="session")
-def qt_app() -> QCoreApplication:
-    instance = QCoreApplication.instance()
-    return instance if instance is not None else QCoreApplication([])
-
-
-def wait_for(app: QCoreApplication, predicate: Callable[[], bool], timeout: float = 5) -> None:
-    deadline = time.monotonic() + timeout
-    while True:
-        app.processEvents()
-        if predicate():
-            return
-        if time.monotonic() >= deadline:
-            pytest.fail(
-                f"Desktop public state did not reach the expected outcome in {timeout} seconds"
-            )
-        time.sleep(0.01)
-
-
-@pytest.fixture
-def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsServer]:
-    for name in ("server.pem", "server-key.pem", "ca.pem"):
-        assert (TLS_DIRECTORY / name).is_file(), "Prepare local TLS with election.manage tls-dev"
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.bind(("127.0.0.1", 0))
-    port = listener.getsockname()[1]
-    endpoint = HttpsServer(f"https://localhost:{port}", ControlledClock())
-    application = create_app(database_url, now=endpoint.clock)
-
-    @application.middleware("http")
-    async def observe_requests(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        # Observe only public method/path, never credentials, bodies, or authorization headers.
-        with endpoint.lock:
-            endpoint.requests.append((request.method, request.url.path))
-        delayed_profile = (
-            request.method == "GET" and request.url.path == "/api/auth/me" and endpoint.hold_profile
-        )
-        if delayed_profile:
-            endpoint.hold_profile = False
-            endpoint.profile_entered.set()
-            await asyncio.to_thread(endpoint.release_profile.wait, 5)
-        response = await call_next(request)
-        if delayed_profile:
-            endpoint.delayed_profile_status = response.status_code
-            endpoint.profile_finished.set()
-        if request.method == "POST" and request.url.path == "/api/auth/password":
-            endpoint.password_committed.set()
-            if endpoint.hold_password_response:
-                await asyncio.to_thread(endpoint.release_password_response.wait, 5)
-        return response
-
-    server = uvicorn.Server(
-        uvicorn.Config(
-            application,
-            host="127.0.0.1",
-            port=port,
-            ssl_certfile=str(TLS_DIRECTORY / "server.pem"),
-            ssl_keyfile=str(TLS_DIRECTORY / "server-key.pem"),
-            loop="asyncio",
-            ws="none",
-            lifespan="on",
-            log_level="warning",
-            access_log=False,
-            timeout_keep_alive=1,
-            timeout_graceful_shutdown=1,
-        )
-    )
-    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
-    thread.start()
-    try:
-        wait_for(qt_app, lambda: server.started)
-        yield endpoint
-    finally:
-        endpoint.release_profile.set()
-        endpoint.release_password_response.set()
-        server.should_exit = True
-        wait_for(qt_app, lambda: not thread.is_alive())
-        thread.join(timeout=0)
-        listener.close()
-        assert not thread.is_alive(), "The temporary HTTPS test server did not stop"
-
-
-@pytest.fixture
-def desktop(https_server: HttpsServer, qt_app: QCoreApplication) -> Iterator[DesktopController]:
-    controller = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
-    try:
-        yield controller
-    finally:
-        controller.shutdown()
-        controller.deleteLater()
-        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-        qt_app.processEvents()
-
-
-@pytest.fixture
-def account(database_url: str) -> dict[str, str]:
-    username = "desktop_" + uuid4().hex[:16]
-    bootstrap_account(database_url, username, "桌面測試職員", INITIAL_PASSWORD)
-    return {"username": username, "password": INITIAL_PASSWORD}
-
-
-def state_of(controller: DesktopController) -> dict[str, Any]:
-    """Qt Property descriptors lack a precise instance-return type in the PySide stubs."""
-    return cast("dict[str, Any]", controller.property("state"))
-
-
-def texts_of(controller: DesktopController) -> dict[str, str]:
-    return cast("dict[str, str]", controller.property("texts"))
-
-
-def sign_in(
-    controller: DesktopController,
-    server: HttpsServer,
-    account: dict[str, str],
-    app: QCoreApplication,
-) -> None:
-    controller.signIn(server.url, account["username"], account["password"])
-    wait_for(app, lambda: state_of(controller)["phase"] == "password_change")
-    assert state_of(controller)["account"]["username"] == account["username"]
-    assert state_of(controller)["busy"] is False
+from tests.desktop_support import (
+    INITIAL_PASSWORD,
+    PERSONAL_PASSWORD,
+    TLS_DIRECTORY,
+    HttpsServer,
+    sign_in,
+    state_of,
+    texts_of,
+    wait_for,
+)
 
 
 def test_three_languages_preserve_server_and_signed_out_state(

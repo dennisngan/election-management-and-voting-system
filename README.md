@@ -6,8 +6,17 @@ workspace**. The approved scope and sequential tickets are in [the specification
 and [ticket plan](docs/TICKET-PLAN.md).
 
 Ticket 01 establishes real-server sign-in, first-password change, revocable sessions, and the desktop
-workspace shell. Later polling, stock, reporting, and counting features are delivered by subsequent
+workspace shell. Ticket 02 adds Administrator draft elections, single-seat constituencies and
+independent candidate lists, with three-language forms, replay-safe creates and revision conflicts.
+Later polling, stock, reporting, and counting features are delivered by subsequent
 tickets; illustrative design-preview figures are not application data.
+
+After signing in as an Administrator and changing the initial password, open **Election setup**.
+Create or choose a saved election, then create or choose a constituency and its candidates. Saved
+lists refresh from the server while local form entries stay intact. A conflicting save preserves
+your entries; use **Reload saved data** to review the latest version before editing again. Reloading
+or changing a selection asks before discarding an affected unsaved form. Each constituency has one
+seat and one choice per valid ballot. Candidate numbers are unique within their own constituency.
 
 ## Development prerequisites
 

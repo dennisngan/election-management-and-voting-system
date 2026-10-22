@@ -71,6 +71,52 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "min_password": "密碼長度必須為 12 至 128 個字元。",
         "role_scope": "可用功能及資料取決於您的職務與票站指派。",
         "linked_server": "已設定的伺服器",
+        "election_setup": "選舉設定",
+        "draft_elections": "選舉草稿",
+        "new_election": "新增選舉",
+        "election_name": "選舉名稱",
+        "save_election": "儲存選舉",
+        "constituencies": "選區",
+        "new_constituency": "新增選區",
+        "constituency_name": "選區名稱",
+        "constituency_code": "選區代號",
+        "save_constituency": "儲存選區",
+        "candidates": "候選人",
+        "new_candidate": "新增候選人",
+        "candidate_name": "候選人姓名",
+        "ballot_number": "候選人編號",
+        "save_candidate": "儲存候選人",
+        "one_seat_rule": "每個選區選出 1 人；每張有效選票只可選擇 1 名候選人。",
+        "select_election": "請選擇選舉",
+        "select_constituency": "請選擇選區",
+        "no_constituencies": "此選舉尚未新增選區。",
+        "no_candidates": "此選區尚未新增候選人。",
+        "draft": "草稿",
+        "revision": "修訂版本",
+        "unsaved_changes": "目前表格有未儲存的內容。切換選擇會捨棄這些內容。",
+        "discard_changes": "捨棄變更",
+        "keep_editing": "繼續編輯",
+        "reload_saved": "重新載入已儲存資料",
+        "configuration_saved": "設定已儲存。",
+        "configuration_validation": (
+            "名稱須為 1 至 160 個字元，選區代號須為 1 至 32 個字元，"
+            "候選人編號須為正整數。請勿只輸入空白。"
+        ),
+        "revision_conflict": (
+            "其他職員已儲存較新的版本。您的未儲存內容已保留；"
+            "請重新載入已儲存資料後核對。"
+        ),
+        "duplicate_configuration": "此選舉已有相同選區代號，或此選區已有相同候選人編號。",
+        "request_conflict": (
+            "此儲存要求已用於不同內容。您的輸入已保留；請重新載入已儲存資料後核對。"
+        ),
+        "configuration_not_found": "找不到所選資料，請重新整理後再選擇。",
+        "draft_required": "只有選舉草稿可在此編輯。",
+        "administrator_required": "只有管理員可設定選舉資料。",
+        "saving": "正在儲存…",
+        "loading": "正在載入…",
+        "editing_new": "新增資料",
+        "no_saved_elections": "尚未儲存選舉。請新增選舉草稿。",
     },
     "sc": {
         "app_name": "选举管理及投票系统",
@@ -142,6 +188,52 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "min_password": "密码长度必须为 12 至 128 个字符。",
         "role_scope": "可用功能及资料取决于您的职务与票站分配。",
         "linked_server": "已设置的服务器",
+        "election_setup": "选举设置",
+        "draft_elections": "选举草稿",
+        "new_election": "新增选举",
+        "election_name": "选举名称",
+        "save_election": "保存选举",
+        "constituencies": "选区",
+        "new_constituency": "新增选区",
+        "constituency_name": "选区名称",
+        "constituency_code": "选区代号",
+        "save_constituency": "保存选区",
+        "candidates": "候选人",
+        "new_candidate": "新增候选人",
+        "candidate_name": "候选人姓名",
+        "ballot_number": "候选人编号",
+        "save_candidate": "保存候选人",
+        "one_seat_rule": "每个选区选出 1 人；每张有效选票只可选择 1 名候选人。",
+        "select_election": "请选择选举",
+        "select_constituency": "请选择选区",
+        "no_constituencies": "此选举尚未新增选区。",
+        "no_candidates": "此选区尚未新增候选人。",
+        "draft": "草稿",
+        "revision": "修订版本",
+        "unsaved_changes": "当前表格有未保存的内容。切换选择会舍弃这些内容。",
+        "discard_changes": "舍弃更改",
+        "keep_editing": "继续编辑",
+        "reload_saved": "重新载入已保存资料",
+        "configuration_saved": "设置已保存。",
+        "configuration_validation": (
+            "名称须为 1 至 160 个字符，选区代号须为 1 至 32 个字符，"
+            "候选人编号须为正整数。请勿只输入空白。"
+        ),
+        "revision_conflict": (
+            "其他职员已保存较新的版本。您的未保存内容已保留；"
+            "请重新载入已保存资料后核对。"
+        ),
+        "duplicate_configuration": "此选举已有相同选区代号，或此选区已有相同候选人编号。",
+        "request_conflict": (
+            "此保存请求已用于不同内容。您的输入已保留；请重新载入已保存资料后核对。"
+        ),
+        "configuration_not_found": "找不到所选资料，请刷新后再选择。",
+        "draft_required": "只有选举草稿可在此编辑。",
+        "administrator_required": "只有管理员可设置选举资料。",
+        "saving": "正在保存…",
+        "loading": "正在载入…",
+        "editing_new": "新增资料",
+        "no_saved_elections": "尚未保存选举。请新增选举草稿。",
     },
     "en": {
         "app_name": "Election Management and Voting System",
@@ -213,5 +305,55 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "min_password": "The password must contain 12–128 characters.",
         "role_scope": "Available features and records follow your role and station assignments.",
         "linked_server": "Configured server",
+        "election_setup": "Election setup",
+        "draft_elections": "Draft elections",
+        "new_election": "New election",
+        "election_name": "Election name",
+        "save_election": "Save election",
+        "constituencies": "Constituencies",
+        "new_constituency": "New constituency",
+        "constituency_name": "Constituency name",
+        "constituency_code": "Constituency code",
+        "save_constituency": "Save constituency",
+        "candidates": "Candidates",
+        "new_candidate": "New candidate",
+        "candidate_name": "Candidate name",
+        "ballot_number": "Candidate number",
+        "save_candidate": "Save candidate",
+        "one_seat_rule": "Each constituency elects 1 candidate; each valid ballot allows 1 choice.",
+        "select_election": "Select an election",
+        "select_constituency": "Select a constituency",
+        "no_constituencies": "No constituencies have been added to this election.",
+        "no_candidates": "No candidates have been added to this constituency.",
+        "draft": "Draft",
+        "revision": "Revision",
+        "unsaved_changes": "This form has unsaved entries. Changing your selection discards them.",
+        "discard_changes": "Discard changes",
+        "keep_editing": "Keep editing",
+        "reload_saved": "Reload saved data",
+        "configuration_saved": "Configuration saved.",
+        "configuration_validation": (
+            "Names need 1–160 characters, constituency codes 1–32 characters, "
+            "and candidate numbers a positive integer. Entries cannot contain only spaces."
+        ),
+        "revision_conflict": (
+            "Another staff member saved a newer revision. Your unsaved entries are kept. "
+            "Reload saved data to compare."
+        ),
+        "duplicate_configuration": (
+            "This election already has that constituency code, "
+            "or this constituency already has that candidate number."
+        ),
+        "request_conflict": (
+            "This save request was already used for different entries. Your entries are kept. "
+            "Reload saved data to compare."
+        ),
+        "configuration_not_found": "Selected record not found. Refresh and select it again.",
+        "draft_required": "Only draft elections can be edited here.",
+        "administrator_required": "Only an Administrator can configure election records.",
+        "saving": "Saving…",
+        "loading": "Loading…",
+        "editing_new": "New record",
+        "no_saved_elections": "No elections saved yet. Create a draft election to begin.",
     },
 }
