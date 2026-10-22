@@ -106,7 +106,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "其他職員已儲存較新的版本。您的未儲存內容已保留；"
             "請重新載入已儲存資料後核對。"
         ),
-        "duplicate_configuration": "此選舉已有相同選區代號，或此選區已有相同候選人編號。",
+        "duplicate_configuration": (
+            "此代號或候選人編號已在目前的選舉、選區或投票站內使用，請改用其他值。"
+        ),
         "request_conflict": (
             "此儲存要求已用於不同內容。您的輸入已保留；請重新載入已儲存資料後核對。"
         ),
@@ -117,6 +119,37 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "loading": "正在載入…",
         "editing_new": "新增資料",
         "no_saved_elections": "尚未儲存選舉。請新增選舉草稿。",
+        "station_setup": "票站設定",
+        "station_setup_hint": "請先在「選舉設定」新增選舉及選區，再設定投票站與發票櫃台。",
+        "stations": "投票站",
+        "new_station": "新增投票站",
+        "station_name": "投票站名稱",
+        "station_code": "投票站代號",
+        "save_station": "儲存投票站",
+        "no_stations": "此選區尚未新增投票站。",
+        "select_station": "請選擇投票站",
+        "counters": "發票櫃台",
+        "new_counter": "新增發票櫃台",
+        "counter_name": "發票櫃台名稱",
+        "counter_code": "發票櫃台代號",
+        "save_counter": "儲存發票櫃台",
+        "no_counters": "此投票站尚未新增發票櫃台。",
+        "counting_mode": "點票安排",
+        "local_counting": "本站點票",
+        "send_to_destination": "送往指定點票站",
+        "counting_destination": "接收票箱的點票站",
+        "select_destination": "請選擇接收站",
+        "counting_arrangement_note": "接收站必須屬於同一選區，並採用本站點票。",
+        "receiving_from": "指定送往此站的來源投票站",
+        "invalid_counting_destination": "請選擇同一選舉及選區內採用本站點票的其他投票站。",
+        "receiver_in_use": (
+            "其他投票站已指定送往此站。請先更改這些來源站的點票目的地，"
+            "才可將此站改為送往其他站。"
+        ),
+        "station_configuration_validation": (
+            "名稱須為 1 至 160 個字元，代號須為 1 至 32 個字元，且不可只有空白。"
+            "送往其他站時，必須選擇接收站。"
+        ),
     },
     "sc": {
         "app_name": "选举管理及投票系统",
@@ -223,7 +256,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "其他职员已保存较新的版本。您的未保存内容已保留；"
             "请重新载入已保存资料后核对。"
         ),
-        "duplicate_configuration": "此选举已有相同选区代号，或此选区已有相同候选人编号。",
+        "duplicate_configuration": (
+            "此代号或候选人编号已在当前的选举、选区或投票站内使用，请改用其他值。"
+        ),
         "request_conflict": (
             "此保存请求已用于不同内容。您的输入已保留；请重新载入已保存资料后核对。"
         ),
@@ -234,6 +269,37 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "loading": "正在载入…",
         "editing_new": "新增资料",
         "no_saved_elections": "尚未保存选举。请新增选举草稿。",
+        "station_setup": "票站设置",
+        "station_setup_hint": "请先在“选举设置”新增选举及选区，再设置投票站与发票柜台。",
+        "stations": "投票站",
+        "new_station": "新增投票站",
+        "station_name": "投票站名称",
+        "station_code": "投票站代号",
+        "save_station": "保存投票站",
+        "no_stations": "此选区尚未新增投票站。",
+        "select_station": "请选择投票站",
+        "counters": "发票柜台",
+        "new_counter": "新增发票柜台",
+        "counter_name": "发票柜台名称",
+        "counter_code": "发票柜台代号",
+        "save_counter": "保存发票柜台",
+        "no_counters": "此投票站尚未新增发票柜台。",
+        "counting_mode": "点票安排",
+        "local_counting": "本站点票",
+        "send_to_destination": "送往指定点票站",
+        "counting_destination": "接收票箱的点票站",
+        "select_destination": "请选择接收站",
+        "counting_arrangement_note": "接收站必须属于同一选区，并采用本站点票。",
+        "receiving_from": "指定送往此站的来源投票站",
+        "invalid_counting_destination": "请选择同一选举及选区内采用本站点票的其他投票站。",
+        "receiver_in_use": (
+            "其他投票站已指定送往此站。请先更改这些来源站的点票目的地，"
+            "才可将此站改为送往其他站。"
+        ),
+        "station_configuration_validation": (
+            "名称须为 1 至 160 个字符，代号须为 1 至 32 个字符，且不可只有空白。"
+            "送往其他站时，必须选择接收站。"
+        ),
     },
     "en": {
         "app_name": "Election Management and Voting System",
@@ -341,8 +407,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Reload saved data to compare."
         ),
         "duplicate_configuration": (
-            "This election already has that constituency code, "
-            "or this constituency already has that candidate number."
+            "That code or candidate number is already used in this election, "
+            "constituency or station. Choose a different value."
         ),
         "request_conflict": (
             "This save request was already used for different entries. Your entries are kept. "
@@ -355,5 +421,44 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "loading": "Loading…",
         "editing_new": "New record",
         "no_saved_elections": "No elections saved yet. Create a draft election to begin.",
+        "station_setup": "Station setup",
+        "station_setup_hint": (
+            "First define the election and constituencies in Election setup, "
+            "then configure polling stations and issuance counters here."
+        ),
+        "stations": "Polling stations",
+        "new_station": "New polling station",
+        "station_name": "Polling station name",
+        "station_code": "Polling station code",
+        "save_station": "Save polling station",
+        "no_stations": "No polling stations have been added to this constituency.",
+        "select_station": "Select a polling station",
+        "counters": "Issuance counters",
+        "new_counter": "New issuance counter",
+        "counter_name": "Issuance counter name",
+        "counter_code": "Issuance counter code",
+        "save_counter": "Save issuance counter",
+        "no_counters": "No issuance counters have been added to this polling station.",
+        "counting_mode": "Counting arrangement",
+        "local_counting": "Count locally",
+        "send_to_destination": "Send to a counting station",
+        "counting_destination": "Receiving counting station",
+        "select_destination": "Select a receiving station",
+        "counting_arrangement_note": (
+            "The receiving station must count locally within the same constituency."
+        ),
+        "receiving_from": "Polling stations assigned to send here",
+        "invalid_counting_destination": (
+            "Select another polling station that counts locally "
+            "within the same election and constituency."
+        ),
+        "receiver_in_use": (
+            "Other polling stations are assigned to send here. Reassign their destinations "
+            "before changing this station to sending."
+        ),
+        "station_configuration_validation": (
+            "Names need 1–160 characters and codes 1–32 characters; neither can be blank. "
+            "Sending requires a receiving station."
+        ),
     },
 }

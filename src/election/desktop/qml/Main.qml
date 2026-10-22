@@ -27,6 +27,7 @@ ApplicationWindow {
     readonly property color line: "#e1e7f0"
     property string currentPage: "account"
     onSignedInChanged: if (!signedIn) currentPage = "account"
+    onCurrentPageChanged: Qt.callLater(function() { if (scroll.contentItem) scroll.contentItem.contentY = 0 })
 
     function t(key) { return words[key] || key }
     function submitLogin() { controller.signIn(serverField.text, usernameField.text, passwordField.text) }
@@ -208,6 +209,14 @@ ApplicationWindow {
                     Material.roundedScale: Material.FullScale
                     onClicked: { window.currentPage = "setup"; controller.configuration.open() }
                 }
+                Button {
+                    text: window.t("station_setup"); Layout.fillWidth: true
+                    visible: window.state.account.role === "administrator"
+                    highlighted: window.currentPage === "stations"; flat: true
+                    Material.background: window.currentPage === "stations" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    onClicked: { window.currentPage = "stations"; controller.configuration.open() }
+                }
                 Button { text: window.t("polling"); Layout.fillWidth: true; flat: true; enabled: false }
                 Button { text: window.t("counting"); Layout.fillWidth: true; flat: true; enabled: false }
                 Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
@@ -385,11 +394,12 @@ ApplicationWindow {
                     }
                 }
                 ElectionSetup {
-                    visible: window.state.phase === "workspace" && window.currentPage === "setup" && window.state.account.role === "administrator"
+                    visible: window.state.phase === "workspace" && (window.currentPage === "setup" || window.currentPage === "stations") && window.state.account.role === "administrator"
                     Layout.fillWidth: true
                     Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
                     config: controller.configuration
                     words: window.words
+                    stationMode: window.currentPage === "stations"
                     onReveal: control => window.revealField(control)
                 }
                 Item { Layout.preferredHeight: 12 }

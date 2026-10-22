@@ -1,6 +1,5 @@
 """Draft configuration journeys through the authenticated API and real MySQL."""
 
-from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from uuid import uuid4
@@ -10,22 +9,7 @@ from fastapi.testclient import TestClient
 
 from election.manage import bootstrap_account
 from election.server.app import create_app
-
-
-@pytest.fixture
-def admin(database_url: str) -> Iterator[TestClient]:
-    username = "config_" + uuid4().hex[:12]
-    password = "Configuration-Initial-42!"
-    bootstrap_account(database_url, username, "設定管理員", password)
-    with TestClient(create_app(database_url), base_url="https://testserver") as client:
-        login = client.post("/api/auth/login", json={"username": username, "password": password})
-        client.headers["Authorization"] = "Bearer " + login.json()["token"]
-        changed = client.post(
-            "/api/auth/password",
-            json={"current_password": password, "new_password": "Configuration-Ready-84!"},
-        )
-        client.headers["Authorization"] = "Bearer " + changed.json()["token"]
-        yield client
+from tests.configuration_support import create_constituency, create_election
 
 
 def test_admin_creates_reopens_and_edits_a_persisted_draft(
@@ -50,12 +34,6 @@ def test_admin_creates_reopens_and_edits_a_persisted_draft(
             row["id"] == election["id"]
             for row in another_client.get("/api/elections").json()["items"]
         )
-
-
-def create_election(admin: TestClient) -> dict:
-    response = admin.post("/api/elections", json={"name": "分區測試", "request_id": str(uuid4())})
-    assert response.status_code == 201
-    return response.json()
 
 
 def test_constituencies_keep_candidates_and_ballot_numbers_independent(admin: TestClient) -> None:
@@ -89,15 +67,6 @@ def test_constituencies_keep_candidates_and_ballot_numbers_independent(admin: Te
     )
     assert renamed.status_code == 200
     assert admin.get(f"{base}/{north.json()['id']}").json()["name"] == "新北區"
-
-
-def create_constituency(admin: TestClient, election_id: int, code: str = "N") -> dict:
-    response = admin.post(
-        f"/api/elections/{election_id}/constituencies",
-        json={"code": code, "name": "選區 " + code, "request_id": str(uuid4())},
-    )
-    assert response.status_code == 201
-    return response.json()
 
 
 def create_candidate(admin: TestClient, base: str, ballot_number: int = 1) -> dict:

@@ -18,6 +18,7 @@ from election.server.configuration import configuration_router
 from election.server.db import make_engine
 from election.server.models import Account, AuditEvent, LoginSession
 from election.server.security import hash_password, token_digest, verify_password
+from election.server.stations import stations_router
 
 
 def utc_now() -> datetime:
@@ -105,6 +106,7 @@ def create_app(
         return account
 
     app.include_router(configuration_router(database, administrator, timestamp))
+    app.include_router(stations_router(database, administrator, timestamp))
 
     def new_session(db: Session, account: Account) -> dict[str, Any]:
         token = token_urlsafe(32)

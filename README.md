@@ -2,12 +2,13 @@
 
 A staff application for physical-ballot election operations, using a Python FastAPI server,
 MySQL 8.4/InnoDB, and a PySide6 Qt Quick desktop client. The selected interface is **Material
-workspace**. The approved scope and sequential tickets are in [the specification](docs/SPECIFICATION.md)
+workspace**. The approved scope and ordered tickets are in [the specification](docs/SPECIFICATION.md)
 and [ticket plan](docs/TICKET-PLAN.md).
 
 Ticket 01 establishes real-server sign-in, first-password change, revocable sessions, and the desktop
 workspace shell. Ticket 02 adds Administrator draft elections, single-seat constituencies and
 independent candidate lists, with three-language forms, replay-safe creates and revision conflicts.
+Ticket 03 adds scoped polling stations, issuance counters and same-constituency counting destinations.
 Later polling, stock, reporting, and counting features are delivered by subsequent
 tickets; illustrative design-preview figures are not application data.
 
@@ -17,6 +18,11 @@ lists refresh from the server while local form entries stay intact. A conflictin
 your entries; use **Reload saved data** to review the latest version before editing again. Reloading
 or changing a selection asks before discarding an affected unsaved form. Each constituency has one
 seat and one choice per valid ballot. Candidate numbers are unique within their own constituency.
+
+Open **Station setup** to choose an election and constituency, create polling stations, and add each
+station's issuance counters. A station counts locally or sends to a local-counting station in the same
+constituency. A receiving station with configured senders cannot be redirected until those senders
+are reassigned. Station codes are unique within their constituency; counter codes within their station.
 
 ## Development prerequisites
 

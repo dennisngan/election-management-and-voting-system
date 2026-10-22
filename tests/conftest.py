@@ -13,6 +13,7 @@ from alembic import command
 from alembic.config import Config
 from dotenv import dotenv_values
 from fastapi import Request, Response
+from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication, QEvent
 from sqlalchemy.engine import make_url
 
@@ -147,3 +148,19 @@ def account(database_url: str) -> dict[str, str]:
     username = "desktop_" + uuid4().hex[:16]
     bootstrap_account(database_url, username, "桌面測試職員", INITIAL_PASSWORD)
     return {"username": username, "password": INITIAL_PASSWORD}
+
+
+@pytest.fixture
+def admin(database_url: str) -> Iterator[TestClient]:
+    username = "config_" + uuid4().hex[:12]
+    password = "Configuration-Initial-42!"
+    bootstrap_account(database_url, username, "設定管理員", password)
+    with TestClient(create_app(database_url), base_url="https://testserver") as client:
+        login = client.post("/api/auth/login", json={"username": username, "password": password})
+        client.headers["Authorization"] = "Bearer " + login.json()["token"]
+        changed = client.post(
+            "/api/auth/password",
+            json={"current_password": password, "new_password": "Configuration-Ready-84!"},
+        )
+        client.headers["Authorization"] = "Bearer " + changed.json()["token"]
+        yield client

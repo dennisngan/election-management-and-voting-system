@@ -10,6 +10,7 @@ ColumnLayout {
     property string pendingKind: ""
     property int pendingId: 0
     property string observedError: ""
+    property bool stationMode: false
     signal reveal(var control)
     function t(key) { return words[key] || key }
     function choose(kind, recordId) {
@@ -23,7 +24,7 @@ ColumnLayout {
     spacing: 20
     RowLayout {
         Layout.fillWidth: true
-        Label { text: page.t("election_setup"); font.pixelSize: 28; font.weight: Font.Medium; color: "#25344b"; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+        Label { text: page.t(page.stationMode ? "station_setup" : "election_setup"); font.pixelSize: 28; font.weight: Font.Medium; color: "#25344b"; Layout.fillWidth: true; wrapMode: Text.WordWrap }
         BusyIndicator { running: page.editorState.busy || page.editorState.refreshing; visible: running; implicitWidth: 28; implicitHeight: 28; Accessible.name: page.t("loading") }
         Button { text: page.t("refresh"); flat: true; enabled: !page.editorState.busy && !page.editorState.refreshing; onClicked: page.config.refresh() }
     }
@@ -54,24 +55,46 @@ ColumnLayout {
             page.observedError = error
         }
     }
+    Label { visible: page.stationMode; text: page.t("station_setup_hint"); color: "#65758b"; Layout.fillWidth: true; wrapMode: Text.WordWrap }
     ConfigurationSection {
         kind: "election"; config: page.config; words: page.words; editorState: page.editorState
+        editAllowed: !page.stationMode
         onChoose: (kind, recordId) => page.choose(kind, recordId)
         onReveal: control => page.reveal(control)
     }
     GridLayout {
         Layout.fillWidth: true
-        columns: page.width > 850 ? 2 : 1
+        columns: page.width > 850 && !page.stationMode ? 2 : 1
         columnSpacing: 20; rowSpacing: 20
         ConfigurationSection {
             kind: "constituency"; config: page.config; words: page.words; editorState: page.editorState
             parentReady: !!page.editorState.selected.election.id
+            editAllowed: !page.stationMode
             onChoose: (kind, recordId) => page.choose(kind, recordId)
             onReveal: control => page.reveal(control)
         }
         ConfigurationSection {
+            visible: !page.stationMode
             kind: "candidate"; config: page.config; words: page.words; editorState: page.editorState
             parentReady: !!page.editorState.selected.constituency.id
+            onChoose: (kind, recordId) => page.choose(kind, recordId)
+            onReveal: control => page.reveal(control)
+        }
+    }
+    GridLayout {
+        visible: page.stationMode
+        Layout.fillWidth: true
+        columns: page.width > 850 ? 2 : 1
+        columnSpacing: 20; rowSpacing: 20
+        ConfigurationSection {
+            kind: "station"; config: page.config; words: page.words; editorState: page.editorState
+            parentReady: !!page.editorState.selected.constituency.id
+            onChoose: (kind, recordId) => page.choose(kind, recordId)
+            onReveal: control => page.reveal(control)
+        }
+        ConfigurationSection {
+            kind: "counter"; config: page.config; words: page.words; editorState: page.editorState
+            parentReady: !!page.editorState.selected.station.id
             onChoose: (kind, recordId) => page.choose(kind, recordId)
             onReveal: control => page.reveal(control)
         }

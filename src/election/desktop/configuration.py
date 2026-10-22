@@ -11,13 +11,47 @@ ResultHandler = Callable[[dict[str, Any]], None]
 AuthorizedRequest = Callable[
     [str, str, dict[str, Any] | None, ResultHandler, Callable[[str], None]], None
 ]
-KINDS = ("election", "constituency", "candidate")
-LISTS = {"election": "elections", "constituency": "constituencies", "candidate": "candidates"}
+PARENTS = {
+    "election": None,
+    "constituency": "election",
+    "candidate": "constituency",
+    "station": "constituency",
+    "counter": "station",
+}
+KINDS = tuple(PARENTS)
+LISTS = {
+    "election": "elections",
+    "constituency": "constituencies",
+    "candidate": "candidates",
+    "station": "stations",
+    "counter": "counters",
+}
 FIELDS = {
     "election": ("name",),
     "constituency": ("name", "code"),
     "candidate": ("name", "ballot_number"),
+    "station": ("name", "code", "counting_mode", "destination_station_id"),
+    "counter": ("name", "code"),
 }
+
+
+def empty_form(kind: str) -> dict[str, str]:
+    result = dict.fromkeys(FIELDS[kind], "")
+    if kind == "station":
+        result["counting_mode"] = "local"
+    return result
+
+
+def affected_forms(kind: str) -> tuple[str, ...]:
+    affected = []
+    for child in KINDS:
+        ancestor: str | None = child
+        while ancestor is not None:
+            if ancestor == kind:
+                affected.append(child)
+                break
+            ancestor = PARENTS[ancestor]
+    return tuple(affected)
 
 
 class ConfigurationController(QObject):
@@ -47,7 +81,7 @@ class ConfigurationController(QObject):
             "notice": "",
             **{name: [] for name in LISTS.values()},
             "selected": {kind: {} for kind in KINDS},
-            "forms": {kind: dict.fromkeys(FIELDS[kind], "") for kind in KINDS},
+            "forms": {kind: empty_form(kind) for kind in KINDS},
             "dirty": dict.fromkeys(KINDS, False),
             "editing": dict.fromkeys(KINDS, False),
         }
@@ -87,12 +121,15 @@ class ConfigurationController(QObject):
         self._request(path, method, payload, done, failed)
 
     def _path(self, kind: str) -> str:
-        path = "/api/elections"
-        if kind != "election":
-            path += f"/{self._state['selected']['election']['id']}/constituencies"
-        if kind == "candidate":
-            path += f"/{self._state['selected']['constituency']['id']}/candidates"
-        return path
+        segments = []
+        current: str | None = kind
+        while current is not None:
+            segments.append(LISTS[current])
+            parent = PARENTS[current]
+            if parent is not None:
+                segments.append(str(self._state["selected"][parent]["id"]))
+            current = parent
+        return "/api/" + "/".join(reversed(segments))
 
     @Slot()
     def open(self) -> None:
@@ -102,13 +139,16 @@ class ConfigurationController(QObject):
     def refresh(self) -> None:
         if not self._available or self._state["busy"] or self._state["refreshing"]:
             return
+        kinds = [
+            kind
+            for kind in KINDS
+            if PARENTS[kind] is None or self._state["selected"][PARENTS[kind]]
+        ]
 
         def fetch(index: int) -> None:
-            if index >= len(KINDS):
+            if index >= len(kinds):
                 return
-            kind = KINDS[index]
-            if index and not self._state["selected"][KINDS[index - 1]]:
-                return
+            kind = kinds[index]
 
             def listed(data: dict[str, Any]) -> None:
                 items = data.get("items")
@@ -124,13 +164,16 @@ class ConfigurationController(QObject):
 
     def _accept(self, kind: str, row: dict[str, Any], *, clear_children: bool = False) -> None:
         self._state["selected"][kind] = row
-        self._state["forms"][kind] = {field: str(row.get(field, "")) for field in FIELDS[kind]}
+        self._state["forms"][kind] = {
+            field: str(row[field]) if row.get(field) is not None else default
+            for field, default in empty_form(kind).items()
+        }
         self._state["dirty"][kind] = False
         self._state["editing"][kind] = True
         if clear_children:
-            for child in KINDS[KINDS.index(kind) + 1 :]:
+            for child in affected_forms(kind)[1:]:
                 self._state["selected"][child] = {}
-                self._state["forms"][child] = dict.fromkeys(FIELDS[child], "")
+                self._state["forms"][child] = empty_form(child)
                 self._state["dirty"][child] = False
                 self._state["editing"][child] = False
                 self._state[LISTS[child]] = []
@@ -140,10 +183,10 @@ class ConfigurationController(QObject):
     def load(self, kind: str, row_id: int, discard: bool) -> bool:
         if not self._available or self._state["busy"] or kind not in KINDS:
             return False
-        index = KINDS.index(kind)
-        if index and not self._state["selected"][KINDS[index - 1]]:
+        parent = PARENTS[kind]
+        if parent is not None and not self._state["selected"][parent]:
             return False
-        if any(self._state["dirty"][child] for child in KINDS[index:]) and not discard:
+        if any(self._state["dirty"][child] for child in affected_forms(kind)) and not discard:
             return False
         self._generation += 1
         self._state.update(error="", notice="", refreshing=False)
@@ -174,9 +217,13 @@ class ConfigurationController(QObject):
         ):
             return
         self._state["forms"][kind][field] = value
+        if kind == "station" and field == "counting_mode" and value == "local":
+            self._state["forms"][kind]["destination_station_id"] = ""
         row = self._state["selected"][kind]
         self._state["dirty"][kind] = any(
-            self._state["forms"][kind][key] != str(row.get(key, "")) for key in FIELDS[kind]
+            self._state["forms"][kind][key]
+            != (str(row[key]) if row.get(key) is not None else default)
+            for key, default in empty_form(kind).items()
         )
         self._state.update(error="", notice="")
         self.stateChanged.emit()
@@ -192,7 +239,7 @@ class ConfigurationController(QObject):
             return
         payload = self._state["forms"][kind].copy()
         valid = bool(payload["name"].strip()) and len(payload["name"]) <= 160
-        if kind == "constituency":
+        if kind in ("constituency", "station", "counter"):
             valid = valid and bool(payload["code"].strip()) and len(payload["code"]) <= 32
         if kind == "candidate":
             number = payload["ballot_number"]
@@ -205,8 +252,28 @@ class ConfigurationController(QObject):
             )
             if valid:
                 payload["ballot_number"] = int(number)
+        if kind == "station":
+            mode, destination = payload["counting_mode"], payload["destination_station_id"]
+            if mode == "local":
+                payload["destination_station_id"] = None
+            elif mode == "send":
+                destination_valid = (
+                    len(destination) <= 10
+                    and destination.isascii()
+                    and destination.isdecimal()
+                    and 1 <= int(destination) <= 2147483647
+                )
+                valid = valid and destination_valid
+                if destination_valid:
+                    payload["destination_station_id"] = int(destination)
+            else:
+                valid = False
         if not valid:
-            self._state["error"] = "configuration_validation"
+            self._state["error"] = (
+                "station_configuration_validation"
+                if kind in ("station", "counter")
+                else "configuration_validation"
+            )
             self.stateChanged.emit()
             return
         # A save supersedes any older list snapshots already in flight. Inputs stay

@@ -8,6 +8,7 @@ from PySide6.QtCore import QCoreApplication, QEvent
 
 from election.desktop.controller import DesktopController
 from election.server.app import create_app
+from tests.configuration_desktop_support import ready_setup, save_form, setup_idle
 from tests.desktop_support import (
     PERSONAL_PASSWORD,
     TLS_DIRECTORY,
@@ -128,35 +129,6 @@ def test_another_client_refresh_preserves_form_and_a_stale_save_is_rejected(
         wait_for(qt_app, lambda: setup.property("state")["error"] == "revision_conflict")
         assert setup.property("state")["forms"]["election"]["name"] == "我的未儲存名稱"
         assert other.get(path).json()["name"] == "另一客戶端已儲存"
-
-
-def setup_idle(setup: Any) -> bool:
-    state = setup.property("state")
-    return not state["busy"] and not state.get("refreshing", False)
-
-
-def ready_setup(
-    desktop: DesktopController,
-    https_server: HttpsServer,
-    account: dict[str, str],
-    qt_app: QCoreApplication,
-) -> Any:
-    sign_in(desktop, https_server, account, qt_app)
-    desktop.changePassword(account["password"], PERSONAL_PASSWORD, PERSONAL_PASSWORD)
-    wait_for(qt_app, lambda: state_of(desktop)["phase"] == "workspace")
-    setup = desktop.property("configuration")
-    assert setup is not None
-    return setup
-
-
-def save_form(setup: Any, qt_app: QCoreApplication, kind: str, values: dict[str, str]) -> dict:
-    assert setup.load(kind, 0, False)
-    for field, value in values.items():
-        setup.setField(kind, field, value)
-    setup.save(kind)
-    wait_for(qt_app, lambda: setup_idle(setup))
-    assert setup.property("state")["error"] == ""
-    return setup.property("state")["selected"][kind]
 
 
 def saved_hierarchy(setup: Any, qt_app: QCoreApplication) -> dict[str, dict]:
