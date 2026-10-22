@@ -110,6 +110,7 @@ ColumnLayout {
     }
     FormNotice {
         words: page.words
+        autoReveal: false
         notice: page.editorState.newer_revision ? "stock_newer_revision" : ""
         onReveal: control => page.reveal(control)
     }

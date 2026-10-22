@@ -276,6 +276,31 @@ ApplicationWindow {
                         controller.stock.open()
                     }
                 }
+                Button {
+                    id: queueNavigation
+                    objectName: "queueNavigation"
+                    text: window.t("queue"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "queue"
+                    Material.background: window.currentPage === "queue" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: queueNavigation.text
+                        textFormat: Text.PlainText
+                        font: queueNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "queue"
+                        controller.workspace.open()
+                        var context = controller.workspace.state.selected
+                        controller.queue.open((context.station || ({})).id || 0, window.state.account.role)
+                    }
+                }
                 Button { text: window.t("counting"); Layout.fillWidth: true; flat: true; enabled: false }
                 Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
                 Item { Layout.fillHeight: true }
@@ -503,7 +528,7 @@ ApplicationWindow {
                     onReveal: control => window.revealField(control)
                 }
                 ColumnLayout {
-                    visible: window.state.phase === "workspace" && (window.currentPage === "polling" || window.currentPage === "stock") && !window.administrator
+                    visible: window.state.phase === "workspace" && (window.currentPage === "polling" || window.currentPage === "stock" || window.currentPage === "queue") && !window.administrator
                     Layout.fillWidth: true
                     Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
                     spacing: 24
@@ -524,6 +549,14 @@ ApplicationWindow {
                         visible: window.currentPage === "stock"
                         Layout.fillWidth: true
                         stock: controller.stock
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    QueuePage {
+                        visible: window.currentPage === "queue"
+                        Layout.fillWidth: true
+                        queue: controller.queue
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)

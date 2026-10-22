@@ -10,6 +10,7 @@ from election.server import (  # noqa: F401 -- register tables with Base.metadat
     lifecycle_models,
     models,
     polling_models,
+    queue_models,
     staff_models,
     station_models,
     stock_models,

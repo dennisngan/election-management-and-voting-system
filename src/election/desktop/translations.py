@@ -242,12 +242,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "event_reason": "事項說明（如適用）",
         "amendment_reason": "修訂原因",
         "polling_time_hint": (
-            "請輸入香港時間 YYYY-MM-DD HH:mm。未發生的實際事"
-            "項可留空儲存草稿；提交前須填妥。"
+            "請輸入香港時間 YYYY-MM-DD HH:mm。未發生的實際事項可留空儲存草稿；提交前須填妥。"
         ),
         "queue_estimate_is_forecast": (
-            "這是預測，並不代表隊伍已清理或投票工作已完成。請另行記錄實際完成"
-            "服務時間。"
+            "這是預測，並不代表隊伍已清理或投票工作已完成。請另行記錄實際完成服務時間。"
         ),
         "polling_read_only": "只有投票站職員可填寫事項；主管使用自己的帳戶確認已提交的修訂版本。",
         "save_polling_draft": "儲存事項草稿",
@@ -256,12 +254,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "approve_polling": "主管確認",
         "approval_password": "您目前的主管帳戶密碼",
         "polling_approval_hint": (
-            "請核對此事項及修訂版本，使用目前登入的主管帳戶密碼確認。密碼不會"
-            "儲存在記錄內。"
+            "請核對此事項及修訂版本，使用目前登入的主管帳戶密碼確認。密碼不會儲存在記錄內。"
         ),
         "polling_amendment_hint": (
-            "輸入更正內容及修訂原因，再建立新草稿。較早版本及其確認會保留；新"
-            "草稿須重新提交及確認。"
+            "輸入更正內容及修訂原因，再建立新草稿。較早版本及其確認會保留；新草稿須重新提交及確認。"
         ),
         "polling_history": "事項修訂及確認記錄",
         "no_polling_history": "此事項尚無已儲存的記錄。",
@@ -280,8 +276,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_officer_required": "只有獲指派的投票站職員可填寫及提交此事項。",
         "supervisor_required": "只有獲指派的主管可確認此事項。",
         "polling_state_conflict": (
-            "事項狀態已改變，無法完成此操作。您的輸入已保留，請重新載入後核對"
-            "。"
+            "事項狀態已改變，無法完成此操作。您的輸入已保留，請重新載入後核對。"
         ),
         "unsaved_polling_changes": "表格有未儲存的內容。請先儲存，或捨棄變更後繼續。",
         "polling_saved": "事項草稿已儲存，尚未提交。",
@@ -291,6 +286,57 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "已有較新的事項版本。您檢視的版本及輸入已保留；請重新載入後核對。"
         ),
+        "queue": "輪候時間",
+        "queue_latest": "最新輪候觀察",
+        "queue_missing": "尚無輪候觀察，不能視為沒有隊伍。",
+        "queue_due": "已到更新時間，請觀察並記錄輪候情況，或確認情況不變。",
+        "queue_fresh": "觀察仍在 30 分鐘更新時段內。",
+        "queue_under_30": "少於 30 分鐘",
+        "queue_30_59": "30 至 59 分鐘",
+        "queue_60_90": "60 至 90 分鐘",
+        "queue_over_90": "超過 90 分鐘",
+        "queue_band": "輪候時間範圍",
+        "queue_observation": "輪候觀察",
+        "queue_unchanged_confirmation": "確認輪候情況不變",
+        "queue_event_time": "觀察／確認時間（香港時間）",
+        "queue_entered_at": "伺服器記錄時間",
+        "queue_actor": "記錄職員編號",
+        "queue_due_at": "下次更新時間",
+        "queue_overdue_periods": "已到期的 30 分鐘時段數",
+        "queue_form": "記錄輪候情況",
+        "queue_form_hint": (
+            "請輸入實際觀察時間，格式為 YYYY-MM-DD HH:mm。"
+            "確認情況不變也會新增一項有時間的記錄。"
+        ),
+        "queue_reason": "觀察說明（選填）",
+        "queue_save": "儲存新觀察",
+        "queue_confirm": "確認範圍不變",
+        "queue_confirm_hint": "確認不變時，請保留已審閱的範圍、清空觀察說明，並輸入新的確認時間。",
+        "queue_reviewed": "目前審閱的記錄版本",
+        "queue_read_only": "只有獲指派的投票站職員可在進行中的選舉記錄輪候情況。",
+        "queue_history": "輪候觀察與確認歷史",
+        "queue_no_history": "尚無已儲存的輪候觀察或確認。",
+        "queue_confirms": "所確認的記錄編號",
+        "queue_current_marker": "最新觀察",
+        "queue_newer_revision": (
+            "伺服器有較新的記錄。已保留目前審閱的版本及輸入內容；"
+            "請重新載入並比較後再記錄。"
+        ),
+        "queue_validation": "請檢查輪候範圍、香港時間及說明。實際觀察／確認時間不能在未來。",
+        "queue_confirmation_requires_current": (
+            "確認不變前，請保留已審閱的輪候範圍並清空觀察說明；"
+            "如情況有變，請儲存新觀察。"
+        ),
+        "queue_observation_conflict": "所確認的觀察已變更或尚未存在。請重新載入記錄並比較。",
+        "queue_revision_not_found": "找不到所選的輪候歷史版本，請重新載入。",
+        "unsaved_queue_changes": "輪候表格有未儲存的內容。請先儲存，或捨棄並重新載入。",
+        "queue_saved": "輪候觀察已儲存。",
+        "queue_confirmed": "輪候情況不變的確認已儲存。",
+        "queue_report": "輪候情況歷史報表",
+        "queue_report_hint": "報表使用目前審閱版本的已儲存歷史，不包含未儲存的表格內容。",
+        "queue_report_ready": "輪候歷史報表預覽已載入。",
+        "queue_exported": "輪候歷史報表已儲存至所選檔案。",
+        "queue_export_failed": "未能完成匯出。請檢查檔案位置及連線後重試。",
         "received_stock": "選票接收與儲備",
         "stock_receipt": "接收記錄",
         "stock_receipts": "已儲存的接收記錄",
@@ -306,8 +352,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stock_event_at": "接收時間（香港時間）",
         "stock_time_hint": "請以香港時間 YYYY-MM-DD HH:mm 輸入原本接收選票的時間。",
         "stock_pool_hint": (
-            "普通選票、替換選票儲備及重複選票儲備分開記錄。"
-            "請填寫各類起始數量；沒有儲備時請填寫 0。"
+            "普通選票、替換選票儲備及重複選票儲備分開記錄。請填寫各類起始數量；沒有儲備時請填寫 0。"
         ),
         "stock_pool_ordinary": "普通選票",
         "stock_pool_replacement": "替換選票儲備",
@@ -334,8 +379,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "no_stock_history": "尚無可查看的接收記錄版本。",
         "stock_report": "選票接收及儲備報表",
         "stock_report_hint": (
-            "預覽及匯出以所選記錄及修訂版本為準。"
-            "請先儲存變更，或重新載入已儲存版本。"
+            "預覽及匯出以所選記錄及修訂版本為準。請先儲存變更，或重新載入已儲存版本。"
         ),
         "stock_report_language": "匯出報表語言",
         "stock_preview": "預覽報表",
@@ -356,16 +400,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stock_exported": "報表已儲存至所選檔案。",
         "stock_export_failed": "匯出未完成。請檢查所選檔案位址及連線，然後重試。",
         "stock_newer_revision": (
-            "伺服器有較新的版本。您正在查看的版本及未儲存內容已保留；"
-            "請重新載入並核對。"
+            "伺服器有較新的版本。您正在查看的版本及未儲存內容已保留；請重新載入並核對。"
         ),
         "unsaved_stock_changes": (
-            "此表格有未儲存內容。請先儲存變更，"
-            "或捨棄變更並重新載入已儲存版本，再繼續。"
+            "此表格有未儲存內容。請先儲存變更，或捨棄變更並重新載入已儲存版本，再繼續。"
         ),
         "report_glyph_unavailable": (
-            "PDF 字型不支援報表中的部分文字。"
-            "請保留原文，改用 CSV 或請管理員更新報表字型。"
+            "PDF 字型不支援報表中的部分文字。請保留原文，改用 CSV 或請管理員更新報表字型。"
         ),
         "unsaved_station_changes": "表格有未儲存的內容。請先儲存，或捨棄變更後繼續。",
     },
@@ -610,12 +651,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "event_reason": "事项说明（如适用）",
         "amendment_reason": "修订原因",
         "polling_time_hint": (
-            "请输入香港时间 YYYY-MM-DD HH:mm。未发生的实际事"
-            "项可留空保存草稿；提交前须填妥。"
+            "请输入香港时间 YYYY-MM-DD HH:mm。未发生的实际事项可留空保存草稿；提交前须填妥。"
         ),
         "queue_estimate_is_forecast": (
-            "这是预测，并不代表队伍已清理或投票工作已完成。请另行记录实际完成"
-            "服务时间。"
+            "这是预测，并不代表队伍已清理或投票工作已完成。请另行记录实际完成服务时间。"
         ),
         "polling_read_only": "只有投票站职员可填写事项；主管使用自己的账户确认已提交的修订版本。",
         "save_polling_draft": "保存事项草稿",
@@ -624,12 +663,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "approve_polling": "主管确认",
         "approval_password": "您当前的主管账户密码",
         "polling_approval_hint": (
-            "请核对此事项及修订版本，使用当前登录的主管账户密码确认。密码不会"
-            "保存在记录内。"
+            "请核对此事项及修订版本，使用当前登录的主管账户密码确认。密码不会保存在记录内。"
         ),
         "polling_amendment_hint": (
-            "输入更正内容及修订原因，再建立新草稿。较早版本及其确认会保留；新"
-            "草稿须重新提交及确认。"
+            "输入更正内容及修订原因，再建立新草稿。较早版本及其确认会保留；新草稿须重新提交及确认。"
         ),
         "polling_history": "事项修订及确认记录",
         "no_polling_history": "此事项尚无已保存的记录。",
@@ -648,8 +685,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_officer_required": "只有获指派的投票站职员可填写及提交此事项。",
         "supervisor_required": "只有获指派的主管可确认此事项。",
         "polling_state_conflict": (
-            "事项状态已改变，无法完成此操作。您的输入已保留，请重新载入后核对"
-            "。"
+            "事项状态已改变，无法完成此操作。您的输入已保留，请重新载入后核对。"
         ),
         "unsaved_polling_changes": "表格有未保存的内容。请先保存，或放弃更改后继续。",
         "polling_saved": "事项草稿已保存，尚未提交。",
@@ -659,6 +695,57 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "已有较新的事项版本。您查看的版本及输入已保留；请重新载入后核对。"
         ),
+        "queue": "轮候时间",
+        "queue_latest": "最新轮候观察",
+        "queue_missing": "尚无轮候观察，不能视为没有队伍。",
+        "queue_due": "已到更新时间，请观察并记录轮候情况，或确认情况不变。",
+        "queue_fresh": "观察仍在 30 分钟更新时段内。",
+        "queue_under_30": "少于 30 分钟",
+        "queue_30_59": "30 至 59 分钟",
+        "queue_60_90": "60 至 90 分钟",
+        "queue_over_90": "超过 90 分钟",
+        "queue_band": "轮候时间范围",
+        "queue_observation": "轮候观察",
+        "queue_unchanged_confirmation": "确认轮候情况不变",
+        "queue_event_time": "观察／确认时间（香港时间）",
+        "queue_entered_at": "服务器记录时间",
+        "queue_actor": "记录职员编号",
+        "queue_due_at": "下次更新时间",
+        "queue_overdue_periods": "已到期的 30 分钟时段数",
+        "queue_form": "记录轮候情况",
+        "queue_form_hint": (
+            "请输入实际观察时间，格式为 YYYY-MM-DD HH:mm。"
+            "确认情况不变也会新增一项有时间的记录。"
+        ),
+        "queue_reason": "观察说明（选填）",
+        "queue_save": "保存新观察",
+        "queue_confirm": "确认范围不变",
+        "queue_confirm_hint": "确认不变时，请保留已审阅的范围、清空观察说明，并输入新的确认时间。",
+        "queue_reviewed": "当前审阅的记录版本",
+        "queue_read_only": "只有获指派的投票站职员可在进行中的选举记录轮候情况。",
+        "queue_history": "轮候观察与确认历史",
+        "queue_no_history": "尚无已保存的轮候观察或确认。",
+        "queue_confirms": "所确认的记录编号",
+        "queue_current_marker": "最新观察",
+        "queue_newer_revision": (
+            "服务器有较新的记录。已保留当前审阅的版本及输入内容；"
+            "请重新载入并比较后再记录。"
+        ),
+        "queue_validation": "请检查轮候范围、香港时间及说明。实际观察／确认时间不能在未来。",
+        "queue_confirmation_requires_current": (
+            "确认不变前，请保留已审阅的轮候范围并清空观察说明；"
+            "如情况有变，请保存新观察。"
+        ),
+        "queue_observation_conflict": "所确认的观察已更改或尚未存在。请重新载入记录并比较。",
+        "queue_revision_not_found": "找不到所选的轮候历史版本，请重新载入。",
+        "unsaved_queue_changes": "轮候表格有未保存的内容。请先保存，或舍弃并重新载入。",
+        "queue_saved": "轮候观察已保存。",
+        "queue_confirmed": "轮候情况不变的确认已保存。",
+        "queue_report": "轮候情况历史报表",
+        "queue_report_hint": "报表使用当前审阅版本的已保存历史，不包含未保存的表格内容。",
+        "queue_report_ready": "轮候历史报表预览已载入。",
+        "queue_exported": "轮候历史报表已保存至所选文件。",
+        "queue_export_failed": "未能完成导出。请检查文件位置及连接后重试。",
         "received_stock": "选票接收与储备",
         "stock_receipt": "接收记录",
         "stock_receipts": "已保存的接收记录",
@@ -674,8 +761,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stock_event_at": "接收时间（香港时间）",
         "stock_time_hint": "请以香港时间 YYYY-MM-DD HH:mm 输入原本接收选票的时间。",
         "stock_pool_hint": (
-            "普通选票、替换选票储备及重复选票储备分开记录。"
-            "请填写各类起始数量；没有储备时请填写 0。"
+            "普通选票、替换选票储备及重复选票储备分开记录。请填写各类起始数量；没有储备时请填写 0。"
         ),
         "stock_pool_ordinary": "普通选票",
         "stock_pool_replacement": "替换选票储备",
@@ -702,8 +788,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "no_stock_history": "尚无可查看的接收记录版本。",
         "stock_report": "选票接收及储备报表",
         "stock_report_hint": (
-            "预览及导出以所选记录及修订版本为准。"
-            "请先保存更改，或重新载入已保存版本。"
+            "预览及导出以所选记录及修订版本为准。请先保存更改，或重新载入已保存版本。"
         ),
         "stock_report_language": "导出报表语言",
         "stock_preview": "预览报表",
@@ -724,16 +809,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stock_exported": "报表已保存至所选文件。",
         "stock_export_failed": "导出未完成。请检查所选文件位置及连接，然后重试。",
         "stock_newer_revision": (
-            "服务器有较新的版本。您正在查看的版本及未保存内容已保留；"
-            "请重新载入并核对。"
+            "服务器有较新的版本。您正在查看的版本及未保存内容已保留；请重新载入并核对。"
         ),
         "unsaved_stock_changes": (
-            "此表格有未保存内容。请先保存更改，"
-            "或舍弃更改并重新载入已保存版本，再继续。"
+            "此表格有未保存内容。请先保存更改，或舍弃更改并重新载入已保存版本，再继续。"
         ),
         "report_glyph_unavailable": (
-            "PDF 字体不支持报表中的部分文字。"
-            "请保留原文，改用 CSV 或请管理员更新报表字体。"
+            "PDF 字体不支持报表中的部分文字。请保留原文，改用 CSV 或请管理员更新报表字体。"
         ),
         "unsaved_station_changes": "表格有未保存的内容。请先保存，或放弃更改后继续。",
     },
@@ -1072,8 +1154,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "saved record and review it before continuing."
         ),
         "unsaved_polling_changes": (
-            "The form has unsaved changes. Save it, or discard the changes before "
-            "continuing."
+            "The form has unsaved changes. Save it, or discard the changes before continuing."
         ),
         "polling_saved": "Event draft saved; it has not been submitted.",
         "polling_submitted": "This revision was submitted for Supervisor approval.",
@@ -1085,6 +1166,81 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "A newer event revision is available. Your reviewed version and input "
             "are retained; reload and compare before continuing."
+        ),
+        "queue": "Queue waiting times",
+        "queue_latest": "Latest queue observation",
+        "queue_missing": (
+            "No queue observation has been recorded. This does not mean there is no queue."
+        ),
+        "queue_due": (
+            "An update is due. Observe the queue and record its band, or confirm it is unchanged."
+        ),
+        "queue_fresh": "The observation is within its 30-minute update interval.",
+        "queue_under_30": "Under 30 minutes",
+        "queue_30_59": "30–59 minutes",
+        "queue_60_90": "60–90 minutes",
+        "queue_over_90": "Over 90 minutes",
+        "queue_band": "Waiting-time band",
+        "queue_observation": "Queue observation",
+        "queue_unchanged_confirmation": "Unchanged-band confirmation",
+        "queue_event_time": "Observed / confirmed at (Hong Kong time)",
+        "queue_entered_at": "Server entry time",
+        "queue_actor": "Recorded by account ID",
+        "queue_due_at": "Next update due",
+        "queue_overdue_periods": "30-minute intervals elapsed",
+        "queue_form": "Record the queue",
+        "queue_form_hint": (
+            "Enter the actual observation time as YYYY-MM-DD HH:mm in HKT. "
+            "Confirming an unchanged band also creates a new timed record."
+        ),
+        "queue_reason": "Observation note (optional)",
+        "queue_save": "Save new observation",
+        "queue_confirm": "Confirm band unchanged",
+        "queue_confirm_hint": (
+            "To confirm an unchanged band, retain the reviewed band, clear the observation "
+            "note and enter a new confirmation time."
+        ),
+        "queue_reviewed": "Reviewed history revision",
+        "queue_read_only": (
+            "Assigned Polling Officers can record queue observations while the election is active."
+        ),
+        "queue_history": "Observation and confirmation history",
+        "queue_no_history": "No queue observations or confirmations have been saved.",
+        "queue_confirms": "Confirmed record ID",
+        "queue_current_marker": "Latest observation",
+        "queue_newer_revision": (
+            "Newer server history is available. Your reviewed revision and input are retained. "
+            "Reload and compare before recording."
+        ),
+        "queue_validation": (
+            "Check the waiting-time band, HKT time and note. Actual observation or "
+            "confirmation times cannot be in the future."
+        ),
+        "queue_confirmation_requires_current": (
+            "Retain the reviewed band and clear the observation note to confirm it is "
+            "unchanged. Save a new observation when it has changed."
+        ),
+        "queue_observation_conflict": (
+            "The observation being confirmed changed or does not yet exist. "
+            "Reload the history and compare."
+        ),
+        "queue_revision_not_found": (
+            "The selected queue history revision was not found. Reload the history."
+        ),
+        "unsaved_queue_changes": (
+            "The queue form has unsaved input. Save it, or discard it and reload."
+        ),
+        "queue_saved": "Queue observation saved.",
+        "queue_confirmed": "Unchanged-band confirmation saved.",
+        "queue_report": "Queue observation history",
+        "queue_report_hint": (
+            "Reports use saved history through the reviewed revision. "
+            "Unsaved form input is excluded."
+        ),
+        "queue_report_ready": "The queue history preview is ready.",
+        "queue_exported": "Queue history report saved to the selected file.",
+        "queue_export_failed": (
+            "Export did not complete. Check the file location and connection, then retry."
         ),
         "received_stock": "Received stock and reserves",
         "stock_receipt": "Receipt",
@@ -1157,15 +1313,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "The selected receipt or revision was not found. Refresh and select it again."
         ),
         "election_read_only": (
-            "Finalized election records can be viewed and exported but cannot be changed "
-            "directly."
+            "Finalized election records can be viewed and exported but cannot be changed directly."
         ),
         "stock_saved": "Stock receipt saved.",
         "stock_report_ready": "The selected revision is ready to preview.",
         "stock_exported": "Report saved to the selected file.",
         "stock_export_failed": (
-            "Export did not complete. Check the selected file location and connection, then"
-            " retry."
+            "Export did not complete. Check the selected file location and connection, then retry."
         ),
         "stock_newer_revision": (
             "A newer server revision is available. Your reviewed revision and unsaved input"
@@ -1180,8 +1334,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "text and use CSV, or ask an Administrator to update the report font."
         ),
         "unsaved_station_changes": (
-            "The form has unsaved changes. Save it, or discard the changes before "
-            "continuing."
+            "The form has unsaved changes. Save it, or discard the changes before continuing."
         ),
     },
 }

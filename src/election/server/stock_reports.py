@@ -4,18 +4,14 @@ import csv
 from collections.abc import Callable, Generator
 from datetime import UTC, datetime, timedelta, timezone
 from io import BytesIO, StringIO
-from pathlib import Path
-from threading import Lock
 from typing import Annotated, Any, Literal
 from xml.sax.saxutils import escape
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 from reportlab.lib import colors  # type: ignore[import-untyped]
 from reportlab.lib.pagesizes import A4  # type: ignore[import-untyped]
 from reportlab.lib.styles import ParagraphStyle  # type: ignore[import-untyped]
 from reportlab.lib.units import mm  # type: ignore[import-untyped]
-from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
-from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.platypus import (  # type: ignore[import-untyped]
     Paragraph,
     SimpleDocTemplate,
@@ -26,15 +22,11 @@ from reportlab.platypus import (  # type: ignore[import-untyped]
 from sqlalchemy.orm import Session
 
 from election.server.models import Account
+from election.server.report_fonts import font_for_pdf
 from election.server.stock import stock_statement
 
 type ReportLocale = Literal["tc", "sc", "en"]
 HKT = timezone(timedelta(hours=8), "HKT")
-FONT_NAME = "ElectionReceiptSans"
-FONT_FILE = Path(__file__).resolve().parents[3] / "assets/fonts/ElectionReportSansCJKTC-Regular.ttf"
-_font_lock = Lock()
-_pdf_build_lock = Lock()
-_font: TTFont | None = None
 
 LABELS: dict[ReportLocale, dict[str, str]] = {
     "tc": {
@@ -204,18 +196,6 @@ def csv_report(projection: dict[str, Any]) -> bytes:
 
 
 def pdf_report(projection: dict[str, Any]) -> bytes:
-    # TTFont's document-specific subsetting is not safe for concurrent builds.
-    with _pdf_build_lock:
-        return _render_pdf(projection)
-
-
-def _render_pdf(projection: dict[str, Any]) -> bytes:
-    global _font
-    with _font_lock:
-        if _font is None:
-            _font = TTFont(FONT_NAME, str(FONT_FILE))
-            pdfmetrics.registerFont(_font)
-        font = _font
     labels, receipt = projection["labels"], projection["items"][0]
     metadata, ranges = metadata_rows(projection), range_rows(projection)
     footer = (
@@ -231,15 +211,18 @@ def _render_pdf(projection: dict[str, Any]) -> bytes:
     )
     rendered_text = [projection["title"], labels["ranges"], labels["page"], footer]
     rendered_text += [value for row in metadata + ranges for value in row]
-    # ReportLab 5.1.0 emits invalid non-UTF-16 ToUnicode entries above the BMP.
-    # Preserve such source text in preview/CSV and reject a corrupt PDF explicitly.
-    if any(
-        not char.isspace() and (ord(char) > 0xFFFF or not font.face.charToGlyph.get(ord(char)))
-        for text in rendered_text
-        for char in text
-    ):
-        raise HTTPException(422, detail={"code": "report_glyph_unavailable"})
+    with font_for_pdf(rendered_text) as font_name:
+        return _render_pdf(projection, metadata, ranges, footer, font_name)
 
+
+def _render_pdf(
+    projection: dict[str, Any],
+    metadata: list[list[str]],
+    ranges: list[list[str]],
+    footer: str,
+    font_name: str,
+) -> bytes:
+    labels = projection["labels"]
     output = BytesIO()
     document = SimpleDocTemplate(
         output,
@@ -251,7 +234,7 @@ def _render_pdf(projection: dict[str, Any]) -> bytes:
         title=projection["title"],
     )
     body = ParagraphStyle(
-        "ReceiptBody", fontName=FONT_NAME, fontSize=10, leading=14, wordWrap="CJK"
+        "ReceiptBody", fontName=font_name, fontSize=10, leading=14, wordWrap="CJK"
     )
     title = ParagraphStyle("ReceiptTitle", parent=body, fontSize=18, leading=25, spaceAfter=16)
     heading = ParagraphStyle("ReceiptHeading", parent=body, fontSize=12, leading=17, spaceAfter=10)
@@ -299,7 +282,7 @@ def _render_pdf(projection: dict[str, Any]) -> bytes:
 
     def page_footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
-        canvas.setFont(FONT_NAME, 8)
+        canvas.setFont(font_name, 8)
         canvas.setFillColor(colors.HexColor("#52637b"))
         canvas.drawString(document.leftMargin, 9 * mm, footer)
         canvas.drawRightString(

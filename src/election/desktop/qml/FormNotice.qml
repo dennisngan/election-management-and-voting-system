@@ -7,6 +7,7 @@ Rectangle {
     required property var words
     property string error: ""
     property string notice: ""
+    property bool autoReveal: true
     signal reveal(var control)
     visible: !!error || !!notice
     Layout.fillWidth: true
@@ -15,7 +16,7 @@ Rectangle {
     color: error ? "#fceceb" : "#e8f5ef"
     function revealFeedback() {
         Qt.callLater(function() {
-            if ((!noticeBox.error && !noticeBox.notice) || !noticeBox.visible) return
+            if (!noticeBox.autoReveal || (!noticeBox.error && !noticeBox.notice) || !noticeBox.visible) return
             noticeBox.forceActiveFocus(Qt.OtherFocusReason)
             noticeBox.reveal(noticeBox)
         })

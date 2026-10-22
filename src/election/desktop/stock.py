@@ -1,19 +1,17 @@
 """Received-stock forms, reviewed revisions and authenticated statement exports."""
 
 import json
-from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PySide6.QtCore import Property, QIODevice, QObject, QSaveFile, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
 from election.desktop.lifecycle import HKT, TIME_FORMAT
+from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
-type DownloadRequest = Callable[[str, ResultHandler, Callable[[str], None]], None]
 POOLS = ("ordinary", "replacement", "tendered")
 MAX_QUANTITY = 9223372036854775807
 
@@ -537,9 +535,8 @@ class StockController(QObject):
         if format not in ("pdf", "csv"):
             self._error("stock_export_failed")
             return
-        url = QUrl(filepath)
-        candidate = url.toLocalFile() if url.isLocalFile() else filepath
-        if not candidate or not Path(candidate).is_absolute():
+        candidate = report_destination(filepath)
+        if candidate is None:
             self._error("stock_export_failed")
             return
         path = self._report_path(locale, "." + format)
@@ -558,17 +555,7 @@ class StockController(QObject):
         def loaded(data: dict[str, Any]) -> None:
             if generation != self._generation:
                 return
-            raw, content_type = data.get("data"), data.get("content_type", "")
-            expected = "application/pdf" if format == "pdf" else "text/csv"
-            if not isinstance(raw, bytes) or not str(content_type).lower().startswith(expected):
-                failed("stock_export_failed")
-                return
-            output = QSaveFile(candidate)
-            if not output.open(QIODevice.OpenModeFlag.WriteOnly):
-                failed("stock_export_failed")
-                return
-            if output.write(raw) != len(raw) or not output.commit():
-                output.cancelWriting()
+            if not save_report(data, candidate, format):
                 failed("stock_export_failed")
                 return
             self._state.update(busy=False, notice="stock_exported", export_path=candidate)
