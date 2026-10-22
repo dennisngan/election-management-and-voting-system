@@ -241,7 +241,18 @@ ApplicationWindow {
                     Material.roundedScale: Material.FullScale
                     onClicked: { window.currentPage = "staff"; controller.staff.open() }
                 }
-                Button { text: window.t("polling"); Layout.fillWidth: true; flat: true; enabled: false }
+                Button {
+                    text: window.t("polling"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "polling"
+                    Material.background: window.currentPage === "polling" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    onClicked: {
+                        window.currentPage = "polling"
+                        controller.workspace.open()
+                        controller.polling.open()
+                    }
+                }
                 Button { text: window.t("counting"); Layout.fillWidth: true; flat: true; enabled: false }
                 Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
                 Item { Layout.fillHeight: true }
@@ -467,6 +478,24 @@ ApplicationWindow {
                     lifecycle: controller.lifecycle
                     words: window.words
                     onReveal: control => window.revealField(control)
+                }
+                ColumnLayout {
+                    visible: window.state.phase === "workspace" && window.currentPage === "polling" && !window.administrator
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
+                    spacing: 24
+                    StationWorkspace {
+                        Layout.fillWidth: true
+                        workspace: controller.workspace
+                        words: window.words
+                        onReveal: control => window.revealField(control)
+                    }
+                    PollingPage {
+                        Layout.fillWidth: true
+                        polling: controller.polling
+                        words: window.words
+                        onReveal: control => window.revealField(control)
+                    }
                 }
                 Item { Layout.preferredHeight: 12 }
             }

@@ -15,6 +15,7 @@ ColumnLayout {
     readonly property var station: selected.station || ({})
     readonly property var account: selected.account || ({})
     readonly property bool hasSelected: !!station.id
+    property int pendingStationId: 0
     signal reveal(var control)
     spacing: 20
 
@@ -27,6 +28,24 @@ ColumnLayout {
         for (var i = 0; i < editorState.contexts.length; i++)
             if (editorState.contexts[i].station.id === station.id) return i
         return -1
+    }
+    function restoreStationPicker() {
+        stationPicker.currentIndex = Qt.binding(function() { return page.selectedIndex() })
+    }
+    function chooseStation(stationId) {
+        if (editorState.busy || stationId === station.id) return
+        if (workspace.selectionGuarded) {
+            pendingStationId = stationId
+            discardDialog.open()
+        } else workspace.selectStation(stationId)
+        restoreStationPicker()
+    }
+
+    Connections {
+        target: page.workspace
+        function onStateChanged() {
+            Qt.callLater(function() { page.restoreStationPicker() })
+        }
     }
 
     component ContextDetail: ColumnLayout {
@@ -126,9 +145,9 @@ ColumnLayout {
                     }
                 }
                 onActivated: {
-                    page.workspace.selectStation(model[currentIndex].station.id)
+                    page.chooseStation(model[currentIndex].station.id)
                     // The server's accepted context controls selection, including after a denial.
-                    currentIndex = Qt.binding(function() { return page.selectedIndex() })
+                    page.restoreStationPicker()
                 }
                 onActiveFocusChanged: if (activeFocus)
                     Qt.callLater(function() { page.reveal(stationPicker) })
@@ -200,6 +219,18 @@ ColumnLayout {
                     value: page.account.role ? page.t(page.account.role) : ""
                 }
             }
+        }
+    }
+
+    ConfirmationDialog {
+        id: discardDialog
+        title: page.t("discard_changes")
+        message: page.t("unsaved_polling_changes")
+        acceptLabel: page.t("discard_changes")
+        rejectLabel: page.t("keep_editing")
+        onConfirmed: {
+            page.workspace.selectStation(page.pendingStationId, true)
+            page.restoreStationPicker()
         }
     }
 }

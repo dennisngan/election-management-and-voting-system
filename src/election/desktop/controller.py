@@ -15,6 +15,7 @@ from PySide6.QtNetwork import (
 
 from election.desktop.configuration import ConfigurationController
 from election.desktop.lifecycle import LifecycleController
+from election.desktop.polling import PollingController
 from election.desktop.staff import StaffController
 from election.desktop.translations import TRANSLATIONS
 from election.desktop.workspace import WorkspaceController
@@ -53,7 +54,13 @@ class DesktopController(QObject):
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
         self._staff = StaffController(self._authorized_request, self)
         self._staff.accessChanged.connect(self._access_changed)
-        self._workspace = WorkspaceController(self._authorized_request, self)
+        self._polling = PollingController(self._authorized_request, self)
+        self._workspace = WorkspaceController(
+            self._authorized_request, self,
+            selection_guard=lambda: bool(self._polling.property("state")["dirty"]
+                                         or self._polling.property("state")["busy"]),
+        )
+        self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
         self._workspace.contextChanged.connect(self._workspace_changed)
         self._generation = 0
         self._refreshing = False
@@ -101,8 +108,13 @@ class DesktopController(QObject):
     def workspace(self) -> WorkspaceController:
         return self._workspace
 
+    @Property(QObject, constant=True)
+    def polling(self) -> PollingController:
+        return self._polling
+
     def _workspace_changed(self) -> None:
         context = self._workspace.property("state")["selected"]
+        self._polling.set_context(context)
         self._state["election"] = context.get("election") or self._state["active_election"]
         self._state["constituency"] = context.get("constituency")
         self._state["station"] = context.get("station")
@@ -416,6 +428,7 @@ class DesktopController(QObject):
             self._lifecycle.refresh()
             self._staff.refresh()
             self._workspace.refresh()
+            self._polling.refresh()
             self._refresh_active_election()
             self.stateChanged.emit()
 
@@ -440,6 +453,7 @@ class DesktopController(QObject):
         self._lifecycle.reset()
         self._staff.reset()
         self._workspace.reset()
+        self._polling.reset()
         self.eraseSecrets.emit()
 
     @Slot()

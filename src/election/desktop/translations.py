@@ -218,6 +218,79 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "activation_confirmation": "啟用所選選舉供所有票站使用？同一時間只可進行一場選舉。",
         "active": "進行中",
         "finalized": "已完成",
+        "polling_events": "開站及關站記錄",
+        "polling_schedule_summary": "時間表與最新記錄",
+        "schedule_is_not_actual": "預定時間不代表票站已開放、已停止接納新到達者或已服務完畢。",
+        "opening": "實際開站",
+        "admission_closure": "停止接納新到達者",
+        "queue_clear_estimate": "預計隊伍清理時間",
+        "service_completion": "完成服務排隊選民",
+        "not_recorded": "尚未記錄",
+        "submitted": "已提交，待主管確認",
+        "approved": "已確認",
+        "missing": "尚未記錄",
+        "on_time": "準時",
+        "delayed": "延遲",
+        "select_polling_event": "選擇開站或關站事項",
+        "actual_opening_at": "實際開站時間",
+        "admission_closed_at": "停止接納新到達者的時間",
+        "queue_observed_at": "作出隊伍估算的時間",
+        "actual_service_completed_at": "實際完成服務排隊選民的時間",
+        "estimated_queue_clear_at": "預計完成服務排隊選民的時間",
+        "opening_status": "開站情況",
+        "opening_delay_reason": "延遲開站原因（延遲時必填）",
+        "event_reason": "事項說明（如適用）",
+        "amendment_reason": "修訂原因",
+        "polling_time_hint": (
+            "請輸入香港時間 YYYY-MM-DD HH:mm。未發生的實際事"
+            "項可留空儲存草稿；提交前須填妥。"
+        ),
+        "queue_estimate_is_forecast": (
+            "這是預測，並不代表隊伍已清理或投票工作已完成。請另行記錄實際完成"
+            "服務時間。"
+        ),
+        "polling_read_only": "只有投票站職員可填寫事項；主管使用自己的帳戶確認已提交的修訂版本。",
+        "save_polling_draft": "儲存事項草稿",
+        "submit_polling": "提交此修訂版本",
+        "amend_polling": "建立修訂草稿",
+        "approve_polling": "主管確認",
+        "approval_password": "您目前的主管帳戶密碼",
+        "polling_approval_hint": (
+            "請核對此事項及修訂版本，使用目前登入的主管帳戶密碼確認。密碼不會"
+            "儲存在記錄內。"
+        ),
+        "polling_amendment_hint": (
+            "輸入更正內容及修訂原因，再建立新草稿。較早版本及其確認會保留；新"
+            "草稿須重新提交及確認。"
+        ),
+        "polling_history": "事項修訂及確認記錄",
+        "no_polling_history": "此事項尚無已儲存的記錄。",
+        "server_entry": "伺服器記錄時間",
+        "entered_by": "記錄職員編號",
+        "submission": "提交資料",
+        "submitted_by": "提交職員編號",
+        "approval": "主管確認資料",
+        "approved_by": "確認主管編號",
+        "planned_time_basis": "所依據的預定時間",
+        "polling_validation": (
+            "請檢查實際時間、預計時間及原因。實際事項不可在未來發生，事項先後"
+            "須一致，延遲開站須說明原因。"
+        ),
+        "active_election_required": "只可記錄進行中選舉的票站事項。請先由管理員啟用選舉。",
+        "polling_officer_required": "只有獲指派的投票站職員可填寫及提交此事項。",
+        "supervisor_required": "只有獲指派的主管可確認此事項。",
+        "polling_state_conflict": (
+            "事項狀態已改變，無法完成此操作。您的輸入已保留，請重新載入後核對"
+            "。"
+        ),
+        "unsaved_polling_changes": "表格有未儲存的內容。請先儲存，或捨棄變更後繼續。",
+        "polling_saved": "事項草稿已儲存，尚未提交。",
+        "polling_submitted": "此修訂版本已提交，待主管確認。",
+        "polling_approved": "主管已確認此修訂版本。",
+        "polling_amended": "已建立修訂草稿。較早版本及確認已保留；請核對後重新提交。",
+        "polling_newer_revision": (
+            "已有較新的事項版本。您檢視的版本及輸入已保留；請重新載入後核對。"
+        ),
     },
     "sc": {
         "app_name": "选举管理及投票系统",
@@ -436,6 +509,79 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "activation_confirmation": "启用所选选举供所有票站使用？同一时间只可进行一场选举。",
         "active": "进行中",
         "finalized": "已完成",
+        "polling_events": "开站及关站记录",
+        "polling_schedule_summary": "时间表与最新记录",
+        "schedule_is_not_actual": "预定时间不代表票站已开放、已停止接纳新到达者或已服务完毕。",
+        "opening": "实际开站",
+        "admission_closure": "停止接纳新到达者",
+        "queue_clear_estimate": "预计队伍清理时间",
+        "service_completion": "完成服务排队选民",
+        "not_recorded": "尚未记录",
+        "submitted": "已提交，待主管确认",
+        "approved": "已确认",
+        "missing": "尚未记录",
+        "on_time": "准时",
+        "delayed": "延迟",
+        "select_polling_event": "选择开站或关站事项",
+        "actual_opening_at": "实际开站时间",
+        "admission_closed_at": "停止接纳新到达者的时间",
+        "queue_observed_at": "作出队伍估算的时间",
+        "actual_service_completed_at": "实际完成服务排队选民的时间",
+        "estimated_queue_clear_at": "预计完成服务排队选民的时间",
+        "opening_status": "开站情况",
+        "opening_delay_reason": "延迟开站原因（延迟时必填）",
+        "event_reason": "事项说明（如适用）",
+        "amendment_reason": "修订原因",
+        "polling_time_hint": (
+            "请输入香港时间 YYYY-MM-DD HH:mm。未发生的实际事"
+            "项可留空保存草稿；提交前须填妥。"
+        ),
+        "queue_estimate_is_forecast": (
+            "这是预测，并不代表队伍已清理或投票工作已完成。请另行记录实际完成"
+            "服务时间。"
+        ),
+        "polling_read_only": "只有投票站职员可填写事项；主管使用自己的账户确认已提交的修订版本。",
+        "save_polling_draft": "保存事项草稿",
+        "submit_polling": "提交此修订版本",
+        "amend_polling": "建立修订草稿",
+        "approve_polling": "主管确认",
+        "approval_password": "您当前的主管账户密码",
+        "polling_approval_hint": (
+            "请核对此事项及修订版本，使用当前登录的主管账户密码确认。密码不会"
+            "保存在记录内。"
+        ),
+        "polling_amendment_hint": (
+            "输入更正内容及修订原因，再建立新草稿。较早版本及其确认会保留；新"
+            "草稿须重新提交及确认。"
+        ),
+        "polling_history": "事项修订及确认记录",
+        "no_polling_history": "此事项尚无已保存的记录。",
+        "server_entry": "服务器记录时间",
+        "entered_by": "记录职员编号",
+        "submission": "提交资料",
+        "submitted_by": "提交职员编号",
+        "approval": "主管确认资料",
+        "approved_by": "确认主管编号",
+        "planned_time_basis": "所依据的预定时间",
+        "polling_validation": (
+            "请检查实际时间、预计时间及原因。实际事项不可在未来发生，事项先后"
+            "须一致，延迟开站须说明原因。"
+        ),
+        "active_election_required": "只可记录进行中选举的票站事项。请先由管理员启用选举。",
+        "polling_officer_required": "只有获指派的投票站职员可填写及提交此事项。",
+        "supervisor_required": "只有获指派的主管可确认此事项。",
+        "polling_state_conflict": (
+            "事项状态已改变，无法完成此操作。您的输入已保留，请重新载入后核对"
+            "。"
+        ),
+        "unsaved_polling_changes": "表格有未保存的内容。请先保存，或放弃更改后继续。",
+        "polling_saved": "事项草稿已保存，尚未提交。",
+        "polling_submitted": "此修订版本已提交，待主管确认。",
+        "polling_approved": "主管已确认此修订版本。",
+        "polling_amended": "已建立修订草稿。较早版本及确认已保留；请核对后重新提交。",
+        "polling_newer_revision": (
+            "已有较新的事项版本。您查看的版本及输入已保留；请重新载入后核对。"
+        ),
     },
     "en": {
         "app_name": "Election Management and Voting System",
@@ -691,5 +837,100 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "active": "Active",
         "finalized": "Finalized",
+        "polling_events": "Opening and closing records",
+        "polling_schedule_summary": "Schedule and latest records",
+        "schedule_is_not_actual": (
+            "Planned times do not confirm opening, closure to new arrivals, or "
+            "completion of service."
+        ),
+        "opening": "Actual opening",
+        "admission_closure": "Closure to new arrivals",
+        "queue_clear_estimate": "Queue-clear estimate",
+        "service_completion": "Completion of service to queued electors",
+        "not_recorded": "Not recorded",
+        "submitted": "Submitted for review",
+        "approved": "Approved",
+        "missing": "Not recorded",
+        "on_time": "On time",
+        "delayed": "Delayed",
+        "select_polling_event": "Select an opening or closing event",
+        "actual_opening_at": "Actual opening time",
+        "admission_closed_at": "Time admission to new arrivals closed",
+        "queue_observed_at": "Time the queue estimate was made",
+        "actual_service_completed_at": "Actual completion of service to queued electors",
+        "estimated_queue_clear_at": "Estimated completion of service to queued electors",
+        "opening_status": "Opening status",
+        "opening_delay_reason": "Opening delay reason (required when delayed)",
+        "event_reason": "Event explanation (if applicable)",
+        "amendment_reason": "Reason for amendment",
+        "polling_time_hint": (
+            "Enter Hong Kong time as YYYY-MM-DD HH:mm. An event that has not "
+            "occurred may remain blank in a saved draft; complete it before "
+            "submission."
+        ),
+        "queue_estimate_is_forecast": (
+            "This is a forecast. Record actual completion of service separately; "
+            "an estimate does not confirm a cleared queue or a completed poll."
+        ),
+        "polling_read_only": (
+            "Polling Officers prepare records. Supervisors use their own account "
+            "to approve a submitted revision."
+        ),
+        "save_polling_draft": "Save event draft",
+        "submit_polling": "Submit this revision",
+        "amend_polling": "Create amendment draft",
+        "approve_polling": "Supervisor approval",
+        "approval_password": "Your current Supervisor account password",
+        "polling_approval_hint": (
+            "Review this event and revision, then confirm with the password of "
+            "your signed-in Supervisor account. The password is not stored in the "
+            "record."
+        ),
+        "polling_amendment_hint": (
+            "Enter the corrected details and amendment reason, then create a new "
+            "draft. Earlier revisions and approvals remain in history; submit the "
+            "new draft for fresh approval."
+        ),
+        "polling_history": "Event revision and approval history",
+        "no_polling_history": "No saved records for this event.",
+        "server_entry": "Server entry time",
+        "entered_by": "Entered by account ID",
+        "submission": "Submission",
+        "submitted_by": "Submitted by account ID",
+        "approval": "Approval",
+        "approved_by": "Approved by account ID",
+        "planned_time_basis": "Planned time used for this revision",
+        "polling_validation": (
+            "Check event times, the forecast and reasons. Actual events cannot be "
+            "in the future, recorded events must be in order, and a delayed "
+            "opening requires a reason."
+        ),
+        "active_election_required": (
+            "Records can be changed only for an active election. An Administrator "
+            "must activate the election first."
+        ),
+        "polling_officer_required": (
+            "Only an assigned Polling Officer can prepare and submit this event."
+        ),
+        "supervisor_required": "Only an assigned Supervisor can approve this event.",
+        "polling_state_conflict": (
+            "The event status has changed. Your input is retained; reload the "
+            "saved record and review it before continuing."
+        ),
+        "unsaved_polling_changes": (
+            "The form has unsaved changes. Save it, or discard the changes before "
+            "continuing."
+        ),
+        "polling_saved": "Event draft saved; it has not been submitted.",
+        "polling_submitted": "This revision was submitted for Supervisor approval.",
+        "polling_approved": "The Supervisor approved this revision.",
+        "polling_amended": (
+            "Amendment draft created. Earlier revisions and approvals are "
+            "retained; review and submit the new draft."
+        ),
+        "polling_newer_revision": (
+            "A newer event revision is available. Your reviewed version and input "
+            "are retained; reload and compare before continuing."
+        ),
     },
 }

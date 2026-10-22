@@ -1,5 +1,6 @@
 """An authenticated staff member's assigned station context."""
 
+from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 
@@ -12,9 +13,16 @@ class WorkspaceController(QObject):
     stateChanged = Signal()
     contextChanged = Signal()
 
-    def __init__(self, request: AuthorizedRequest, parent: QObject) -> None:
+    def __init__(
+        self,
+        request: AuthorizedRequest,
+        parent: QObject,
+        *,
+        selection_guard: Callable[[], bool] | None = None,
+    ) -> None:
         super().__init__(parent)
         self._request = request
+        self._selection_guard = selection_guard
         self._generation = 0
         self._available = False
         self._state: dict[str, Any] = {}
@@ -23,6 +31,10 @@ class WorkspaceController(QObject):
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
         return deepcopy(self._state)
+
+    @Property(bool, notify=stateChanged)
+    def selectionGuarded(self) -> bool:
+        return bool(self._selection_guard and self._selection_guard())
 
     def reset(self) -> None:
         self._generation += 1
@@ -94,8 +106,14 @@ class WorkspaceController(QObject):
         self._request("/api/workspace/stations", "GET", None, loaded, failed)
 
     @Slot(int)
-    def selectStation(self, station_id: int) -> None:
+    @Slot(int, bool)
+    def selectStation(self, station_id: int, discard: bool = False) -> None:
         if not self._available or self._state["busy"]:
+            return
+        selected_id = self._state["selected"].get("station", {}).get("id")
+        if station_id != selected_id and self.selectionGuarded and not discard:
+            self._state["error"] = "unsaved_polling_changes"
+            self.stateChanged.emit()
             return
         self._generation += 1
         generation = self._generation
