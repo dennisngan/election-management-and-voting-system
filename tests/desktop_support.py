@@ -34,6 +34,9 @@ class HttpsServer:
     lock: threading.Lock = field(default_factory=threading.Lock)
     hold_profile: bool = False
     hold_password_response: bool = False
+    hold_configuration_list: bool = False
+    configuration_list_entered: threading.Event = field(default_factory=threading.Event)
+    release_configuration_list: threading.Event = field(default_factory=threading.Event)
     profile_entered: threading.Event = field(default_factory=threading.Event)
     release_profile: threading.Event = field(default_factory=threading.Event)
     profile_finished: threading.Event = field(default_factory=threading.Event)

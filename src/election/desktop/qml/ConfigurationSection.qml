@@ -95,7 +95,12 @@ Rectangle {
                     verticalAlignment: Text.AlignVCenter
                 }
             }
-            onActivated: card.choose(card.kind, card.records[currentIndex].id)
+            onActivated: {
+                card.choose(card.kind, card.records[currentIndex].id)
+                // Selection changes only when the requested record actually loads.
+                // A cancelled dirty-form dialog must keep the picker on that form.
+                currentIndex = Qt.binding(function() { return card.selectedIndex() })
+            }
             onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { card.reveal(recordPicker) })
         }
         TextCaption {

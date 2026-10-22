@@ -42,6 +42,7 @@ class ConfigurationController(QObject):
         self._keys = {kind: str(uuid4()) for kind in KINDS}
         self._state = {
             "busy": False,
+            "refreshing": False,
             "error": "",
             "notice": "",
             **{name: [] for name in LISTS.values()},
@@ -58,21 +59,29 @@ class ConfigurationController(QObject):
         self._available = available
 
     def _send(
-        self, path: str, method: str, payload: dict[str, Any] | None, success: ResultHandler
+        self,
+        path: str,
+        method: str,
+        payload: dict[str, Any] | None,
+        success: ResultHandler,
+        *,
+        background: bool = False,
     ) -> None:
         generation = self._generation
-        self._state["busy"] = True
+        activity = "refreshing" if background else "busy"
+        self._state[activity] = True
         self.stateChanged.emit()
 
         def done(data: dict[str, Any]) -> None:
             if generation == self._generation:
-                self._state["busy"] = False
+                self._state[activity] = False
                 success(data)
                 self.stateChanged.emit()
 
         def failed(code: str) -> None:
             if generation == self._generation:
-                self._state.update(busy=False, error=code, notice="")
+                self._state[activity] = False
+                self._state.update(error=code, notice="")
                 self.stateChanged.emit()
 
         self._request(path, method, payload, done, failed)
@@ -91,7 +100,7 @@ class ConfigurationController(QObject):
 
     @Slot()
     def refresh(self) -> None:
-        if not self._available or self._state["busy"]:
+        if not self._available or self._state["busy"] or self._state["refreshing"]:
             return
 
         def fetch(index: int) -> None:
@@ -109,7 +118,7 @@ class ConfigurationController(QObject):
                 self._state[LISTS[kind]] = items
                 fetch(index + 1)
 
-            self._send(self._path(kind), "GET", None, listed)
+            self._send(self._path(kind), "GET", None, listed, background=True)
 
         fetch(0)
 
@@ -137,7 +146,7 @@ class ConfigurationController(QObject):
         if any(self._state["dirty"][child] for child in KINDS[index:]) and not discard:
             return False
         self._generation += 1
-        self._state.update(error="", notice="")
+        self._state.update(error="", notice="", refreshing=False)
         if row_id == 0:
             self._keys[kind] = str(uuid4())
             self._accept(kind, {}, clear_children=True)
@@ -200,6 +209,10 @@ class ConfigurationController(QObject):
             self._state["error"] = "configuration_validation"
             self.stateChanged.emit()
             return
+        # A save supersedes any older list snapshots already in flight. Inputs stay
+        # editable during list refresh; only the explicit save/load owns `busy`.
+        self._generation += 1
+        self._state["refreshing"] = False
         row = self._state["selected"][kind]
         path, method = self._path(kind), "POST"
         if row:

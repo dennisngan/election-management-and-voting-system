@@ -44,6 +44,9 @@ def main() -> None:
         if request.method == "POST" and request.url.path == "/api/auth/login":
             delay = float(json.loads(SETTINGS.read_text()).get("login_delay", 0))
             await asyncio.sleep(max(0, min(delay, 10)))
+        if request.method == "GET" and request.url.path == "/api/elections":
+            delay = float(json.loads(SETTINGS.read_text()).get("configuration_delay", 0))
+            await asyncio.sleep(max(0, min(delay, 7)))
         return await call_next(request)
 
     uvicorn.run(

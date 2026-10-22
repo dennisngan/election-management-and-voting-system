@@ -80,6 +80,14 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
             endpoint.hold_profile = False
             endpoint.profile_entered.set()
             await asyncio.to_thread(endpoint.release_profile.wait, 5)
+        if (
+            request.method == "GET"
+            and request.url.path == "/api/elections"
+            and endpoint.hold_configuration_list
+        ):
+            endpoint.hold_configuration_list = False
+            endpoint.configuration_list_entered.set()
+            await asyncio.to_thread(endpoint.release_configuration_list.wait, 5)
         response = await call_next(request)
         if delayed_profile:
             endpoint.delayed_profile_status = response.status_code
@@ -112,6 +120,7 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
         wait_for(qt_app, lambda: server.started)
         yield endpoint
     finally:
+        endpoint.release_configuration_list.set()
         endpoint.release_profile.set()
         endpoint.release_password_response.set()
         server.should_exit = True

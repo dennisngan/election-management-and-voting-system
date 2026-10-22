@@ -30,22 +30,22 @@ def test_desktop_creates_and_reopens_a_draft_without_losing_unsaved_text(
     setup = desktop.property("configuration")
     assert setup is not None
     setup.open()
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     assert setup.load("election", 0, False)
     setup.setField("election", "name", "  保留原名 Election  ")
     setup.save("election")
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     state = cast(dict[str, Any], setup.property("state"))
     election_id = state["selected"]["election"]["id"]
     assert state["selected"]["election"]["name"] == "  保留原名 Election  "
     setup.setField("election", "name", "尚未儲存的改動")
     setup.refresh()
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     assert setup.property("state")["forms"]["election"]["name"] == "尚未儲存的改動"
     assert setup.load("election", election_id, False) is False
     assert setup.property("state")["forms"]["election"]["name"] == "尚未儲存的改動"
     assert setup.load("election", election_id, True)
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     assert setup.property("state")["forms"]["election"]["name"] == "  保留原名 Election  "
 
 
@@ -62,13 +62,13 @@ def test_desktop_maintains_two_candidate_lists_and_localized_validation(
     setup.load("election", 0, False)
     setup.setField("election", "name", "兩區桌面測試")
     setup.save("election")
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     for code, name in (("N", "北區"), ("S", "南區")):
         assert setup.load("constituency", 0, False)
         setup.setField("constituency", "code", code)
         setup.setField("constituency", "name", name)
         setup.save("constituency")
-        wait_for(qt_app, lambda: not setup.property("state")["busy"])
+        wait_for(qt_app, lambda: setup_idle(setup))
         assert setup.load("candidate", 0, False)
         setup.setField("candidate", "name", "  候選人 Example  ")
         for locale in ("tc", "sc", "en"):
@@ -79,12 +79,12 @@ def test_desktop_maintains_two_candidate_lists_and_localized_validation(
             assert setup.property("state")["forms"]["candidate"]["name"] == "  候選人 Example  "
         setup.setField("candidate", "ballot_number", "1")
         setup.save("candidate")
-        wait_for(qt_app, lambda: not setup.property("state")["busy"])
+        wait_for(qt_app, lambda: setup_idle(setup))
         assert len(setup.property("state")["candidates"]) == 1
         assert setup.property("state")["candidates"][0]["ballot_number"] == 1
     north = next(row for row in setup.property("state")["constituencies"] if row["code"] == "N")
     assert setup.load("constituency", north["id"], False)
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     assert len(setup.property("state")["candidates"]) == 1
     assert setup.property("state")["candidates"][0]["constituency_id"] == north["id"]
     desktop.signOut()
@@ -106,7 +106,7 @@ def test_another_client_refresh_preserves_form_and_a_stale_save_is_rejected(
     setup.load("election", 0, False)
     setup.setField("election", "name", "原來名稱")
     setup.save("election")
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     selected = setup.property("state")["selected"]["election"]
     setup.setField("election", "name", "我的未儲存名稱")
     with TestClient(create_app(database_url, now=https_server.clock)) as other:
@@ -117,7 +117,7 @@ def test_another_client_refresh_preserves_form_and_a_stale_save_is_rejected(
         path = f"/api/elections/{selected['id']}"
         assert other.put(path, json={"name": "另一客戶端已儲存", "revision": 1}).status_code == 200
         setup.refresh()
-        wait_for(qt_app, lambda: not setup.property("state")["busy"])
+        wait_for(qt_app, lambda: setup_idle(setup))
         assert setup.property("state")["forms"]["election"]["name"] == "我的未儲存名稱"
         assert any(
             row["name"] == "另一客戶端已儲存"
@@ -128,6 +128,11 @@ def test_another_client_refresh_preserves_form_and_a_stale_save_is_rejected(
         wait_for(qt_app, lambda: setup.property("state")["error"] == "revision_conflict")
         assert setup.property("state")["forms"]["election"]["name"] == "我的未儲存名稱"
         assert other.get(path).json()["name"] == "另一客戶端已儲存"
+
+
+def setup_idle(setup: Any) -> bool:
+    state = setup.property("state")
+    return not state["busy"] and not state.get("refreshing", False)
 
 
 def ready_setup(
@@ -149,7 +154,7 @@ def save_form(setup: Any, qt_app: QCoreApplication, kind: str, values: dict[str,
     for field, value in values.items():
         setup.setField(kind, field, value)
     setup.save(kind)
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     assert setup.property("state")["error"] == ""
     return setup.property("state")["selected"][kind]
 
@@ -176,7 +181,7 @@ def test_saving_election_and_constituency_preserves_dirty_descendant_forms(
     setup.setField("constituency", "name", "尚未儲存選區")
     setup.setField("election", "name", "已更改選舉")
     setup.save("election")
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     after_election = setup.property("state")
     assert after_election["selected"]["election"]["name"] == "已更改選舉"
     assert after_election["selected"]["constituency"] == rows["constituency"]
@@ -186,7 +191,7 @@ def test_saving_election_and_constituency_preserves_dirty_descendant_forms(
     assert after_election["forms"]["candidate"]["name"] == "尚未儲存候選人"
     assert after_election["dirty"]["candidate"] is True
     setup.save("constituency")
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     after_constituency = setup.property("state")
     assert after_constituency["selected"]["constituency"]["name"] == "尚未儲存選區"
     assert after_constituency["selected"]["candidate"] == rows["candidate"]
@@ -208,7 +213,7 @@ def test_saving_parent_preserves_a_new_unsaved_child_form(
     setup.setField("constituency", "name", "尚未儲存新選區")
     setup.setField("election", "name", "父記錄已儲存")
     setup.save("election")
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     state = setup.property("state")
     assert state["forms"]["constituency"] == {"code": "NEW", "name": "尚未儲存新選區"}
     assert state["selected"]["constituency"] == {}
@@ -229,19 +234,19 @@ def test_switching_parent_requires_discard_and_then_loads_saved_context(
     if parent == "election":
         destination = save_form(setup, qt_app, "election", {"name": "另一選舉"})
         assert setup.load("election", rows["election"]["id"], False)
-        wait_for(qt_app, lambda: not setup.property("state")["busy"])
+        wait_for(qt_app, lambda: setup_idle(setup))
     else:
         destination = save_form(setup, qt_app, "constituency", {"code": "S", "name": "南區"})
     assert setup.load("constituency", rows["constituency"]["id"], False)
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     assert setup.load("candidate", rows["candidate"]["id"], False)
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     setup.setField("candidate", "name", "不可自動丟失的文字")
     before = setup.property("state")
     assert setup.load(parent, destination["id"], False) is False
     assert setup.property("state") == before
     assert setup.load(parent, destination["id"], True) is True
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     after = setup.property("state")
     assert after["selected"][parent] == destination
     assert after["forms"][parent]["name"] == destination["name"]
@@ -286,7 +291,7 @@ def test_malformed_ballot_numbers_are_localized_without_submitting_or_crashing(
         assert state["forms"]["candidate"]["name"] == "原有候選人"
         assert expected[locale] in desktop.property("texts")[state["error"]]
     setup.refresh()
-    wait_for(qt_app, lambda: not setup.property("state")["busy"])
+    wait_for(qt_app, lambda: setup_idle(setup))
     assert https_server.request_count("PUT", candidate_path) == before
 
 
@@ -303,14 +308,14 @@ def test_second_desktop_sees_new_saved_draft_without_overwriting_its_unsaved_for
         wait_for(qt_app, lambda: state_of(second)["phase"] == "workspace")
         other_setup = second.property("configuration")
         other_setup.open()
-        wait_for(qt_app, lambda: not other_setup.property("state")["busy"])
+        wait_for(qt_app, lambda: setup_idle(other_setup))
         original_ids = {row["id"] for row in other_setup.property("state")["elections"]}
         assert other_setup.load("election", 0, False)
         other_setup.setField("election", "name", "另一桌面的未儲存選舉")
         created = save_form(setup, qt_app, "election", {"name": "其他桌面剛儲存的新選舉"})
         assert created["id"] not in original_ids
         other_setup.refresh()
-        wait_for(qt_app, lambda: not other_setup.property("state")["busy"])
+        wait_for(qt_app, lambda: setup_idle(other_setup))
         state = other_setup.property("state")
         assert any(row == created for row in state["elections"])
         assert state["forms"]["election"]["name"] == "另一桌面的未儲存選舉"
@@ -321,3 +326,30 @@ def test_second_desktop_sees_new_saved_draft_without_overwriting_its_unsaved_for
         second.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         qt_app.processEvents()
+
+
+def test_background_refresh_accepts_local_edits_while_the_list_response_is_pending(
+    desktop: DesktopController,
+    https_server: HttpsServer,
+    account: dict[str, str],
+    qt_app: QCoreApplication,
+) -> None:
+    setup = ready_setup(desktop, https_server, account, qt_app)
+    saved = save_form(setup, qt_app, "election", {"name": "原有選舉名稱"})
+    https_server.hold_configuration_list = True
+    setup.refresh()
+    wait_for(qt_app, https_server.configuration_list_entered.is_set)
+    try:
+        setup.setField("election", "name", "重新整理期間輸入的新名稱")
+        assert setup.property("state")["forms"]["election"]["name"] == "重新整理期間輸入的新名稱"
+    finally:
+        https_server.release_configuration_list.set()
+    wait_for(
+        qt_app,
+        lambda: setup_idle(setup),
+    )
+    state = setup.property("state")
+    assert state["forms"]["election"]["name"] == "重新整理期間輸入的新名稱"
+    assert state["dirty"]["election"] is True
+    assert state["selected"]["election"] == saved
+    assert any(row == saved for row in state["elections"])

@@ -24,8 +24,8 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         Label { text: page.t("election_setup"); font.pixelSize: 28; font.weight: Font.Medium; color: "#25344b"; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-        BusyIndicator { running: page.editorState.busy; visible: running; implicitWidth: 28; implicitHeight: 28; Accessible.name: page.t("loading") }
-        Button { text: page.t("refresh"); flat: true; enabled: !page.editorState.busy; onClicked: page.config.refresh() }
+        BusyIndicator { running: page.editorState.busy || page.editorState.refreshing; visible: running; implicitWidth: 28; implicitHeight: 28; Accessible.name: page.t("loading") }
+        Button { text: page.t("refresh"); flat: true; enabled: !page.editorState.busy && !page.editorState.refreshing; onClicked: page.config.refresh() }
     }
     Rectangle {
         id: message
