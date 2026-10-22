@@ -3,27 +3,15 @@
 import csv
 from collections.abc import Callable, Generator
 from datetime import UTC, datetime, timedelta, timezone
-from io import BytesIO, StringIO
+from io import StringIO
 from typing import Annotated, Any, Literal
-from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from reportlab.lib import colors  # type: ignore[import-untyped]
-from reportlab.lib.pagesizes import A4, landscape  # type: ignore[import-untyped]
-from reportlab.lib.styles import ParagraphStyle  # type: ignore[import-untyped]
-from reportlab.lib.units import mm  # type: ignore[import-untyped]
-from reportlab.platypus import (  # type: ignore[import-untyped]
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
 from sqlalchemy.orm import Session
 
+from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
 from election.server.queue import queue_freshness, queue_snapshot
-from election.server.report_fonts import font_for_pdf
 
 type ReportLocale = Literal["tc", "sc", "en"]
 HKT = timezone(timedelta(hours=8), "HKT")
@@ -257,7 +245,6 @@ def csv_report(projection: dict[str, Any]) -> bytes:
 
 def pdf_report(projection: dict[str, Any]) -> bytes:
     labels = projection["labels"]
-    metadata, history = metadata_rows(projection), history_rows(projection)
     footer = (
         projection["scope"]["station"]["code"]
         + " · "
@@ -267,114 +254,15 @@ def pdf_report(projection: dict[str, Any]) -> bytes:
         + " · "
         + labels[projection["revision_state"]]
     )
-    rendered = [projection["title"], labels["history"], labels["page"], footer]
-    rendered += [value for row in metadata + history for value in row]
-    if projection["missing"]:
-        rendered.append(labels["empty_history"])
-    with font_for_pdf(rendered) as font_name:
-        output = BytesIO()
-        pagesize = landscape(A4)
-        document = SimpleDocTemplate(
-            output,
-            pagesize=pagesize,
-            leftMargin=12 * mm,
-            rightMargin=12 * mm,
-            topMargin=12 * mm,
-            bottomMargin=15 * mm,
-            title=projection["title"],
-        )
-        body = ParagraphStyle(
-            "QueueBody", fontName=font_name, fontSize=8, leading=11, wordWrap="CJK"
-        )
-        title = ParagraphStyle("QueueTitle", parent=body, fontSize=17, leading=23, spaceAfter=12)
-        heading = ParagraphStyle("QueueHeading", parent=body, fontSize=11, leading=15, spaceAfter=8)
-
-        def paragraph(value: str, style: Any = body) -> Any:
-            return Paragraph(escape(value).replace("\n", "<br/>"), style)
-
-        paired = [
-            metadata[index] + (metadata[index + 1] if index + 1 < len(metadata) else ["", ""])
-            for index in range(0, len(metadata), 2)
-        ]
-        # SimpleDocTemplate's frame reserves six points of padding on each side.
-        table_width = document.width - 12
-        context_table = Table(
-            [[paragraph(value) for value in row] for row in paired],
-            colWidths=[table_width * fraction for fraction in (0.15, 0.35, 0.15, 0.35)],
-            hAlign="LEFT",
-            splitInRow=1,
-        )
-        context_table.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f2f5fa")),
-                    ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#f2f5fa")),
-                    ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dce3ed")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ]
-            )
-        )
-        history_table = Table(
-            [[paragraph(value) for value in row] for row in history],
-            colWidths=[
-                table_width * fraction
-                for fraction in (
-                    0.055,
-                    0.055,
-                    0.13,
-                    0.105,
-                    0.16,
-                    0.16,
-                    0.065,
-                    0.08,
-                    0.19,
-                )
-            ],
-            repeatRows=1,
-            hAlign="LEFT",
-            splitInRow=1,
-        )
-        history_table.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e6eef9")),
-                    (
-                        "ROWBACKGROUNDS",
-                        (0, 1),
-                        (-1, -1),
-                        [colors.white, colors.HexColor("#f7f9fc")],
-                    ),
-                    ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dce3ed")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ]
-            )
-        )
-
-        def page_footer(canvas: Any, doc: Any) -> None:
-            canvas.saveState()
-            canvas.setFont(font_name, 8)
-            canvas.setFillColor(colors.HexColor("#52637b"))
-            canvas.drawString(document.leftMargin, 8 * mm, footer)
-            canvas.drawRightString(
-                pagesize[0] - document.rightMargin, 8 * mm, labels["page"] + " " + str(doc.page)
-            )
-            canvas.restoreState()
-
-        story = [
-            paragraph(projection["title"], title),
-            context_table,
-            Spacer(1, 14),
-            paragraph(labels["history"], heading),
-            history_table,
-        ]
-        if projection["missing"]:
-            story += [Spacer(1, 8), paragraph(labels["empty_history"])]
-        document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
-        return output.getvalue()
+    section = HistoryTable(
+        labels["history"],
+        history_rows(projection),
+        (0.055, 0.055, 0.13, 0.105, 0.16, 0.16, 0.065, 0.08, 0.19),
+        labels["empty_history"] if projection["missing"] else "",
+    )
+    return history_pdf(
+        projection["title"], metadata_rows(projection), [section], footer, labels["page"]
+    )
 
 
 def queue_reports_router(

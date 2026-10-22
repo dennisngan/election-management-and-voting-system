@@ -1,0 +1,132 @@
+"""Shared landscape layout for station history statements."""
+
+from dataclasses import dataclass
+from io import BytesIO
+from typing import Any
+from xml.sax.saxutils import escape
+
+from reportlab.lib import colors  # type: ignore[import-untyped]
+from reportlab.lib.pagesizes import A4, landscape  # type: ignore[import-untyped]
+from reportlab.lib.styles import ParagraphStyle  # type: ignore[import-untyped]
+from reportlab.lib.units import mm  # type: ignore[import-untyped]
+from reportlab.platypus import (  # type: ignore[import-untyped]
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+from election.server.report_fonts import font_for_pdf
+
+
+@dataclass(frozen=True)
+class HistoryTable:
+    title: str
+    rows: list[list[str]]
+    widths: tuple[float, ...]
+    empty_message: str = ""
+
+
+def history_pdf(
+    title: str,
+    metadata: list[list[str]],
+    sections: list[HistoryTable],
+    footer: str,
+    page_label: str,
+) -> bytes:
+    rendered = [title, footer, page_label, *[value for row in metadata for value in row]]
+    for section in sections:
+        rendered += [section.title, section.empty_message]
+        rendered += [value for row in section.rows for value in row]
+    with font_for_pdf(rendered) as font_name:
+        output = BytesIO()
+        pagesize = landscape(A4)
+        document = SimpleDocTemplate(
+            output,
+            pagesize=pagesize,
+            leftMargin=12 * mm,
+            rightMargin=12 * mm,
+            topMargin=12 * mm,
+            bottomMargin=15 * mm,
+            title=title,
+        )
+        body = ParagraphStyle(
+            "HistoryBody", fontName=font_name, fontSize=8, leading=11, wordWrap="CJK"
+        )
+        title_style = ParagraphStyle(
+            "HistoryTitle", parent=body, fontSize=17, leading=23, spaceAfter=12
+        )
+        heading = ParagraphStyle(
+            "HistoryHeading", parent=body, fontSize=11, leading=15, spaceAfter=8
+        )
+
+        def paragraph(value: str, style: Any = body) -> Any:
+            return Paragraph(escape(value).replace("\n", "<br/>"), style)
+
+        paired = [
+            metadata[index] + (metadata[index + 1] if index + 1 < len(metadata) else ["", ""])
+            for index in range(0, len(metadata), 2)
+        ]
+        # SimpleDocTemplate's frame reserves six points of padding on each side.
+        table_width = document.width - 12
+        context_table = Table(
+            [[paragraph(value) for value in row] for row in paired],
+            colWidths=[table_width * fraction for fraction in (0.15, 0.35, 0.15, 0.35)],
+            hAlign="LEFT",
+            splitInRow=1,
+        )
+        context_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f2f5fa")),
+                    ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#f2f5fa")),
+                    ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dce3ed")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
+        story = [paragraph(title, title_style), context_table]
+        for section in sections:
+            table = Table(
+                [[paragraph(value) for value in row] for row in section.rows],
+                colWidths=[table_width * fraction for fraction in section.widths],
+                repeatRows=1,
+                hAlign="LEFT",
+                splitInRow=1,
+            )
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e6eef9")),
+                        (
+                            "ROWBACKGROUNDS",
+                            (0, 1),
+                            (-1, -1),
+                            [colors.white, colors.HexColor("#f7f9fc")],
+                        ),
+                        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dce3ed")),
+                        ("TOPPADDING", (0, 0), (-1, -1), 5),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ]
+                )
+            )
+            story += [Spacer(1, 14), paragraph(section.title, heading), table]
+            if section.empty_message:
+                story += [Spacer(1, 8), paragraph(section.empty_message)]
+
+        def page_footer(canvas: Any, doc: Any) -> None:
+            canvas.saveState()
+            canvas.setFont(font_name, 8)
+            canvas.setFillColor(colors.HexColor("#52637b"))
+            canvas.drawString(document.leftMargin, 8 * mm, footer)
+            canvas.drawRightString(
+                pagesize[0] - document.rightMargin, 8 * mm, page_label + " " + str(doc.page)
+            )
+            canvas.restoreState()
+
+        document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
+        return output.getvalue()

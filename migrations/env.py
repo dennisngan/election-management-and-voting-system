@@ -6,6 +6,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from election.server import (  # noqa: F401 -- register tables with Base.metadata
+    box_models,
     configuration_models,
     lifecycle_models,
     models,
@@ -14,6 +15,7 @@ from election.server import (  # noqa: F401 -- register tables with Base.metadat
     staff_models,
     station_models,
     stock_models,
+    turnout_models,
 )
 from election.server.config import Settings
 from election.server.db import Base

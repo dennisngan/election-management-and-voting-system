@@ -13,6 +13,8 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from election.server.box_reports import box_reports_router
+from election.server.boxes import box_router
 from election.server.config import Settings
 from election.server.configuration import configuration_router
 from election.server.db import make_engine
@@ -26,6 +28,7 @@ from election.server.staff import staff_router, station_access_router
 from election.server.stations import stations_router
 from election.server.stock import stock_router
 from election.server.stock_reports import stock_reports_router
+from election.server.turnout import turnout_router
 
 
 def utc_now() -> datetime:
@@ -125,6 +128,9 @@ def create_app(
     app.include_router(polling_router(database, ready_account, timestamp))
     app.include_router(queue_router(database, ready_account, timestamp))
     app.include_router(queue_reports_router(database, ready_account, timestamp))
+    app.include_router(box_reports_router(database, ready_account, timestamp))
+    app.include_router(box_router(database, ready_account, timestamp))
+    app.include_router(turnout_router(database, ready_account, timestamp))
     app.include_router(stock_router(database, ready_account, timestamp))
     app.include_router(stock_reports_router(database, ready_account, timestamp))
 

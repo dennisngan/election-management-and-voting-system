@@ -286,6 +286,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "已有較新的事項版本。您檢視的版本及輸入已保留；請重新載入後核對。"
         ),
+        "boxes": "票箱交收與點票事項",
+        "box_validation": (
+            "請檢查票箱、封條、實際時間及相關事項。時間不能在未來，"
+            "並須符合已記錄的交收次序。"
+        ),
+        "box_departure_required": "尚未記錄票箱離站，不能確認接收送抵的票箱。",
+        "box_receipt_required": "請先記錄接收此票箱，再記錄開箱時間。",
+        "box_reference_exists": "來源票站已有相同識別資料的票箱，請核對現有記錄。",
+        "box_state_conflict": "所選的交收事項已記錄或狀態已變更，請重新載入並比較。",
+        "box_not_found": "在獲准的票站範圍內找不到此票箱，請重新載入。",
+        "box_correction_reason_required": "修正已記錄的事項時，必須填寫原因。",
+        "counting_station_required": "此事項只適用於進行本地點票的站點。",
+        "counting_officer_required": "此事項須由獲指派的點票人員記錄。",
+        "unsaved_box_changes": "票箱或點票事項表格有未儲存內容，請先儲存或確認捨棄。",
+        "box_saved": "票箱準備記錄已儲存。",
+        "box_departed": "票箱離站記錄已儲存。",
+        "box_received": "票箱接收記錄已儲存。",
+        "box_corrected": "交收修正已儲存，原有記錄已保留。",
+        "box_milestone_saved": "點票工作事項已儲存。",
+        "box_report_ready": "伺服器目前的交收及事項報表已載入。",
+        "box_exported": "票箱交收報表已儲存至所選檔案。",
+        "box_export_failed": "未能完成匯出，請檢查檔案位置及連線後重試。",
         "queue": "輪候時間",
         "queue_latest": "最新輪候觀察",
         "queue_missing": "尚無輪候觀察，不能視為沒有隊伍。",
@@ -305,8 +327,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "queue_overdue_periods": "已到期的 30 分鐘時段數",
         "queue_form": "記錄輪候情況",
         "queue_form_hint": (
-            "請輸入實際觀察時間，格式為 YYYY-MM-DD HH:mm。"
-            "確認情況不變也會新增一項有時間的記錄。"
+            "請輸入實際觀察時間，格式為 YYYY-MM-DD HH:mm。確認情況不變也會新增一項有時間的記錄。"
         ),
         "queue_reason": "觀察說明（選填）",
         "queue_save": "儲存新觀察",
@@ -319,13 +340,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "queue_confirms": "所確認的記錄編號",
         "queue_current_marker": "最新觀察",
         "queue_newer_revision": (
-            "伺服器有較新的記錄。已保留目前審閱的版本及輸入內容；"
-            "請重新載入並比較後再記錄。"
+            "伺服器有較新的記錄。已保留目前審閱的版本及輸入內容；請重新載入並比較後再記錄。"
         ),
         "queue_validation": "請檢查輪候範圍、香港時間及說明。實際觀察／確認時間不能在未來。",
         "queue_confirmation_requires_current": (
-            "確認不變前，請保留已審閱的輪候範圍並清空觀察說明；"
-            "如情況有變，請儲存新觀察。"
+            "確認不變前，請保留已審閱的輪候範圍並清空觀察說明；如情況有變，請儲存新觀察。"
         ),
         "queue_observation_conflict": "所確認的觀察已變更或尚未存在。請重新載入記錄並比較。",
         "queue_revision_not_found": "找不到所選的輪候歷史版本，請重新載入。",
@@ -695,6 +714,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "已有较新的事项版本。您查看的版本及输入已保留；请重新载入后核对。"
         ),
+        "boxes": "票箱交收与点票事项",
+        "box_validation": (
+            "请检查票箱、封条、实际时间及相关事项。时间不能在未来，"
+            "并须符合已记录的交收次序。"
+        ),
+        "box_departure_required": "尚未记录票箱离站，不能确认接收送抵的票箱。",
+        "box_receipt_required": "请先记录接收此票箱，再记录开箱时间。",
+        "box_reference_exists": "来源票站已有相同识别资料的票箱，请核对现有记录。",
+        "box_state_conflict": "所选的交收事项已记录或状态已更改，请重新载入并比较。",
+        "box_not_found": "在获准的票站范围内找不到此票箱，请重新载入。",
+        "box_correction_reason_required": "修正已记录的事项时，必须填写原因。",
+        "counting_station_required": "此事项只适用于进行本地点票的站点。",
+        "counting_officer_required": "此事项须由获指派的点票人员记录。",
+        "unsaved_box_changes": "票箱或点票事项表格有未保存内容，请先保存或确认舍弃。",
+        "box_saved": "票箱准备记录已保存。",
+        "box_departed": "票箱离站记录已保存。",
+        "box_received": "票箱接收记录已保存。",
+        "box_corrected": "交收修正已保存，原有记录已保留。",
+        "box_milestone_saved": "点票工作事项已保存。",
+        "box_report_ready": "服务器当前的交收及事项报表已载入。",
+        "box_exported": "票箱交收报表已保存至所选文件。",
+        "box_export_failed": "未能完成导出，请检查文件位置及连接后重试。",
         "queue": "轮候时间",
         "queue_latest": "最新轮候观察",
         "queue_missing": "尚无轮候观察，不能视为没有队伍。",
@@ -714,8 +755,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "queue_overdue_periods": "已到期的 30 分钟时段数",
         "queue_form": "记录轮候情况",
         "queue_form_hint": (
-            "请输入实际观察时间，格式为 YYYY-MM-DD HH:mm。"
-            "确认情况不变也会新增一项有时间的记录。"
+            "请输入实际观察时间，格式为 YYYY-MM-DD HH:mm。确认情况不变也会新增一项有时间的记录。"
         ),
         "queue_reason": "观察说明（选填）",
         "queue_save": "保存新观察",
@@ -728,13 +768,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "queue_confirms": "所确认的记录编号",
         "queue_current_marker": "最新观察",
         "queue_newer_revision": (
-            "服务器有较新的记录。已保留当前审阅的版本及输入内容；"
-            "请重新载入并比较后再记录。"
+            "服务器有较新的记录。已保留当前审阅的版本及输入内容；请重新载入并比较后再记录。"
         ),
         "queue_validation": "请检查轮候范围、香港时间及说明。实际观察／确认时间不能在未来。",
         "queue_confirmation_requires_current": (
-            "确认不变前，请保留已审阅的轮候范围并清空观察说明；"
-            "如情况有变，请保存新观察。"
+            "确认不变前，请保留已审阅的轮候范围并清空观察说明；如情况有变，请保存新观察。"
         ),
         "queue_observation_conflict": "所确认的观察已更改或尚未存在。请重新载入记录并比较。",
         "queue_revision_not_found": "找不到所选的轮候历史版本，请重新载入。",
@@ -1166,6 +1204,38 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "A newer event revision is available. Your reviewed version and input "
             "are retained; reload and compare before continuing."
+        ),
+        "boxes": "Box handover and milestones",
+        "box_validation": (
+            "Check the box, seal, actual time and event. Times cannot be in the future "
+            "or conflict with the recorded handover sequence."
+        ),
+        "box_departure_required": "Record departure before acknowledging a transferred box.",
+        "box_receipt_required": "Record receipt of this box before its opening time.",
+        "box_reference_exists": (
+            "This origin station already has that box reference. Check its records."
+        ),
+        "box_state_conflict": (
+            "This event is already recorded or its state changed. Reload and compare."
+        ),
+        "box_not_found": (
+            "This box was not found in the authorized station context. Reload the records."
+        ),
+        "box_correction_reason_required": "Enter a reason when correcting a recorded event.",
+        "counting_station_required": "This event applies to stations that count locally.",
+        "counting_officer_required": "An assigned Counting Officer must record this event.",
+        "unsaved_box_changes": (
+            "The box or milestone form has unsaved input. Save or explicitly discard it."
+        ),
+        "box_saved": "Box preparation saved.",
+        "box_departed": "Box departure saved.",
+        "box_received": "Box receipt saved.",
+        "box_corrected": "Handover correction saved; the original event is retained.",
+        "box_milestone_saved": "Counting milestone saved.",
+        "box_report_ready": "The server's current handover and timeline report is ready.",
+        "box_exported": "Box handover report saved to the selected file.",
+        "box_export_failed": (
+            "Export did not complete. Check the file location and connection, then retry."
         ),
         "queue": "Queue waiting times",
         "queue_latest": "Latest queue observation",

@@ -13,6 +13,7 @@ from PySide6.QtNetwork import (
     QSslConfiguration,
 )
 
+from election.desktop.boxes import BoxesController
 from election.desktop.configuration import ConfigurationController
 from election.desktop.lifecycle import LifecycleController
 from election.desktop.polling import PollingController
@@ -61,6 +62,9 @@ class DesktopController(QObject):
         self._queue = QueueController(
             self._authorized_request, self, download=self._authorized_download
         )
+        self._boxes = BoxesController(
+            self._authorized_request, self, download=self._authorized_download
+        )
         self._workspace = WorkspaceController(
             self._authorized_request,
             self,
@@ -71,11 +75,14 @@ class DesktopController(QObject):
                 or self._stock.property("state")["busy"]
                 or self._queue.property("state")["dirty"]
                 or self._queue.property("state")["busy"]
+                or self._boxes.property("state")["dirty"]
+                or self._boxes.property("state")["busy"]
             ),
         )
         self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
         self._stock.stateChanged.connect(self._workspace.stateChanged.emit)
         self._queue.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._boxes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._workspace.contextChanged.connect(self._workspace_changed)
         self._generation = 0
         self._refreshing = False
@@ -135,11 +142,16 @@ class DesktopController(QObject):
     def queue(self) -> QueueController:
         return self._queue
 
+    @Property(QObject, constant=True)
+    def boxes(self) -> BoxesController:
+        return self._boxes
+
     def _workspace_changed(self) -> None:
         context = self._workspace.property("state")["selected"]
         self._polling.set_context(context)
         self._stock.set_context(context)
         self._queue.set_context(context)
+        self._boxes.set_context(context)
         self._state["election"] = context.get("election") or self._state["active_election"]
         self._state["constituency"] = context.get("constituency")
         self._state["station"] = context.get("station")
@@ -481,6 +493,7 @@ class DesktopController(QObject):
             self._polling.refresh()
             self._stock.refresh()
             self._queue.refresh()
+            self._boxes.refresh()
             self._refresh_active_election()
             self.stateChanged.emit()
 
@@ -508,6 +521,7 @@ class DesktopController(QObject):
         self._polling.reset()
         self._stock.reset()
         self._queue.reset()
+        self._boxes.reset()
         self.eraseSecrets.emit()
 
     @Slot()
