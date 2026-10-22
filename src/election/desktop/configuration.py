@@ -42,6 +42,13 @@ def empty_form(kind: str) -> dict[str, str]:
     return result
 
 
+def positive_integer(value: str) -> int | None:
+    if not (1 <= len(value) <= 10 and value.isascii() and value.isdecimal()):
+        return None
+    number = int(value)
+    return number if 1 <= number <= 2147483647 else None
+
+
 def affected_forms(kind: str) -> tuple[str, ...]:
     affected = []
     for child in KINDS:
@@ -242,30 +249,19 @@ class ConfigurationController(QObject):
         if kind in ("constituency", "station", "counter"):
             valid = valid and bool(payload["code"].strip()) and len(payload["code"]) <= 32
         if kind == "candidate":
-            number = payload["ballot_number"]
-            valid = (
-                valid
-                and len(number) <= 10
-                and number.isascii()
-                and number.isdecimal()
-                and 1 <= int(number) <= 2147483647
-            )
-            if valid:
-                payload["ballot_number"] = int(number)
+            number = positive_integer(payload["ballot_number"])
+            valid = valid and number is not None
+            if number is not None:
+                payload["ballot_number"] = number
         if kind == "station":
             mode, destination = payload["counting_mode"], payload["destination_station_id"]
             if mode == "local":
                 payload["destination_station_id"] = None
             elif mode == "send":
-                destination_valid = (
-                    len(destination) <= 10
-                    and destination.isascii()
-                    and destination.isdecimal()
-                    and 1 <= int(destination) <= 2147483647
-                )
-                valid = valid and destination_valid
-                if destination_valid:
-                    payload["destination_station_id"] = int(destination)
+                destination_id = positive_integer(destination)
+                valid = valid and destination_id is not None
+                if destination_id is not None:
+                    payload["destination_station_id"] = destination_id
             else:
                 valid = False
         if not valid:
