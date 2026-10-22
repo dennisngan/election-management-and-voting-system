@@ -17,6 +17,7 @@ from election.desktop.configuration import ConfigurationController
 from election.desktop.lifecycle import LifecycleController
 from election.desktop.polling import PollingController
 from election.desktop.staff import StaffController
+from election.desktop.stock import StockController
 from election.desktop.translations import TRANSLATIONS
 from election.desktop.workspace import WorkspaceController
 
@@ -55,12 +56,19 @@ class DesktopController(QObject):
         self._staff = StaffController(self._authorized_request, self)
         self._staff.accessChanged.connect(self._access_changed)
         self._polling = PollingController(self._authorized_request, self)
+        self._stock = StockController(self._authorized_request, self._authorized_download, self)
         self._workspace = WorkspaceController(
-            self._authorized_request, self,
-            selection_guard=lambda: bool(self._polling.property("state")["dirty"]
-                                         or self._polling.property("state")["busy"]),
+            self._authorized_request,
+            self,
+            selection_guard=lambda: bool(
+                self._polling.property("state")["dirty"]
+                or self._polling.property("state")["busy"]
+                or self._stock.property("state")["dirty"]
+                or self._stock.property("state")["busy"]
+            ),
         )
         self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._stock.stateChanged.connect(self._workspace.stateChanged.emit)
         self._workspace.contextChanged.connect(self._workspace_changed)
         self._generation = 0
         self._refreshing = False
@@ -112,9 +120,14 @@ class DesktopController(QObject):
     def polling(self) -> PollingController:
         return self._polling
 
+    @Property(QObject, constant=True)
+    def stock(self) -> StockController:
+        return self._stock
+
     def _workspace_changed(self) -> None:
         context = self._workspace.property("state")["selected"]
         self._polling.set_context(context)
+        self._stock.set_context(context)
         self._state["election"] = context.get("election") or self._state["active_election"]
         self._state["constituency"] = context.get("constituency")
         self._state["station"] = context.get("station")
@@ -181,6 +194,16 @@ class DesktopController(QObject):
                 self._error(code)
 
         self._request(path, method, payload, success, failed, token=self._token)
+
+    def _authorized_download(
+        self, path: str, success: ResultHandler, failure: Callable[[str], None]
+    ) -> None:
+        def failed(code: str) -> None:
+            failure(code)
+            if code == "session_expired":
+                self._error(code)
+
+        self._request(path, "GET", None, success, failed, token=self._token, binary=True)
 
     def _configuration_access(self) -> None:
         account = self._state["account"]
@@ -253,6 +276,7 @@ class DesktopController(QObject):
         failure: Callable[[str], None],
         *,
         token: str = "",
+        binary: bool = False,
     ) -> QNetworkReply:
         request = QNetworkRequest(QUrl(self._state["server_url"] + path))
         request.setSslConfiguration(self._ssl)
@@ -290,8 +314,19 @@ class DesktopController(QObject):
                 status = int(
                     reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 0
                 )
+                raw = bytes(reply.readAll().data())
+                if binary and 200 <= status < 300:
+                    success(
+                        {
+                            "data": raw,
+                            "content_type": str(
+                                reply.header(QNetworkRequest.KnownHeaders.ContentTypeHeader) or ""
+                            ),
+                        }
+                    )
+                    return
                 try:
-                    body = json.loads(bytes(reply.readAll().data())) if status != 204 else {}
+                    body = json.loads(raw) if status != 204 else {}
                 except json.JSONDecodeError, UnicodeDecodeError:
                     body = {}
                 if 200 <= status < 300 and isinstance(body, dict):
@@ -429,6 +464,7 @@ class DesktopController(QObject):
             self._staff.refresh()
             self._workspace.refresh()
             self._polling.refresh()
+            self._stock.refresh()
             self._refresh_active_election()
             self.stateChanged.emit()
 
@@ -454,6 +490,7 @@ class DesktopController(QObject):
         self._staff.reset()
         self._workspace.reset()
         self._polling.reset()
+        self._stock.reset()
         self.eraseSecrets.emit()
 
     @Slot()

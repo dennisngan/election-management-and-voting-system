@@ -225,7 +225,7 @@ ColumnLayout {
     ConfirmationDialog {
         id: discardDialog
         title: page.t("discard_changes")
-        message: page.t("unsaved_polling_changes")
+        message: page.t("unsaved_station_changes")
         acceptLabel: page.t("discard_changes")
         rejectLabel: page.t("keep_editing")
         onConfirmed: {

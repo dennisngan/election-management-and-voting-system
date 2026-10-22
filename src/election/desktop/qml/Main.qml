@@ -253,6 +253,18 @@ ApplicationWindow {
                         controller.polling.open()
                     }
                 }
+                Button {
+                    text: window.t("received_stock"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "stock"
+                    Material.background: window.currentPage === "stock" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    onClicked: {
+                        window.currentPage = "stock"
+                        controller.workspace.open()
+                        controller.stock.open()
+                    }
+                }
                 Button { text: window.t("counting"); Layout.fillWidth: true; flat: true; enabled: false }
                 Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
                 Item { Layout.fillHeight: true }
@@ -480,7 +492,7 @@ ApplicationWindow {
                     onReveal: control => window.revealField(control)
                 }
                 ColumnLayout {
-                    visible: window.state.phase === "workspace" && window.currentPage === "polling" && !window.administrator
+                    visible: window.state.phase === "workspace" && (window.currentPage === "polling" || window.currentPage === "stock") && !window.administrator
                     Layout.fillWidth: true
                     Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
                     spacing: 24
@@ -491,9 +503,18 @@ ApplicationWindow {
                         onReveal: control => window.revealField(control)
                     }
                     PollingPage {
+                        visible: window.currentPage === "polling"
                         Layout.fillWidth: true
                         polling: controller.polling
                         words: window.words
+                        onReveal: control => window.revealField(control)
+                    }
+                    StockPage {
+                        visible: window.currentPage === "stock"
+                        Layout.fillWidth: true
+                        stock: controller.stock
+                        words: window.words
+                        locale: window.state.locale
                         onReveal: control => window.revealField(control)
                     }
                 }

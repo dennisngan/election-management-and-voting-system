@@ -1,0 +1,18 @@
+Election Report Sans CJK TC Regular
+
+Derived from Noto Sans CJK TC Version 2.004.
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+
+The original variable font was instantiated at weight 400 and renamed
+Election Report Sans CJK TC Regular. Its original copyright and license
+metadata are retained. The derived font remains licensed under the SIL
+Open Font License, Version 1.1; see OFL-NotoSansCJK.txt in this directory.
+
+Upstream repository: https://github.com/notofonts/noto-cjk
+Upstream commit: f8d157532fbfaeda587e826d4cd5b21a49186f7c
+Source path: Sans/Variable/TTF/NotoSansCJKtc-VF.ttf
+Derivation and verification: ../../docs/report-font.md
+
+Redistributions of the bundled font must retain this copyright notice and
+the accompanying license. The font must not be sold by itself. This notice
+does not claim endorsement by Adobe, Google, or the Noto project.

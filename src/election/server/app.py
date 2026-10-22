@@ -22,6 +22,8 @@ from election.server.polling import polling_router
 from election.server.security import hash_password, token_digest, verify_password
 from election.server.staff import staff_router, station_access_router
 from election.server.stations import stations_router
+from election.server.stock import stock_router
+from election.server.stock_reports import stock_reports_router
 
 
 def utc_now() -> datetime:
@@ -119,6 +121,8 @@ def create_app(
     app.include_router(staff_router(database, administrator, timestamp))
     app.include_router(station_access_router(database, ready_account))
     app.include_router(polling_router(database, ready_account, timestamp))
+    app.include_router(stock_router(database, ready_account, timestamp))
+    app.include_router(stock_reports_router(database, ready_account, timestamp))
 
     def new_session(db: Session, account: Account) -> dict[str, Any]:
         token = token_urlsafe(32)

@@ -11,8 +11,10 @@ independent candidate lists, with three-language forms, replay-safe creates and 
 Ticket 03 adds scoped polling stations, issuance counters and same-constituency counting destinations.
 Tickets 04 and 05 add staff administration, assigned-station workspaces, election schedules and
 single-election activation; their current verification status is recorded in the local tickets.
-Later polling, stock, reporting, and counting features are delivered by subsequent
-tickets; illustrative design-preview figures are not application data.
+Ticket 06 adds revision-bound opening/closing records and Supervisor approval. Ticket 07 adds
+received-stock pools, retained corrections and translated receipt statements. Their verification
+progress remains recorded in the local tickets. Later turnout and counting features follow;
+illustrative design-preview figures are not application data.
 
 After signing in as an Administrator and changing the initial password, open **Election setup**.
 Create or choose a saved election, then create or choose a constituency and its candidates. Saved
@@ -39,6 +41,19 @@ schedule before confirming activation. Activation requires a candidate and a sta
 constituency, with a counter in every station. The backend atomically permits one active election;
 the desktop labels it separately from the selected draft. Active configuration is read-only, while
 other drafts remain available. A planned time does not itself open or close a station.
+
+An assigned Polling Officer opens **Polling operations** to save and submit actual opening,
+closure to new arrivals, queue-clear forecasts and actual completion of queued service separately.
+A Supervisor reviews the submitted revision in their own account and reconfirms their current
+password. Corrections create new drafts with a reason and retain earlier approvals and history.
+
+Open **Received stock and reserves** to record a ballot series and inclusive printed serial ranges
+in separate ordinary, replacement and tendered pools. Enter all three starting quantities,
+including zero reserves. Saved receipts can be corrected with an explanation; historical revisions
+remain read-only. Select a saved revision to preview or export its statement as PDF or UTF-8 CSV
+in the selected language. PDFs use the [bundled Chinese font](docs/report-font.md). Characters that
+the PDF renderer cannot represent produce a visible export error; preview and CSV retain the
+source text. The server serializes PDF builds around the shared font's subsetting state.
 
 ## Development prerequisites
 
@@ -72,7 +87,7 @@ groups; `uv.lock` records the resolved versions.
 
 Development commands below keep all groups available so starting the desktop does not remove the
 running server's dependencies. For an isolated server environment, use
-`UV_PROJECT_ENVIRONMENT=.venv-server uv sync --only-group server`; a source desktop environment can
+`UV_PROJECT_ENVIRONMENT=.venv-server uv sync --group server --group reports`; a source desktop environment can
 use a separate `.venv-desktop` with `--only-group desktop`. Packaged clients do not need server packages.
 
 ## Local database and HTTPS

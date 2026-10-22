@@ -291,6 +291,83 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "已有較新的事項版本。您檢視的版本及輸入已保留；請重新載入後核對。"
         ),
+        "received_stock": "選票接收與儲備",
+        "stock_receipt": "接收記錄",
+        "stock_receipts": "已儲存的接收記錄",
+        "new_stock_receipt": "新增接收記錄",
+        "select_stock_receipt": "請選擇接收記錄",
+        "no_stock_receipts": "此投票站尚未記錄收到的選票。",
+        "stock_read_only": "只有獲指派的投票站職員可新增或修正接收記錄。歷史版本只供查看與匯出。",
+        "stock_recorded": "已記錄",
+        "stock_current": "目前版本",
+        "stock_historical": "歷史版本（唯讀）",
+        "stock_return_current": "載入目前版本",
+        "stock_series": "選票系列",
+        "stock_event_at": "接收時間（香港時間）",
+        "stock_time_hint": "請以香港時間 YYYY-MM-DD HH:mm 輸入原本接收選票的時間。",
+        "stock_pool_hint": (
+            "普通選票、替換選票儲備及重複選票儲備分開記錄。"
+            "請填寫各類起始數量；沒有儲備時請填寫 0。"
+        ),
+        "stock_pool_ordinary": "普通選票",
+        "stock_pool_replacement": "替換選票儲備",
+        "stock_pool_tendered": "重複選票儲備",
+        "stock_calculated_total": "按編號範圍計算的接收總數",
+        "stock_total_received": "已記錄接收總數",
+        "stock_add_range": "新增編號範圍",
+        "stock_remove_range": "移除此範圍",
+        "stock_serial_hint": (
+            "請輸入 1 至 18 位半形數字，並保留編號前的 0。"
+            "起始編號不可大於結束編號，各類範圍不可重疊。"
+        ),
+        "no_stock_ranges": "尚未新增編號範圍。請新增普通選票或儲備範圍。",
+        "stock_range": "編號範圍",
+        "stock_pool": "選票類別",
+        "stock_serial_from": "起始編號",
+        "stock_serial_to": "結束編號",
+        "stock_range_quantity": "計算所得數量",
+        "stock_correction_hint": "儲存修正會建立新版本並保留原記錄。請填寫修正原因。",
+        "stock_reason": "修正原因",
+        "stock_save_correction": "儲存修正版本",
+        "stock_save": "儲存接收記錄",
+        "stock_history": "接收記錄修訂歷史",
+        "no_stock_history": "尚無可查看的接收記錄版本。",
+        "stock_report": "選票接收及儲備報表",
+        "stock_report_hint": (
+            "預覽及匯出以所選記錄及修訂版本為準。"
+            "請先儲存變更，或重新載入已儲存版本。"
+        ),
+        "stock_report_language": "匯出報表語言",
+        "stock_preview": "預覽報表",
+        "stock_export_pdf": "匯出 PDF",
+        "stock_export_csv": "匯出 UTF-8 CSV",
+        "stock_preview_language": "目前預覽的語言",
+        "stock_export_location": "已儲存的報表檔案",
+        "stock_validation": (
+            "請檢查選票系列、香港時間及有效編號範圍。"
+            "三類起始數量須為非負整數，並與各類編號範圍合計相符。"
+            "最少須接收 1 張選票。"
+        ),
+        "stock_overlap": "此選區及選票系列的編號已由其他接收記錄或類別使用，請核對範圍。",
+        "stock_receipt_not_found": "找不到所選接收記錄或修訂版本，請重新整理後再選擇。",
+        "election_read_only": "已完成選舉的記錄只供查看與匯出，不能直接更改。",
+        "stock_saved": "選票接收記錄已儲存。",
+        "stock_report_ready": "所選版本的報表預覽已載入。",
+        "stock_exported": "報表已儲存至所選檔案。",
+        "stock_export_failed": "匯出未完成。請檢查所選檔案位址及連線，然後重試。",
+        "stock_newer_revision": (
+            "伺服器有較新的版本。您正在查看的版本及未儲存內容已保留；"
+            "請重新載入並核對。"
+        ),
+        "unsaved_stock_changes": (
+            "此表格有未儲存內容。請先儲存變更，"
+            "或捨棄變更並重新載入已儲存版本，再繼續。"
+        ),
+        "report_glyph_unavailable": (
+            "PDF 字型不支援報表中的部分文字。"
+            "請保留原文，改用 CSV 或請管理員更新報表字型。"
+        ),
+        "unsaved_station_changes": "表格有未儲存的內容。請先儲存，或捨棄變更後繼續。",
     },
     "sc": {
         "app_name": "选举管理及投票系统",
@@ -582,6 +659,83 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "已有较新的事项版本。您查看的版本及输入已保留；请重新载入后核对。"
         ),
+        "received_stock": "选票接收与储备",
+        "stock_receipt": "接收记录",
+        "stock_receipts": "已保存的接收记录",
+        "new_stock_receipt": "新增接收记录",
+        "select_stock_receipt": "请选择接收记录",
+        "no_stock_receipts": "此投票站尚未记录收到的选票。",
+        "stock_read_only": "只有获指派的投票站职员可新增或修正接收记录。历史版本只供查看与导出。",
+        "stock_recorded": "已记录",
+        "stock_current": "当前版本",
+        "stock_historical": "历史版本（只读）",
+        "stock_return_current": "载入当前版本",
+        "stock_series": "选票系列",
+        "stock_event_at": "接收时间（香港时间）",
+        "stock_time_hint": "请以香港时间 YYYY-MM-DD HH:mm 输入原本接收选票的时间。",
+        "stock_pool_hint": (
+            "普通选票、替换选票储备及重复选票储备分开记录。"
+            "请填写各类起始数量；没有储备时请填写 0。"
+        ),
+        "stock_pool_ordinary": "普通选票",
+        "stock_pool_replacement": "替换选票储备",
+        "stock_pool_tendered": "重复选票储备",
+        "stock_calculated_total": "按编号范围计算的接收总数",
+        "stock_total_received": "已记录接收总数",
+        "stock_add_range": "新增编号范围",
+        "stock_remove_range": "移除此范围",
+        "stock_serial_hint": (
+            "请输入 1 至 18 位半角数字，并保留编号前的 0。"
+            "起始编号不可大于结束编号，各类范围不可重叠。"
+        ),
+        "no_stock_ranges": "尚未新增编号范围。请新增普通选票或储备范围。",
+        "stock_range": "编号范围",
+        "stock_pool": "选票类别",
+        "stock_serial_from": "起始编号",
+        "stock_serial_to": "结束编号",
+        "stock_range_quantity": "计算所得数量",
+        "stock_correction_hint": "保存修正会建立新版本并保留原记录。请填写修正原因。",
+        "stock_reason": "修正原因",
+        "stock_save_correction": "保存修正版本",
+        "stock_save": "保存接收记录",
+        "stock_history": "接收记录修订历史",
+        "no_stock_history": "尚无可查看的接收记录版本。",
+        "stock_report": "选票接收及储备报表",
+        "stock_report_hint": (
+            "预览及导出以所选记录及修订版本为准。"
+            "请先保存更改，或重新载入已保存版本。"
+        ),
+        "stock_report_language": "导出报表语言",
+        "stock_preview": "预览报表",
+        "stock_export_pdf": "导出 PDF",
+        "stock_export_csv": "导出 UTF-8 CSV",
+        "stock_preview_language": "当前预览的语言",
+        "stock_export_location": "已保存的报表文件",
+        "stock_validation": (
+            "请检查选票系列、香港时间及有效编号范围。"
+            "三类起始数量须为非负整数，并与各类编号范围合计相符。"
+            "最少须接收 1 张选票。"
+        ),
+        "stock_overlap": "此选区及选票系列的编号已由其他接收记录或类别使用，请核对范围。",
+        "stock_receipt_not_found": "找不到所选接收记录或修订版本，请刷新后再选择。",
+        "election_read_only": "已完成选举的记录只供查看与导出，不能直接更改。",
+        "stock_saved": "选票接收记录已保存。",
+        "stock_report_ready": "所选版本的报表预览已载入。",
+        "stock_exported": "报表已保存至所选文件。",
+        "stock_export_failed": "导出未完成。请检查所选文件位置及连接，然后重试。",
+        "stock_newer_revision": (
+            "服务器有较新的版本。您正在查看的版本及未保存内容已保留；"
+            "请重新载入并核对。"
+        ),
+        "unsaved_stock_changes": (
+            "此表格有未保存内容。请先保存更改，"
+            "或舍弃更改并重新载入已保存版本，再继续。"
+        ),
+        "report_glyph_unavailable": (
+            "PDF 字体不支持报表中的部分文字。"
+            "请保留原文，改用 CSV 或请管理员更新报表字体。"
+        ),
+        "unsaved_station_changes": "表格有未保存的内容。请先保存，或放弃更改后继续。",
     },
     "en": {
         "app_name": "Election Management and Voting System",
@@ -931,6 +1085,103 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "A newer event revision is available. Your reviewed version and input "
             "are retained; reload and compare before continuing."
+        ),
+        "received_stock": "Received stock and reserves",
+        "stock_receipt": "Receipt",
+        "stock_receipts": "Saved stock receipts",
+        "new_stock_receipt": "New stock receipt",
+        "select_stock_receipt": "Select a stock receipt",
+        "no_stock_receipts": "No received ballot stock has been recorded for this polling station.",
+        "stock_read_only": (
+            "Only assigned Polling Officers can add or correct stock receipts. Historical "
+            "revisions are available to view and export."
+        ),
+        "stock_recorded": "Recorded",
+        "stock_current": "Current revision",
+        "stock_historical": "Historical revision (read-only)",
+        "stock_return_current": "Load current revision",
+        "stock_series": "Ballot series",
+        "stock_event_at": "Received at (Hong Kong time)",
+        "stock_time_hint": "Enter the original receipt time in HKT as YYYY-MM-DD HH:mm.",
+        "stock_pool_hint": (
+            "Record ordinary papers, replacement reserves and tendered reserves separately."
+            " Enter each starting quantity; enter 0 when a reserve is empty."
+        ),
+        "stock_pool_ordinary": "Ordinary papers",
+        "stock_pool_replacement": "Replacement reserve",
+        "stock_pool_tendered": "Tendered reserve",
+        "stock_calculated_total": "Total calculated from serial ranges",
+        "stock_total_received": "Recorded total received",
+        "stock_add_range": "Add serial range",
+        "stock_remove_range": "Remove this range",
+        "stock_serial_hint": (
+            "Use 1–18 ASCII digits and preserve leading zeroes. The start cannot exceed the"
+            " end, and ranges cannot overlap across pools."
+        ),
+        "no_stock_ranges": "No serial ranges added. Add an ordinary or reserve range.",
+        "stock_range": "Serial range",
+        "stock_pool": "Pool",
+        "stock_serial_from": "Serial from",
+        "stock_serial_to": "Serial to",
+        "stock_range_quantity": "Calculated quantity",
+        "stock_correction_hint": (
+            "Saving a correction creates a new revision and retains the original. Enter a "
+            "correction reason."
+        ),
+        "stock_reason": "Correction reason",
+        "stock_save_correction": "Save correction revision",
+        "stock_save": "Save stock receipt",
+        "stock_history": "Stock receipt revision history",
+        "no_stock_history": "No saved receipt revisions are available.",
+        "stock_report": "Ballot stock receipt and reserves",
+        "stock_report_hint": (
+            "Preview and export use the selected receipt and revision. Save changes or "
+            "reload the saved revision first."
+        ),
+        "stock_report_language": "Export language",
+        "stock_preview": "Preview statement",
+        "stock_export_pdf": "Export PDF",
+        "stock_export_csv": "Export UTF-8 CSV",
+        "stock_preview_language": "Current preview language",
+        "stock_export_location": "Saved report file",
+        "stock_validation": (
+            "Check the ballot series, HKT receipt time and valid serial ranges. Starting "
+            "pool quantities must be nonnegative integers matching their inclusive ranges. "
+            "Receive at least 1 paper."
+        ),
+        "stock_overlap": (
+            "Those serials are already used by another receipt or pool in this constituency"
+            " and ballot series. Check the ranges."
+        ),
+        "stock_receipt_not_found": (
+            "The selected receipt or revision was not found. Refresh and select it again."
+        ),
+        "election_read_only": (
+            "Finalized election records can be viewed and exported but cannot be changed "
+            "directly."
+        ),
+        "stock_saved": "Stock receipt saved.",
+        "stock_report_ready": "The selected revision is ready to preview.",
+        "stock_exported": "Report saved to the selected file.",
+        "stock_export_failed": (
+            "Export did not complete. Check the selected file location and connection, then"
+            " retry."
+        ),
+        "stock_newer_revision": (
+            "A newer server revision is available. Your reviewed revision and unsaved input"
+            " are retained. Reload and compare before continuing."
+        ),
+        "unsaved_stock_changes": (
+            "This form has unsaved changes. Save them, or discard and reload the saved "
+            "revision before continuing."
+        ),
+        "report_glyph_unavailable": (
+            "Some report characters are unavailable in the PDF font. Preserve the original "
+            "text and use CSV, or ask an Administrator to update the report font."
+        ),
+        "unsaved_station_changes": (
+            "The form has unsaved changes. Save it, or discard the changes before "
+            "continuing."
         ),
     },
 }

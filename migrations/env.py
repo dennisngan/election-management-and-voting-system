@@ -12,6 +12,7 @@ from election.server import (  # noqa: F401 -- register tables with Base.metadat
     polling_models,
     staff_models,
     station_models,
+    stock_models,
 )
 from election.server.config import Settings
 from election.server.db import Base

@@ -112,7 +112,7 @@ class WorkspaceController(QObject):
             return
         selected_id = self._state["selected"].get("station", {}).get("id")
         if station_id != selected_id and self.selectionGuarded and not discard:
-            self._state["error"] = "unsaved_polling_changes"
+            self._state["error"] = "unsaved_station_changes"
             self.stateChanged.emit()
             return
         self._generation += 1

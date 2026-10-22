@@ -131,7 +131,7 @@ def test_polling_editor_guards_station_kind_reload_and_stale_revision_changes(
             assert editor.property("state")["kind"] == "opening"
             assert not editor.reload(False)
             workspace.selectStation(second)
-            assert workspace.property("state")["error"] == "unsaved_polling_changes"
+            assert workspace.property("state")["error"] == "unsaved_station_changes"
             assert state_of(client)["station"]["id"] == first
             assert editor.property("state")["forms"]["event_at"] == "bad time"
             workspace.selectStation(second, True)

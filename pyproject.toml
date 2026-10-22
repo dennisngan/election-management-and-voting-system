@@ -18,7 +18,15 @@ server = [
 ]
 desktop = ["pyside6"]
 reports = ["reportlab"]
-dev = ["pytest", "pytest-cov", "httpx", "ruff", "mypy", "types-PyMySQL"]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "httpx",
+    "ruff",
+    "mypy",
+    "types-PyMySQL",
+    "pypdf>=6.21.2",
+]
 gui-validation = ["pyinstaller; sys_platform == 'darwin'"]
 
 [tool.uv]
