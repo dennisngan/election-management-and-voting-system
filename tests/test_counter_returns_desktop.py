@@ -4,6 +4,7 @@ import json
 import socket
 import threading
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -136,118 +137,27 @@ def test_officer_returns_unissued_counter_stock_without_rewriting_an_earlier_sna
             qt_app.processEvents()
 
 
-def test_reasoned_return_correction_preserves_precise_time_and_read_only_history(
-    admin: TestClient,
-    database_url: str,
-    https_server: HttpsServer,
-    qt_app: QCoreApplication,
-) -> None:
-    scope, clock = turnout_scope(admin), TurnoutClock()
-    https_server.clock.value = clock.value
-    station_id = scope["stations"][0]["id"]
-    base = f"/api/workspace/stations/{station_id}"
-    path = base + "/stock-returns"
-    with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
-        counter, _ = arrange_counter_stock(api, base)
-        response = api.post(path, json={
-            "request_id": str(uuid4()),
-            "counter_id": counter["id"],
-            "series": "普通系列 A",
-            "serial_from": "000006",
-            "serial_to": "000006",
-            "event_at": "2026-11-15T10:00:17.123456+08:00",
-        })
-        assert response.status_code == 201
-        original = response.json()
-        target = path + f"/{original['id']}"
-        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
-        try:
-            client.signIn(https_server.url, account["username"], READY_PASSWORD)
-            wait_for(qt_app, lambda: state_of(client)["phase"] == "workspace")
-            workspace = client.property("workspace")
-            wait_for(qt_app, lambda: setup_idle(workspace))
-            workspace.selectStation(station_id)
-            wait_for(qt_app, lambda: setup_idle(workspace))
-            editor = client.property("counterReturns")
-            editor.open()
-            wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.loadReturn(original["id"], False)
-            wait_for(qt_app, lambda: setup_idle(editor))
-            loaded = editor.property("state")
-            assert loaded["selected"] == original and loaded["history"] == [original]
-            assert loaded["history_verified"] is True and loaded["editing"] is False
-            assert loaded["forms"]["event_time"] == "2026-11-15 10:00"
-            editor.setField("serial_from", "000005")
-            assert editor.property("state")["forms"]["serial_from"] == "000006"
-            assert editor.editSelected() is True
-            editor.setField("serial_from", "000005")
-            editor.save()
-            assert editor.property("state")["error"] == "counter_return_validation"
-            assert editor.property("state")["dirty"] is True
-            editor.setField("reason", "核對實際退回範圍\n保留原始發生時間")
-            editor.save()
-            wait_for(qt_app, lambda: setup_idle(editor))
-            saved = editor.property("state")
-            revised = saved["selected"]
-            assert saved["error"] == "" and saved["notice"] == "counter_return_saved"
-            assert revised["id"] == original["id"] and revised["revision"] == 2
-            assert revised["quantity"] == 2 and saved["quantity_display"] == "2"
-            assert revised["serial_from"] == "000005" and revised["serial_to"] == "000006"
-            assert revised["event_at"] == "2026-11-15T02:00:17.123456Z"
-            assert revised["reason"] == "核對實際退回範圍\n保留原始發生時間"
-            assert revised["actor_id"] == account["id"]
-            assert saved["dirty"] is False and saved["editing"] is False
-            assert saved["history_verified"] is True
-            assert saved["history"] == [original, revised]
-            assert api.get(target).json() == revised
-            history = api.get(target + "/history")
-            assert history.status_code == 200 and history.json()["items"] == [original, revised]
-            p14 = api.get(base + "/allocations/statement?locale=en")
-            assert p14.status_code == 200
-            assert p14.json()["availability"][0]["allocated_quantity"] == 4
-            assert p14.json()["availability"][0]["available_quantity"] == 4
-            assert editor.editSelected() is True
-            editor.setField("reason", "未儲存的原因")
-            assert editor.loadRevision(1, False) is False
-            retained = editor.property("state")
-            assert retained["error"] == "unsaved_counter_return_changes"
-            assert retained["selected"] == revised and retained["forms"]["reason"] == "未儲存的原因"
-            assert editor.loadRevision(1, True) is True
-            wait_for(qt_app, lambda: setup_idle(editor))
-            historical = editor.property("state")
-            assert historical["selected"] == original and historical["historical"] is True
-            assert historical["newer_revision"] is True and historical["history_verified"] is True
-            assert editor.editSelected() is False
-            editor.setField("serial_from", "000001")
-            editor.save()
-            assert editor.property("state")["forms"]["serial_from"] == "000006"
-            assert api.get(target + "?revision=1").json() == original
-            assert api.get(target + "/history").json()["items"] == [original, revised]
-            assert editor.newReturn(False) is True
-            fresh = editor.property("state")
-            assert fresh["selected"] == {} and fresh["history"] == []
-            assert fresh["historical"] is False and fresh["editing"] is False
-            assert all(value == "" for value in fresh["forms"].values())
-            editor.setField("series", "未儲存草稿")
-            assert editor.loadReturn(original["id"], False) is False
-            assert editor.property("state")["forms"]["series"] == "未儲存草稿"
-            assert editor.newReturn(True) is True
-            assert editor.property("state")["forms"]["series"] == ""
-        finally:
-            client.shutdown()
-            client.deleteLater()
-            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-            qt_app.processEvents()
+@dataclass
+class ReviewedReturn:
+    editor: Any
+    api: TestClient
+    base: str
+    target: str
+    original: dict
+    command: dict
+    account: dict
 
 
-def test_peer_head_refresh_preserves_local_return_input_and_requires_verified_reload(
+@contextmanager
+def reviewed_return(
     admin: TestClient,
     database_url: str,
-    https_server: HttpsServer,
+    server: HttpsServer,
     qt_app: QCoreApplication,
-) -> None:
+) -> Iterator[ReviewedReturn]:
+    """Select a real saved return; keep workflow changes and fault timing in each test."""
     scope, clock = turnout_scope(admin), TurnoutClock()
-    https_server.clock.value = clock.value
+    server.clock.value = clock.value
     station_id = scope["stations"][0]["id"]
     base = f"/api/workspace/stations/{station_id}"
     path = base + "/stock-returns"
@@ -265,9 +175,9 @@ def test_peer_head_refresh_preserves_local_return_input_and_requires_verified_re
         assert created.status_code == 201
         original = created.json()
         target = path + f"/{original['id']}"
-        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        client = DesktopController(server.url, str(TLS_DIRECTORY / "ca.pem"))
         try:
-            client.signIn(https_server.url, account["username"], READY_PASSWORD)
+            client.signIn(server.url, account["username"], READY_PASSWORD)
             wait_for(qt_app, lambda: state_of(client)["phase"] == "workspace")
             workspace = client.property("workspace")
             wait_for(qt_app, lambda: setup_idle(workspace))
@@ -278,55 +188,145 @@ def test_peer_head_refresh_preserves_local_return_input_and_requires_verified_re
             wait_for(qt_app, lambda: setup_idle(editor))
             assert editor.loadReturn(original["id"], False)
             wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.editSelected() is True
-            editor.setField("reason", "本機未儲存的核對原因")
-            draft = editor.property("state")
-            peer = api.put(target, json={
-                **command,
-                "request_id": str(uuid4()),
-                "revision": 1,
-                "serial_from": "000005",
-                "reason": "另一位職員核對退回五至六號",
-            })
-            assert peer.status_code == 200
-            revised = peer.json()
-            editor.refresh()
-            wait_for(qt_app, lambda: setup_idle(editor))
-            stale = editor.property("state")
-            assert stale["selected"] == original
-            assert stale["forms"] == draft["forms"] and stale["dirty"] is True
-            assert stale["items"] == [revised] and stale["newer_revision"] is True
-            assert stale["history_verified"] is False and stale["historical"] is True
-            assert editor.editSelected() is False
-            writes = https_server.request_count("PUT", target)
-            editor.save()
-            assert https_server.request_count("PUT", target) == writes == 0
-            assert editor.loadReturn(original["id"], False) is False
-            assert editor.property("state")["forms"] == draft["forms"]
-            assert editor.loadReturn(original["id"], True) is True
-            wait_for(qt_app, lambda: setup_idle(editor))
-            loaded = editor.property("state")
-            assert loaded["selected"] == revised and loaded["history"] == [original, revised]
-            assert loaded["history_verified"] is True and loaded["historical"] is False
-            assert editor.editSelected() is True
-            editor.setField("event_time", "2026-11-15 10:05")
-            editor.setField("reason", "明確修正為十分零五分")
-            editor.save()
-            wait_for(qt_app, lambda: setup_idle(editor))
-            saved = editor.property("state")
-            assert saved["error"] == "" and saved["selected"]["revision"] == 3
-            assert saved["selected"]["event_at"] == "2026-11-15T02:05:00Z"
-            assert saved["selected"]["quantity"] == 2
-            assert api.get(target + "?revision=1").json() == original
-            assert api.get(target + "?revision=2").json() == revised
-            assert api.get(target + "/history").json()["items"] == [
-                original, revised, saved["selected"]
-            ]
+            yield ReviewedReturn(editor, api, base, target, original, command, account)
         finally:
             client.shutdown()
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             qt_app.processEvents()
+
+
+def test_reasoned_return_correction_preserves_precise_time_and_read_only_history(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    with reviewed_return(admin, database_url, https_server, qt_app) as reviewed:
+        editor = reviewed.editor
+        api = reviewed.api
+        base = reviewed.base
+        target = reviewed.target
+        original = reviewed.original
+        account = reviewed.account
+        loaded = editor.property("state")
+        assert loaded["selected"] == original and loaded["history"] == [original]
+        assert loaded["history_verified"] is True and loaded["editing"] is False
+        assert loaded["forms"]["event_time"] == "2026-11-15 10:00"
+        editor.setField("serial_from", "000005")
+        assert editor.property("state")["forms"]["serial_from"] == "000006"
+        assert editor.editSelected() is True
+        editor.setField("serial_from", "000005")
+        editor.save()
+        assert editor.property("state")["error"] == "counter_return_validation"
+        assert editor.property("state")["dirty"] is True
+        editor.setField("reason", "核對實際退回範圍\n保留原始發生時間")
+        editor.save()
+        wait_for(qt_app, lambda: setup_idle(editor))
+        saved = editor.property("state")
+        revised = saved["selected"]
+        assert saved["error"] == "" and saved["notice"] == "counter_return_saved"
+        assert revised["id"] == original["id"] and revised["revision"] == 2
+        assert revised["quantity"] == 2 and saved["quantity_display"] == "2"
+        assert revised["serial_from"] == "000005" and revised["serial_to"] == "000006"
+        assert revised["event_at"] == "2026-11-15T02:00:17.123456Z"
+        assert revised["reason"] == "核對實際退回範圍\n保留原始發生時間"
+        assert revised["actor_id"] == account["id"]
+        assert saved["dirty"] is False and saved["editing"] is False
+        assert saved["history_verified"] is True
+        assert saved["history"] == [original, revised]
+        assert api.get(target).json() == revised
+        history = api.get(target + "/history")
+        assert history.status_code == 200 and history.json()["items"] == [original, revised]
+        p14 = api.get(base + "/allocations/statement?locale=en")
+        assert p14.status_code == 200
+        assert p14.json()["availability"][0]["allocated_quantity"] == 4
+        assert p14.json()["availability"][0]["available_quantity"] == 4
+        assert editor.editSelected() is True
+        editor.setField("reason", "未儲存的原因")
+        assert editor.loadRevision(1, False) is False
+        retained = editor.property("state")
+        assert retained["error"] == "unsaved_counter_return_changes"
+        assert retained["selected"] == revised and retained["forms"]["reason"] == "未儲存的原因"
+        assert editor.loadRevision(1, True) is True
+        wait_for(qt_app, lambda: setup_idle(editor))
+        historical = editor.property("state")
+        assert historical["selected"] == original and historical["historical"] is True
+        assert historical["newer_revision"] is True and historical["history_verified"] is True
+        assert editor.editSelected() is False
+        editor.setField("serial_from", "000001")
+        editor.save()
+        assert editor.property("state")["forms"]["serial_from"] == "000006"
+        assert api.get(target + "?revision=1").json() == original
+        assert api.get(target + "/history").json()["items"] == [original, revised]
+        assert editor.newReturn(False) is True
+        fresh = editor.property("state")
+        assert fresh["selected"] == {} and fresh["history"] == []
+        assert fresh["historical"] is False and fresh["editing"] is False
+        assert all(value == "" for value in fresh["forms"].values())
+        editor.setField("series", "未儲存草稿")
+        assert editor.loadReturn(original["id"], False) is False
+        assert editor.property("state")["forms"]["series"] == "未儲存草稿"
+        assert editor.newReturn(True) is True
+        assert editor.property("state")["forms"]["series"] == ""
+
+
+def test_peer_head_refresh_preserves_local_return_input_and_requires_verified_reload(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    with reviewed_return(admin, database_url, https_server, qt_app) as reviewed:
+        editor = reviewed.editor
+        api = reviewed.api
+        target = reviewed.target
+        original = reviewed.original
+        command = reviewed.command
+        assert editor.editSelected() is True
+        editor.setField("reason", "本機未儲存的核對原因")
+        draft = editor.property("state")
+        peer = api.put(target, json={
+            **command,
+            "request_id": str(uuid4()),
+            "revision": 1,
+            "serial_from": "000005",
+            "reason": "另一位職員核對退回五至六號",
+        })
+        assert peer.status_code == 200
+        revised = peer.json()
+        editor.refresh()
+        wait_for(qt_app, lambda: setup_idle(editor))
+        stale = editor.property("state")
+        assert stale["selected"] == original
+        assert stale["forms"] == draft["forms"] and stale["dirty"] is True
+        assert stale["items"] == [revised] and stale["newer_revision"] is True
+        assert stale["history_verified"] is False and stale["historical"] is True
+        assert editor.editSelected() is False
+        writes = https_server.request_count("PUT", target)
+        editor.save()
+        assert https_server.request_count("PUT", target) == writes == 0
+        assert editor.loadReturn(original["id"], False) is False
+        assert editor.property("state")["forms"] == draft["forms"]
+        assert editor.loadReturn(original["id"], True) is True
+        wait_for(qt_app, lambda: setup_idle(editor))
+        loaded = editor.property("state")
+        assert loaded["selected"] == revised and loaded["history"] == [original, revised]
+        assert loaded["history_verified"] is True and loaded["historical"] is False
+        assert editor.editSelected() is True
+        editor.setField("event_time", "2026-11-15 10:05")
+        editor.setField("reason", "明確修正為十分零五分")
+        editor.save()
+        wait_for(qt_app, lambda: setup_idle(editor))
+        saved = editor.property("state")
+        assert saved["error"] == "" and saved["selected"]["revision"] == 3
+        assert saved["selected"]["event_at"] == "2026-11-15T02:05:00Z"
+        assert saved["selected"]["quantity"] == 2
+        assert api.get(target + "?revision=1").json() == original
+        assert api.get(target + "?revision=2").json() == revised
+        assert api.get(target + "/history").json()["items"] == [
+            original, revised, saved["selected"]
+        ]
 
 
 @dataclass
@@ -428,93 +428,62 @@ def test_malformed_return_acknowledgement_reuses_uuid_and_failed_history_stays_r
     history_fault: str,
 ) -> None:
     server = return_boundary_server
-    scope, clock = turnout_scope(admin), TurnoutClock()
-    server.clock.value = clock.value
-    station_id = scope["stations"][0]["id"]
-    base = f"/api/workspace/stations/{station_id}"
-    path = base + "/stock-returns"
-    with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
-        counter, _ = arrange_counter_stock(api, base)
-        created = api.post(path, json={
-            "request_id": str(uuid4()),
-            "counter_id": counter["id"],
-            "series": "普通系列 A",
-            "serial_from": "000006",
-            "serial_to": "000006",
-            "event_at": "2026-11-15T10:00:17.123456+08:00",
-        })
-        assert created.status_code == 201
-        original = created.json()
-        target = path + f"/{original['id']}"
-        client = DesktopController(server.url, str(TLS_DIRECTORY / "ca.pem"))
-        try:
-            client.signIn(server.url, account["username"], READY_PASSWORD)
-            wait_for(qt_app, lambda: state_of(client)["phase"] == "workspace")
-            workspace = client.property("workspace")
-            wait_for(qt_app, lambda: setup_idle(workspace))
-            workspace.selectStation(station_id)
-            wait_for(qt_app, lambda: setup_idle(workspace))
-            editor = client.property("counterReturns")
-            editor.open()
-            wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.loadReturn(original["id"], False)
-            wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.editSelected() is True
-            editor.setField("serial_from", "000005")
-            editor.setField("reason", "核對退回五至六號")
-            draft = editor.property("state")
-            server.save_fault = fault
-            editor.save()
-            wait_for(qt_app, lambda: setup_idle(editor))
-            failed = editor.property("state")
-            assert failed["error"] == "request_failed" and failed["notice"] == ""
-            assert failed["selected"] == original and failed["forms"] == draft["forms"]
-            assert failed["dirty"] is True
-            committed = api.get(target)
-            assert committed.status_code == 200
-            revised = committed.json()
-            assert revised["revision"] == 2 and revised["quantity"] == 2
-            assert revised["event_at"] == "2026-11-15T02:00:17.123456Z"
-            assert len(server.commands) == 1
-            server.history_fault = history_fault
-            editor.save()
-            wait_for(qt_app, lambda: setup_idle(editor))
-            acknowledged = editor.property("state")
-            assert acknowledged["selected"] == revised and acknowledged["dirty"] is False
-            assert acknowledged["error"] == "request_failed" and acknowledged["notice"] == ""
-            assert acknowledged["history_verified"] is False and acknowledged["editing"] is False
-            assert acknowledged["history"] == [original]
-            assert editor.editSelected() is False
-            assert len(server.commands) == 2 and server.commands[0] == server.commands[1]
-            assert api.get(target + "/history").json()["items"] == [original, revised]
-            assert editor.loadReturn(original["id"], False)
-            wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.property("state")["history"] == [original, revised]
-            server.history_fault = history_fault
-            assert editor.loadRevision(1, False)
-            wait_for(qt_app, lambda: setup_idle(editor))
-            historical = editor.property("state")
-            assert historical["selected"] == original and historical["historical"] is True
-            assert historical["history_verified"] is False and historical["newer_revision"] is True
-            assert historical["history"] == [original, revised]
-            assert editor.editSelected() is False
-            editor.setField("serial_from", "000001")
-            editor.save()
-            assert len(server.commands) == 2
-            assert editor.property("state")["forms"]["serial_from"] == "000006"
-            assert editor.loadRevision(1, False)
-            wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.property("state")["history_verified"] is True
-            assert editor.editSelected() is False
-            assert editor.loadReturn(original["id"], False)
-            wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.property("state")["selected"] == revised
-            assert editor.editSelected() is True
-        finally:
-            client.shutdown()
-            client.deleteLater()
-            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-            qt_app.processEvents()
+    with reviewed_return(admin, database_url, server, qt_app) as reviewed:
+        editor = reviewed.editor
+        api = reviewed.api
+        target = reviewed.target
+        original = reviewed.original
+        assert editor.editSelected() is True
+        editor.setField("serial_from", "000005")
+        editor.setField("reason", "核對退回五至六號")
+        draft = editor.property("state")
+        server.save_fault = fault
+        editor.save()
+        wait_for(qt_app, lambda: setup_idle(editor))
+        failed = editor.property("state")
+        assert failed["error"] == "request_failed" and failed["notice"] == ""
+        assert failed["selected"] == original and failed["forms"] == draft["forms"]
+        assert failed["dirty"] is True
+        committed = api.get(target)
+        assert committed.status_code == 200
+        revised = committed.json()
+        assert revised["revision"] == 2 and revised["quantity"] == 2
+        assert revised["event_at"] == "2026-11-15T02:00:17.123456Z"
+        assert len(server.commands) == 1
+        server.history_fault = history_fault
+        editor.save()
+        wait_for(qt_app, lambda: setup_idle(editor))
+        acknowledged = editor.property("state")
+        assert acknowledged["selected"] == revised and acknowledged["dirty"] is False
+        assert acknowledged["error"] == "request_failed" and acknowledged["notice"] == ""
+        assert acknowledged["history_verified"] is False and acknowledged["editing"] is False
+        assert acknowledged["history"] == [original]
+        assert editor.editSelected() is False
+        assert len(server.commands) == 2 and server.commands[0] == server.commands[1]
+        assert api.get(target + "/history").json()["items"] == [original, revised]
+        assert editor.loadReturn(original["id"], False)
+        wait_for(qt_app, lambda: setup_idle(editor))
+        assert editor.property("state")["history"] == [original, revised]
+        server.history_fault = history_fault
+        assert editor.loadRevision(1, False)
+        wait_for(qt_app, lambda: setup_idle(editor))
+        historical = editor.property("state")
+        assert historical["selected"] == original and historical["historical"] is True
+        assert historical["history_verified"] is False and historical["newer_revision"] is True
+        assert historical["history"] == [original, revised]
+        assert editor.editSelected() is False
+        editor.setField("serial_from", "000001")
+        editor.save()
+        assert len(server.commands) == 2
+        assert editor.property("state")["forms"]["serial_from"] == "000006"
+        assert editor.loadRevision(1, False)
+        wait_for(qt_app, lambda: setup_idle(editor))
+        assert editor.property("state")["history_verified"] is True
+        assert editor.editSelected() is False
+        assert editor.loadReturn(original["id"], False)
+        wait_for(qt_app, lambda: setup_idle(editor))
+        assert editor.property("state")["selected"] == revised
+        assert editor.editSelected() is True
 
 
 def test_stale_return_correction_fails_visibly_without_losing_input_or_changing_uuid(
@@ -524,66 +493,35 @@ def test_stale_return_correction_fails_visibly_without_losing_input_or_changing_
     qt_app: QCoreApplication,
 ) -> None:
     server = return_boundary_server
-    scope, clock = turnout_scope(admin), TurnoutClock()
-    server.clock.value = clock.value
-    station_id = scope["stations"][0]["id"]
-    base = f"/api/workspace/stations/{station_id}"
-    path = base + "/stock-returns"
-    with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
-        counter, _ = arrange_counter_stock(api, base)
-        command = {
-            "request_id": str(uuid4()),
-            "counter_id": counter["id"],
-            "series": "普通系列 A",
-            "serial_from": "000006",
-            "serial_to": "000006",
-            "event_at": "2026-11-15T10:00:17.123456+08:00",
-        }
-        created = api.post(path, json=command)
-        assert created.status_code == 201
-        original = created.json()
-        target = path + f"/{original['id']}"
-        client = DesktopController(server.url, str(TLS_DIRECTORY / "ca.pem"))
-        try:
-            client.signIn(server.url, account["username"], READY_PASSWORD)
-            wait_for(qt_app, lambda: state_of(client)["phase"] == "workspace")
-            workspace = client.property("workspace")
-            wait_for(qt_app, lambda: setup_idle(workspace))
-            workspace.selectStation(station_id)
-            wait_for(qt_app, lambda: setup_idle(workspace))
-            editor = client.property("counterReturns")
-            editor.open()
+    with reviewed_return(admin, database_url, server, qt_app) as reviewed:
+        editor = reviewed.editor
+        api = reviewed.api
+        target = reviewed.target
+        original = reviewed.original
+        command = reviewed.command
+        assert editor.editSelected() is True
+        editor.setField("serial_from", "000005")
+        editor.setField("reason", "本機尚未提交的修正")
+        draft = editor.property("state")
+        peer = api.put(target, json={
+            **command, "request_id": str(uuid4()), "revision": 1,
+            "reason": "另一部電腦已核對原退回範圍",
+        })
+        assert peer.status_code == 200
+        revised = peer.json()
+        for _ in range(2):
+            editor.save()
             wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.loadReturn(original["id"], False)
-            wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.editSelected() is True
-            editor.setField("serial_from", "000005")
-            editor.setField("reason", "本機尚未提交的修正")
-            draft = editor.property("state")
-            peer = api.put(target, json={
-                **command, "request_id": str(uuid4()), "revision": 1,
-                "reason": "另一部電腦已核對原退回範圍",
-            })
-            assert peer.status_code == 200
-            revised = peer.json()
-            for _ in range(2):
-                editor.save()
-                wait_for(qt_app, lambda: setup_idle(editor))
-                failed = editor.property("state")
-                assert failed["error"] == "revision_conflict" and failed["notice"] == ""
-                assert failed["selected"] == original and failed["dirty"] is True
-                assert failed["forms"] == draft["forms"]
-            assert len(server.commands) == 2 and server.commands[0] == server.commands[1]
-            assert api.get(target + "/history").json()["items"] == [original, revised]
-            assert editor.loadReturn(original["id"], False) is False
-            assert editor.property("state")["forms"] == draft["forms"]
-            assert editor.loadReturn(original["id"], True) is True
-            wait_for(qt_app, lambda: setup_idle(editor))
-            assert editor.property("state")["selected"] == revised
-            assert editor.property("state")["dirty"] is False
-            assert editor.property("state")["history_verified"] is True
-        finally:
-            client.shutdown()
-            client.deleteLater()
-            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-            qt_app.processEvents()
+            failed = editor.property("state")
+            assert failed["error"] == "revision_conflict" and failed["notice"] == ""
+            assert failed["selected"] == original and failed["dirty"] is True
+            assert failed["forms"] == draft["forms"]
+        assert len(server.commands) == 2 and server.commands[0] == server.commands[1]
+        assert api.get(target + "/history").json()["items"] == [original, revised]
+        assert editor.loadReturn(original["id"], False) is False
+        assert editor.property("state")["forms"] == draft["forms"]
+        assert editor.loadReturn(original["id"], True) is True
+        wait_for(qt_app, lambda: setup_idle(editor))
+        assert editor.property("state")["selected"] == revised
+        assert editor.property("state")["dirty"] is False
+        assert editor.property("state")["history_verified"] is True
