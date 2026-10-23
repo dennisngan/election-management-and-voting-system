@@ -18,6 +18,7 @@ from election.server.configuration_models import Constituency, Election
 from election.server.models import Account, AuditEvent
 from election.server.staff_models import StationAssignment
 from election.server.station_models import PollingStation
+from election.server.stock_inventory import preserve_allocations
 from election.server.stock_models import StockReceipt, StockReceiptRange, StockReceiptRevision
 from election.server.stock_serials import (
     MAX_STOCK_QUANTITY,
@@ -427,6 +428,7 @@ def stock_router(
             if head.revision != data.revision:
                 raise HTTPException(409, detail={"code": "revision_conflict"})
             no_overlap(db, scope, data, head.id)
+            preserve_allocations(db, station_id, head.id, data.series, data.ranges)
             head.revision += 1
             try:
                 saved = persist(db, actor, scope, data, head, expected, True)
