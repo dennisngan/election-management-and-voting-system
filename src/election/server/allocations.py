@@ -110,6 +110,89 @@ def allocation_router(
     Database = Annotated[Session, Depends(database)]
     Ready = Annotated[Account, Depends(ready_account)]
 
+    def validate_stock(
+        db: Session,
+        station_id: int,
+        data: AllocationInput,
+        *,
+        exclude_id: int | None = None,
+    ) -> tuple[IssuanceCounter, list[dict[str, int]]]:
+        counter = db.scalar(
+            select(IssuanceCounter)
+            .where(IssuanceCounter.id == data.counter_id, IssuanceCounter.station_id == station_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if counter is None:
+            raise HTTPException(404, detail={"code": "counter_not_found"})
+        first, last = serial_number(data.serial_from), serial_number(data.serial_to)
+        basis = receipt_basis(received_ranges(db, station_id, lock=True), data.series, first, last)
+        for owned in current_allocations(db, station_id, lock=True):
+            if (
+                owned.allocation_id != exclude_id
+                and owned.series == data.series
+                and owned.serial_from_value <= last
+                and owned.serial_to_value >= first
+            ):
+                raise HTTPException(409, detail={"code": "allocation_overlap"})
+        return counter, basis
+
+    def persist(
+        db: Session,
+        actor: Account,
+        scope: dict[str, Any],
+        data: AllocationInput,
+        head: StockAllocation,
+        digest: str,
+        counter: IssuanceCounter,
+        basis: list[dict[str, int]],
+        now: datetime,
+    ) -> dict[str, Any]:
+        if isinstance(data, AllocationCorrection):
+            reason, action = data.reason, "stock_allocation_corrected"
+        else:
+            reason, action = "", "stock_allocated"
+        row = StockAllocationRevision(
+            allocation_id=head.id,
+            revision=head.revision,
+            request_id=str(data.request_id),
+            payload_digest=digest,
+            counter_id=counter.id,
+            counter_code=counter.code,
+            counter_name=counter.name,
+            series=data.series,
+            serial_from=data.serial_from,
+            serial_to=data.serial_to,
+            serial_from_value=serial_number(data.serial_from),
+            serial_to_value=serial_number(data.serial_to),
+            quantity=data.quantity,
+            event_at=data.event_at.astimezone(UTC).replace(tzinfo=None),
+            entered_at=now,
+            actor_id=actor.id,
+            reason=reason,
+            receipt_basis=basis,
+        )
+        db.add(row)
+        db.add(
+            AuditEvent(
+                actor_id=actor.id,
+                action=action,
+                occurred_at=now,
+                details={
+                    "allocation_id": head.id,
+                    "station_id": head.station_id,
+                    "election_id": scope["election"]["id"],
+                    "constituency_id": scope["constituency"]["id"],
+                    "revision": head.revision,
+                    "quantity": data.quantity,
+                    # The command's revision is the previous expected head.
+                    **data.model_dump(mode="json", exclude={"request_id", "revision"}),
+                },
+            )
+        )
+        db.commit()
+        return allocation_view(row, scope)
+
     @router.get("")
     def list_allocations(station_id: int, db: Database, actor: Ready) -> dict[str, Any]:
         scope = stock_scope(db, actor, station_id)
@@ -143,73 +226,12 @@ def allocation_router(
                     raise HTTPException(409, detail={"code": "request_conflict"})
                 response.status_code = 200
                 return allocation_view(saved, scope)
-            counter = db.scalar(
-                select(IssuanceCounter)
-                .where(
-                    IssuanceCounter.id == data.counter_id, IssuanceCounter.station_id == station_id
-                )
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-            if counter is None:
-                raise HTTPException(404, detail={"code": "counter_not_found"})
-            basis = receipt_basis(
-                received_ranges(db, station_id, lock=True),
-                data.series,
-                serial_number(data.serial_from),
-                serial_number(data.serial_to),
-            )
-            first, last = serial_number(data.serial_from), serial_number(data.serial_to)
-            for owned in current_allocations(db, station_id, lock=True):
-                if (
-                    owned.series == data.series
-                    and owned.serial_from_value <= last
-                    and owned.serial_to_value >= first
-                ):
-                    raise HTTPException(409, detail={"code": "allocation_overlap"})
+            counter, basis = validate_stock(db, station_id, data)
             now = timestamp()
             head = StockAllocation(station_id=station_id, revision=1, created_at=now)
             db.add(head)
             db.flush()
-            row = StockAllocationRevision(
-                allocation_id=head.id,
-                revision=1,
-                request_id=str(data.request_id),
-                payload_digest=digest,
-                counter_id=counter.id,
-                counter_code=counter.code,
-                counter_name=counter.name,
-                series=data.series,
-                serial_from=data.serial_from,
-                serial_to=data.serial_to,
-                serial_from_value=serial_number(data.serial_from),
-                serial_to_value=serial_number(data.serial_to),
-                quantity=data.quantity,
-                event_at=data.event_at.astimezone(UTC).replace(tzinfo=None),
-                entered_at=now,
-                actor_id=actor.id,
-                reason="",
-                receipt_basis=basis,
-            )
-            db.add(row)
-            db.add(
-                AuditEvent(
-                    actor_id=actor.id,
-                    action="stock_allocated",
-                    occurred_at=now,
-                    details={
-                        "allocation_id": head.id,
-                        "station_id": station_id,
-                        "election_id": scope["election"]["id"],
-                        "constituency_id": scope["constituency"]["id"],
-                        "revision": 1,
-                        "quantity": data.quantity,
-                        **data.model_dump(mode="json", exclude={"request_id"}),
-                    },
-                )
-            )
-            db.commit()
-            return allocation_view(row, scope)
+            return persist(db, actor, scope, data, head, digest, counter, basis, now)
 
         return stock_write(db, write)
 
@@ -266,69 +288,10 @@ def allocation_router(
                 return allocation_view(saved, scope)
             if head.revision != data.revision:
                 raise HTTPException(409, detail={"code": "revision_conflict"})
-            counter = db.scalar(
-                select(IssuanceCounter)
-                .where(
-                    IssuanceCounter.id == data.counter_id, IssuanceCounter.station_id == station_id
-                )
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-            if counter is None:
-                raise HTTPException(404, detail={"code": "counter_not_found"})
-            first, last = serial_number(data.serial_from), serial_number(data.serial_to)
-            basis = receipt_basis(
-                received_ranges(db, station_id, lock=True), data.series, first, last
-            )
-            for owned in current_allocations(db, station_id, lock=True):
-                if (
-                    owned.allocation_id != head.id
-                    and owned.series == data.series
-                    and owned.serial_from_value <= last
-                    and owned.serial_to_value >= first
-                ):
-                    raise HTTPException(409, detail={"code": "allocation_overlap"})
+            counter, basis = validate_stock(db, station_id, data, exclude_id=head.id)
             head.revision += 1
             now = timestamp()
-            row = StockAllocationRevision(
-                allocation_id=head.id,
-                revision=head.revision,
-                request_id=str(data.request_id),
-                payload_digest=digest,
-                counter_id=counter.id,
-                counter_code=counter.code,
-                counter_name=counter.name,
-                series=data.series,
-                serial_from=data.serial_from,
-                serial_to=data.serial_to,
-                serial_from_value=first,
-                serial_to_value=last,
-                quantity=data.quantity,
-                event_at=data.event_at.astimezone(UTC).replace(tzinfo=None),
-                entered_at=now,
-                actor_id=actor.id,
-                reason=data.reason,
-                receipt_basis=basis,
-            )
-            db.add(row)
-            db.add(
-                AuditEvent(
-                    actor_id=actor.id,
-                    action="stock_allocation_corrected",
-                    occurred_at=now,
-                    details={
-                        "allocation_id": head.id,
-                        "station_id": station_id,
-                        "election_id": scope["election"]["id"],
-                        "constituency_id": scope["constituency"]["id"],
-                        "revision": head.revision,
-                        "quantity": data.quantity,
-                        **data.model_dump(mode="json", exclude={"request_id"}),
-                    },
-                )
-            )
-            db.commit()
-            return allocation_view(row, scope)
+            return persist(db, actor, scope, data, head, digest, counter, basis, now)
 
         return stock_write(db, write)
 
