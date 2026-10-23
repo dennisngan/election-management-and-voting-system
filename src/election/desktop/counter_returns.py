@@ -60,6 +60,11 @@ class CounterReturnsController(QObject):
             "selected": {},
             "forms": empty_forms(),
             "quantity_display": "—",
+            "history": [],
+            "history_verified": False,
+            "historical": False,
+            "newer_revision": False,
+            "editing": False,
             "dirty": False,
             "busy": False,
             "refreshing": False,
@@ -87,14 +92,18 @@ class CounterReturnsController(QObject):
     def _path(self) -> str:
         return f"/api/workspace/stations/{self._state['station_id']}/stock-returns"
 
-    def _editable(self) -> bool:
+    def _writable(self) -> bool:
         return bool(
             self._state["station_id"]
             and self._state["role"] == "polling_officer"
             and self._state["context"].get("election", {}).get("status") in ("draft", "active")
             and not self._state["busy"]
-            and not self._state["selected"]
+            and not self._state["historical"]
+            and (not self._state["selected"] or self._state["history_verified"])
         )
+
+    def _editable(self) -> bool:
+        return self._writable() and bool(not self._state["selected"] or self._state["editing"])
 
     def _error(self, code: str) -> None:
         self._state.update(
@@ -109,6 +118,7 @@ class CounterReturnsController(QObject):
         success: ResultHandler,
         *,
         background: bool = False,
+        suffix: str = "",
     ) -> None:
         generation = self._generation
         activity = "refreshing" if background else "busy"
@@ -127,7 +137,7 @@ class CounterReturnsController(QObject):
                 self._state[activity] = False
                 self._error(code)
 
-        self._request(self._path(), method, payload, done, failed)
+        self._request(self._path() + suffix, method, payload, done, failed)
 
     def _record(self, value: Any) -> bool:
         if not isinstance(value, dict):
@@ -207,6 +217,20 @@ class CounterReturnsController(QObject):
             items=deepcopy(items),
             counters=deepcopy(counters),
         )
+        selected = self._state["selected"]
+        if selected:
+            head = next((row for row in items if row["id"] == selected["id"]), None)
+            history = self._state["history"]
+            known = [selected, *history, *([head] if head is not None else [])]
+            historical = selected["revision"] < max(row["revision"] for row in known)
+            self._state.update(
+                historical=historical,
+                newer_revision=historical or head is None or head != selected,
+            )
+            if head is None or not any(row == head for row in history):
+                self._state["history_verified"] = False
+            if historical:
+                self._state["editing"] = False
 
     @Slot()
     def open(self) -> None:
@@ -223,6 +247,128 @@ class CounterReturnsController(QObject):
         ):
             return
         self._send("GET", None, self._loaded, background=True)
+
+    def _begin_selection(self, discard: bool) -> bool:
+        if not self._state["station_id"] or self._state["busy"]:
+            return False
+        if self._state["dirty"] and not discard:
+            self._error("unsaved_counter_return_changes")
+            return False
+        self._generation += 1
+        self._pending = None
+        self._state.update(
+            refreshing=False, error="", notice="", history_verified=False, editing=False
+        )
+        return True
+
+    def _history(self, *, refresh_after: bool = False) -> None:
+        return_id = self._state["selected"]["id"]
+
+        def loaded(data: dict[str, Any]) -> None:
+            rows = data.get("items")
+            selected = self._state["selected"]
+            known = [
+                selected,
+                *self._state["history"],
+                *[row for row in self._state["items"] if row["id"] == return_id],
+            ]
+            if not (
+                isinstance(rows, list)
+                and rows
+                and all(
+                    self._record(row) and row["id"] == return_id and row["revision"] == index
+                    for index, row in enumerate(rows, 1)
+                )
+                and all(
+                    saved["revision"] <= len(rows) and rows[saved["revision"] - 1] == saved
+                    for saved in known
+                )
+            ):
+                self._error("request_failed")
+                return
+            head = rows[-1]
+            self._state.update(
+                history=deepcopy(rows),
+                history_verified=True,
+                historical=selected["revision"] < head["revision"],
+                newer_revision=selected != head,
+            )
+            if self._state["historical"]:
+                self._state["editing"] = False
+            items = {row["id"]: row for row in self._state["items"]}
+            items[return_id] = deepcopy(head)
+            self._state["items"] = sorted(items.values(), key=lambda row: row["id"])
+            if refresh_after:
+                self.refresh()
+
+        self._send("GET", None, loaded, suffix=f"/{return_id}/history")
+
+    @Slot(int, result=bool)
+    @Slot(int, bool, result=bool)
+    def loadReturn(self, return_id: int, discard: bool = False) -> bool:
+        if return_id < 1 or not self._begin_selection(discard):
+            return False
+
+        def loaded(data: dict[str, Any]) -> None:
+            if not self._record(data) or data["id"] != return_id:
+                self._error("request_failed")
+                return
+            self._accept(data)
+            self._history()
+
+        self._send("GET", None, loaded, suffix=f"/{return_id}")
+        return True
+
+    @Slot(int, result=bool)
+    @Slot(int, bool, result=bool)
+    def loadRevision(self, revision: int, discard: bool = False) -> bool:
+        selected = self._state["selected"]
+        if not selected or revision < 1 or not self._begin_selection(discard):
+            return False
+        return_id = selected["id"]
+
+        def loaded(data: dict[str, Any]) -> None:
+            if (
+                not self._record(data)
+                or data["id"] != return_id
+                or data["revision"] != revision
+            ):
+                self._error("request_failed")
+                return
+            self._accept(data)
+            self._history()
+
+        self._send("GET", None, loaded, suffix=f"/{return_id}?revision={revision}")
+        return True
+
+    @Slot(result=bool)
+    @Slot(bool, result=bool)
+    def newReturn(self, discard: bool = False) -> bool:
+        if not self._begin_selection(discard):
+            return False
+        self._state.update(
+            selected={},
+            forms=empty_forms(),
+            quantity_display="—",
+            history=[],
+            history_verified=False,
+            dirty=False,
+            historical=False,
+            newer_revision=False,
+            editing=False,
+        )
+        self.stateChanged.emit()
+        self.refresh()
+        return True
+
+    @Slot(result=bool)
+    def editSelected(self) -> bool:
+        if not self._state["selected"] or not self._writable():
+            self._error("election_read_only")
+            return False
+        self._state.update(editing=True, error="", notice="")
+        self.stateChanged.emit()
+        return True
 
     @Slot(str, str)
     def setField(self, name: str, value: str) -> None:
@@ -263,43 +409,68 @@ class CounterReturnsController(QObject):
             ):
                 raise ValueError("Use a local Hong Kong date and time")
             event = datetime.fromisoformat(event_text).replace(tzinfo=HKT)
-            return {
+            selected = self._state["selected"]
+            original = selected.get("event_at")
+            unchanged_minute = bool(
+                original
+                and event_text
+                == datetime.fromisoformat(original).astimezone(HKT).strftime("%Y-%m-%d %H:%M")
+            )
+            payload = {
                 "counter_id": counter_id,
                 "series": form["series"],
                 "serial_from": form["serial_from"],
                 "serial_to": form["serial_to"],
-                "event_at": event.isoformat(),
+                "event_at": original if unchanged_minute else event.isoformat(),
             }
+            if selected:
+                reason = form["reason"]
+                if not reason.strip() or len(reason) > 1000:
+                    raise ValueError("A correction reason is required")
+                payload.update(revision=selected["revision"], reason=reason)
+            return payload
         except ValueError:
             self._error("counter_return_validation")
             return None
 
-    def _matches_command(self, data: dict[str, Any], payload: dict[str, Any]) -> bool:
+    def _matches_command(
+        self, data: dict[str, Any], payload: dict[str, Any], return_id: int
+    ) -> bool:
         return bool(
             self._record(data)
-            and data["revision"] == 1
+            and data["revision"] == payload.get("revision", 0) + 1
+            and (not return_id or data["id"] == return_id)
             and data["counter"]["id"] == payload["counter_id"]
             and all(data[key] == payload[key] for key in ("series", "serial_from", "serial_to"))
             and datetime.fromisoformat(data["event_at"])
             == datetime.fromisoformat(payload["event_at"])
-            and data["reason"] == ""
+            and data["reason"] == payload.get("reason", "")
         )
 
     def _accept(self, data: dict[str, Any]) -> None:
         local = datetime.fromisoformat(data["event_at"]).astimezone(HKT)
-        precision = (
-            "microseconds" if local.microsecond else "seconds" if local.second else "minutes"
-        )
+        previous = self._state["selected"]
+        same_return = previous.get("id") == data["id"]
+        history = deepcopy(self._state["history"]) if same_return else []
+        known = history + [row for row in self._state["items"] if row["id"] == data["id"]]
+        if same_return:
+            known.append(previous)
+        head_revision = max([data["revision"], *[row["revision"] for row in known]])
         self._state.update(
             selected=deepcopy(data),
             dirty=False,
+            editing=False,
+            historical=data["revision"] < head_revision,
+            newer_revision=data["revision"] < head_revision,
+            history=history,
+            history_verified=False,
             quantity_display=str(data["quantity"]),
             forms={
                 "counter_id": str(data["counter"]["id"]),
                 "series": data["series"],
                 "serial_from": data["serial_from"],
                 "serial_to": data["serial_to"],
-                "event_time": local.isoformat(sep=" ", timespec=precision)[:-6],
+                "event_time": local.strftime("%Y-%m-%d %H:%M"),
                 "reason": "",
             },
         )
@@ -314,8 +485,10 @@ class CounterReturnsController(QObject):
         payload = self._payload()
         if payload is None:
             return
+        return_id = self._state["selected"].get("id", 0)
         signature = json.dumps(
-            {"station": self._state["station_id"], "data": payload}, sort_keys=True
+            {"station": self._state["station_id"], "return": return_id, "data": payload},
+            sort_keys=True,
         )
         if not self._pending or self._pending[0] != signature:
             self._pending = signature, str(uuid4())
@@ -324,12 +497,17 @@ class CounterReturnsController(QObject):
         self._state.update(refreshing=False, error="", notice="")
 
         def saved(data: dict[str, Any]) -> None:
-            if not self._matches_command(data, payload):
+            if not self._matches_command(data, payload, return_id):
                 self._error("request_failed")
                 return
             self._accept(data)
             self._pending = None
             self._state["notice"] = "counter_return_saved"
-            self.refresh()
+            self._history(refresh_after=True)
 
-        self._send("POST", payload, saved)
+        self._send(
+            "PUT" if return_id else "POST",
+            payload,
+            saved,
+            suffix=f"/{return_id}" if return_id else "",
+        )
