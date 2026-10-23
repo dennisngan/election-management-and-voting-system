@@ -75,7 +75,8 @@ def wait_for_editor_idle(app: QCoreApplication, editor: Any, timeout: float = 5)
 
     def observe() -> None:
         nonlocal completed
-        state = editor.property("state")
+        # The public Python Qt property avoids a second QVariant conversion of large directories.
+        state = editor.state
         if not state["busy"] and not state.get("refreshing", False):
             completed = True
 
