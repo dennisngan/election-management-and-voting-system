@@ -11,6 +11,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
 from election.desktop.lifecycle import HKT
+from election.desktop.report_files import DownloadRequest, report_destination, save_report
 from election.desktop.stock import serial
 
 QUANTITIES = (
@@ -44,9 +45,16 @@ def range_display(value: dict[str, Any]) -> dict[str, str]:
 class StockSnapshotsController(QObject):
     stateChanged = Signal()
 
-    def __init__(self, request: AuthorizedRequest, parent: QObject) -> None:
+    def __init__(
+        self,
+        request: AuthorizedRequest,
+        parent: QObject,
+        *,
+        download: DownloadRequest | None = None,
+    ) -> None:
         super().__init__(parent)
         self._request = request
+        self._download = download
         self._generation = 0
         self._opened = False
         self._pending: tuple[str, str] | None = None
@@ -83,6 +91,9 @@ class StockSnapshotsController(QObject):
             "editing": False,
             "historical": False,
             "newer_revision": False,
+            "report": {},
+            "report_text": "",
+            "export_path": "",
             "busy": False,
             "refreshing": False,
             "error": "",
@@ -391,6 +402,7 @@ class StockSnapshotsController(QObject):
             return False
         self._generation += 1
         self._pending = None
+        self._clear_report()
         self._state.update(
             refreshing=False, error="", notice="", history_verified=False, editing=False
         )
@@ -605,6 +617,7 @@ class StockSnapshotsController(QObject):
             return None
 
     def _accept(self, data: dict[str, Any]) -> None:
+        self._clear_report()
         local = datetime.fromisoformat(data["event_at"]).astimezone(HKT)
         previous = self._state["selected"]
         same_snapshot = previous.get("id") == data["id"]
@@ -669,3 +682,109 @@ class StockSnapshotsController(QObject):
             saved,
             suffix=f"/{snapshot_id}" if snapshot_id else "",
         )
+
+    def _clear_report(self) -> None:
+        self._state.update(report={}, report_text="", export_path="")
+
+    def _report_path(self, locale: str, extension: str = "") -> str | None:
+        if self._state["busy"]:
+            return None
+        selected = self._state["selected"]
+        if locale not in ("tc", "sc", "en") or not self._state["station_id"] or not selected:
+            self._error("stock_snapshot_validation")
+            return None
+        return (
+            f"/statement{extension}?locale={locale}"
+            f"&snapshot_id={selected['id']}&revision={selected['revision']}"
+        )
+
+    def _valid_report(self, data: dict[str, Any], selected: dict[str, Any], locale: str) -> bool:
+        scope, lines = data.get("scope"), data.get("preview_lines")
+        try:
+            generated = datetime.fromisoformat(data["generated_at"])
+            return bool(
+                isinstance(scope, dict)
+                and all(
+                    isinstance(scope.get(key), dict)
+                    and type(scope[key].get("id")) is int
+                    and scope[key]["id"] == self._state["context"].get(key, {}).get("id")
+                    for key in ("election", "constituency")
+                )
+                and isinstance(scope.get("station"), dict)
+                and type(scope["station"].get("id")) is int
+                and scope["station"]["id"] == selected["station_id"]
+                and data.get("locale") == locale
+                and data.get("report_scope") == "snapshot_revision"
+                and type(data.get("snapshot_id")) is int
+                and data["snapshot_id"] == selected["id"]
+                and type(data.get("revision")) is int
+                and data["revision"] == selected["revision"]
+                and data.get("revision_state") in ("current", "historical")
+                and data.get("items") == [selected]
+                and "availability" in data
+                and data["availability"] is None
+                and data.get("generation_timezone") == "Asia/Hong_Kong"
+                and generated.utcoffset() is not None
+                and isinstance(data.get("title"), str)
+                and data["title"].strip()
+                and isinstance(lines, list)
+                and lines
+                and all(isinstance(line, str) for line in lines)
+                and lines[0] == data["title"]
+            )
+        except KeyError, TypeError, ValueError, OverflowError:
+            return False
+
+    @Slot(str)
+    def preview(self, locale: str) -> None:
+        suffix = self._report_path(locale)
+        if suffix is None:
+            return
+        selected = deepcopy(self._state["selected"])
+        self._generation += 1
+        self._state.update(refreshing=False, error="", notice="", export_path="")
+
+        def loaded(data: dict[str, Any]) -> None:
+            if not self._valid_report(data, selected, locale):
+                self._error("request_failed")
+                return
+            self._state.update(
+                report=deepcopy(data),
+                report_text="\n".join(data["preview_lines"]),
+                notice="stock_report_ready",
+            )
+
+        self._send("GET", None, loaded, suffix=suffix)
+
+    @Slot(str, str, str)
+    def download(self, format: str, filepath: str, locale: str) -> None:
+        if format not in ("pdf", "csv") or self._download is None:
+            self._error("stock_export_failed")
+            return
+        destination = report_destination(filepath)
+        if destination is None:
+            self._error("stock_export_failed")
+            return
+        suffix = self._report_path(locale, "." + format)
+        if suffix is None:
+            return
+        self._generation += 1
+        generation = self._generation
+        self._state.update(refreshing=False, busy=True, error="", notice="", export_path="")
+        self.stateChanged.emit()
+
+        def failed(code: str) -> None:
+            if generation == self._generation:
+                self._state["busy"] = False
+                self._error(code)
+
+        def loaded(data: dict[str, Any]) -> None:
+            if generation != self._generation:
+                return
+            if not save_report(data, destination, format):
+                failed("stock_export_failed")
+                return
+            self._state.update(busy=False, notice="stock_exported", export_path=destination)
+            self.stateChanged.emit()
+
+        self._download(self._path() + suffix, loaded, failed)

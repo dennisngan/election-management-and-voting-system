@@ -70,7 +70,9 @@ class DesktopController(QObject):
         self._allocations = AllocationController(
             self._authorized_request, self._authorized_download, self
         )
-        self._stock_snapshots = StockSnapshotsController(self._authorized_request, self)
+        self._stock_snapshots = StockSnapshotsController(
+            self._authorized_request, self, download=self._authorized_download
+        )
         self._counter_returns = CounterReturnsController(self._authorized_request, self)
         self._queue = QueueController(
             self._authorized_request, self, download=self._authorized_download
