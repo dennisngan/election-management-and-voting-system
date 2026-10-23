@@ -8,8 +8,8 @@ from PySide6.QtCore import QCoreApplication
 from PySide6.QtTest import QTest
 
 from election.desktop.controller import DesktopController
-from tests.configuration_desktop_support import ready_setup, setup_idle
-from tests.desktop_support import HttpsServer, state_of, wait_for
+from tests.configuration_desktop_support import ready_setup
+from tests.desktop_support import HttpsServer, state_of, wait_for, wait_for_editor_idle
 from tests.lifecycle_support import lifecycle_database_url
 from tests.test_staff_desktop import create_officer
 
@@ -54,7 +54,7 @@ def test_password_reset_preserves_a_concurrent_held_profile_and_sends_one_reset(
     ready_setup(desktop, https_server, account, qt_app)
     staff = desktop.property("staff")
     staff.open()
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     created, _ = create_officer(staff, qt_app)
     https_server.hold_profile = True
     desktop.refresh()
