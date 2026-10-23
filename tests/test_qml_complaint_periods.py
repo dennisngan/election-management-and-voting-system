@@ -240,21 +240,6 @@ def test_p19_preview_and_multiline_amendment_fit_borders_and_preserve_read_only_
                 "reason": reason,
             },
             """
-            def inside_border(name):
-                field = control(name)
-                field.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
-                wait(lambda: field.property('activeFocus'))
-                background = field.property('background')
-                for position in (0, len(field.property('text'))):
-                    field.setProperty('cursorPosition', position)
-                    frame()
-                    cursor = field.property('cursorRectangle')
-                    inside = field.mapToItem(background, QPointF(cursor.x(), cursor.y()))
-                    assert inside.y() >= 8, name + ' crosses its visible top border'
-                    assert inside.y() + cursor.height() <= background.height() - 8
-                    assert inside.x() >= 8, name + ' crosses its visible left border'
-                    assert inside.x() + cursor.width() <= background.width() - 8
-
             click('complaintPeriodsNavigation')
             periods = controller.property('complaintPeriods')
             wait(lambda: not periods.property('state')['busy'])
@@ -266,7 +251,7 @@ def test_p19_preview_and_multiline_amendment_fit_borders_and_preserve_read_only_
             assert periods.property('state')['report']['locale'] == setup['locale']
             preview = control('complaintPeriodReportPreview')
             assert preview.property('readOnly') is True
-            inside_border('complaintPeriodReportPreview')
+            assert_multiline_inside_border('complaintPeriodReportPreview')
             original_preview = preview.property('text')
             QTest.keyClick(window, Qt.Key.Key_9)
             assert preview.property('text') == original_preview
@@ -274,15 +259,15 @@ def test_p19_preview_and_multiline_amendment_fit_borders_and_preserve_read_only_
             wait(lambda: not preview.property('activeFocus'))
             QTest.keyClick(window, Qt.Key.Key_Backtab)
             wait(lambda: preview.property('activeFocus'))
-            inside_border('complaintPeriodReportPreview')
+            assert_multiline_inside_border('complaintPeriodReportPreview')
 
             enter('complaintPeriodReason', setup['reason'])
-            inside_border('complaintPeriodReason')
+            assert_multiline_inside_border('complaintPeriodReason')
             QTest.keyClick(window, Qt.Key.Key_Tab)
             wait(lambda: control('complaintPeriodAmend').property('activeFocus'))
             QTest.keyClick(window, Qt.Key.Key_Backtab)
             wait(lambda: control('complaintPeriodReason').property('activeFocus'))
-            inside_border('complaintPeriodReason')
+            assert_multiline_inside_border('complaintPeriodReason')
             assert control('complaintPeriodReason').property('text') == setup['reason']
             click('complaintPeriodAmend')
             wait(lambda: not periods.property('state')['busy'])
@@ -296,7 +281,7 @@ def test_p19_preview_and_multiline_amendment_fit_borders_and_preserve_read_only_
             wait(lambda: not periods.property('state')['busy'])
             assert periods.property('state')['error'] == ''
             assert periods.property('state')['report']['revision'] == 2
-            inside_border('complaintPeriodReportPreview')
+            assert_multiline_inside_border('complaintPeriodReportPreview')
             saved_preview = preview.property('text')
             assert all(line in saved_preview for line in setup['reason'].splitlines())
             QTest.keyClick(window, Qt.Key.Key_9)

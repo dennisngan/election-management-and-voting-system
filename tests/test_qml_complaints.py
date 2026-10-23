@@ -137,21 +137,6 @@ def test_multiline_case_inputs_fit_their_borders_and_save_frozen_source_context(
                 "category_source": category["source_english"],
             },
             """
-            def inside_border(name):
-                field = control(name)
-                field.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
-                wait(lambda: field.property('activeFocus'))
-                background = field.property('background')
-                for position in (0, len(field.property('text'))):
-                    field.setProperty('cursorPosition', position)
-                    frame()
-                    cursor = field.property('cursorRectangle')
-                    inside = field.mapToItem(background, QPointF(cursor.x(), cursor.y()))
-                    assert inside.y() >= 8, name + ' crosses its visible top border'
-                    assert inside.y() + cursor.height() <= background.height() - 8
-                    assert inside.x() >= 8, name + ' crosses its visible left border'
-                    assert inside.x() + cursor.width() <= background.width() - 8
-
             click('complaintsNavigation')
             cases = controller.property('complaints')
             wait(lambda: not cases.property('state')['busy'])
@@ -160,20 +145,20 @@ def test_multiline_case_inputs_fit_their_borders_and_save_frozen_source_context(
             enter('complaintReceivedTime', '2026-11-15 08:15')
             choose('complaintCategory', 0)
             enter('complaintDescription', setup['description'])
-            inside_border('complaintDescription')
+            assert_multiline_inside_border('complaintDescription')
             QTest.keyClick(window, Qt.Key.Key_Tab)
             wait(lambda: control('complaintWorkStatus').property('activeFocus'))
             QTest.keyClick(window, Qt.Key.Key_Backtab)
             wait(lambda: control('complaintDescription').property('activeFocus'))
-            inside_border('complaintDescription')
+            assert_multiline_inside_border('complaintDescription')
             assert control('complaintDescription').property('text') == setup['description']
             enter('complaintReason', setup['reason'])
-            inside_border('complaintReason')
+            assert_multiline_inside_border('complaintReason')
             QTest.keyClick(window, Qt.Key.Key_Tab)
             wait(lambda: control('complaintCreate').property('activeFocus'))
             QTest.keyClick(window, Qt.Key.Key_Backtab)
             wait(lambda: control('complaintReason').property('activeFocus'))
-            inside_border('complaintReason')
+            assert_multiline_inside_border('complaintReason')
             assert control('complaintReason').property('text') == setup['reason']
             click('complaintCreate')
             wait(lambda: not cases.property('state')['busy'])
@@ -188,7 +173,7 @@ def test_multiline_case_inputs_fit_their_borders_and_save_frozen_source_context(
             source = control('complaintCategorySource')
             assert source.property('visible') is True
             assert setup['category_source'] in source.property('value')
-            inside_border('complaintDescription')
+            assert_multiline_inside_border('complaintDescription')
             """,
         )
         response = api.get(path)
