@@ -21,10 +21,34 @@ ColumnLayout {
     readonly property bool canEdit: canCreate && !editorState.historical
         && (!selected.id || editorState.editing)
     readonly property bool working: editorState.busy || editorState.refreshing
+    property string pendingAction: "new"
+    property int pendingId: 0
     signal reveal(var control)
     spacing: 20
 
     function t(key) { return words[key] || key }
+    function selectedIndex() {
+        for (let i = 0; i < editorState.items.length; i++)
+            if (editorState.items[i].id === selected.id) return i
+        return -1
+    }
+    function switchRecord(action, recordId, discard) {
+        if (action === "new") return snapshots.newSnapshot(discard)
+        if (action === "revision") return snapshots.loadRevision(recordId, discard)
+        return snapshots.loadSnapshot(recordId, discard)
+    }
+    function requestRecord(action, recordId) {
+        if (working) return
+        if (!switchRecord(action, recordId, false) && editorState.dirty) {
+            pendingAction = action
+            pendingId = recordId
+            discardDialog.open()
+        }
+    }
+    function moveFocus(control, forward) {
+        let next = control.nextItemInFocusChain(forward)
+        if (next) next.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason)
+    }
 
     component Heading: Label {
         color: "#25344b"
@@ -105,6 +129,94 @@ ColumnLayout {
             FormCaption { text: page.t("snapshot_provenance") }
         }
     }
+    FormNotice {
+        words: page.words
+        autoReveal: false
+        notice: page.editorState.newer_revision ? "stock_snapshot_newer_revision" : ""
+        onReveal: control => page.reveal(control)
+    }
+    FormPanel {
+        visible: !!page.editorState.station_id
+        implicitHeight: recordsLayout.implicitHeight + 40
+        ColumnLayout {
+            id: recordsLayout
+            anchors.fill: parent; anchors.margins: 20
+            spacing: 12
+            Heading { text: page.t("snapshot_records") }
+            FormCaption {
+                visible: page.editorState.items.length === 0
+                text: page.t("snapshot_empty")
+            }
+            ComboBox {
+                id: picker
+                objectName: "snapshotPicker"
+                Layout.fillWidth: true
+                model: page.editorState.items
+                currentIndex: page.selectedIndex()
+                displayText: currentIndex < 0 ? page.t("snapshot_select")
+                    : page.t("snapshot_record") + " " + page.selected.id + " · "
+                        + page.t("revision") + " " + page.selected.revision
+                enabled: !page.working
+                Accessible.name: page.t("snapshot_select")
+                delegate: ItemDelegate {
+                    required property var modelData
+                    width: picker.width
+                    text: page.t("snapshot_record") + " " + modelData.id + " · "
+                        + page.snapshots.formatTime(modelData.event_at) + " · "
+                        + page.t("revision") + " " + modelData.revision
+                    contentItem: Text {
+                        text: parent.text; font: parent.font
+                        textFormat: Text.PlainText; wrapMode: Text.WordWrap
+                        color: "#25344b"; verticalAlignment: Text.AlignVCenter
+                    }
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 24)
+                }
+                onActivated: page.requestRecord("record", model[currentIndex].id)
+                onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { page.reveal(picker) })
+            }
+            FormCaption {
+                objectName: "snapshotEventContext"
+                visible: !!page.selected.id
+                text: page.t("snapshot_event_time") + "\n" + page.snapshots.formatTime(page.selected.event_at || "")
+            }
+            FormCaption {
+                visible: !!page.selected.id
+                text: page.t("entered_by") + " · " + (page.selected.actor_id || "—")
+                    + "\n" + page.t("server_entry") + " · "
+                    + page.snapshots.formatTime(page.selected.entered_at || "")
+            }
+            FormCaption {
+                visible: !!page.selected.reason
+                text: page.t("stock_reason") + "\n" + (page.selected.reason || "")
+            }
+            FormCaption {
+                visible: page.editorState.historical
+                text: page.t("snapshot_historical")
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                FormButton {
+                    objectName: "snapshotEdit"
+                    visible: page.canCreate && !!page.selected.id
+                        && !page.editorState.historical && !page.editorState.editing
+                        && page.editorState.history_verified
+                    text: page.t("snapshot_edit")
+                    working: page.working
+                    onClicked: page.snapshots.editSelected()
+                    onReveal: control => page.reveal(control)
+                }
+                FormButton {
+                    objectName: "snapshotReload"
+                    visible: !!page.selected.id
+                    text: page.t("reload_saved")
+                    highlighted: false
+                    working: page.working
+                    onClicked: page.requestRecord("record", page.selected.id)
+                    onReveal: control => page.reveal(control)
+                }
+            }
+        }
+    }
     FormPanel {
         visible: !!page.editorState.station_id
         implicitHeight: formLayout.implicitHeight + 40
@@ -121,10 +233,7 @@ ColumnLayout {
                     text: page.t("snapshot_new")
                     highlighted: false
                     working: page.working
-                    onClicked: {
-                        if (!page.snapshots.newSnapshot(false) && page.editorState.dirty)
-                            discardDialog.open()
-                    }
+                    onClicked: page.requestRecord("new", 0)
                     onReveal: control => page.reveal(control)
                 }
             }
@@ -251,6 +360,32 @@ ColumnLayout {
                     }
                 }
             }
+            FormCaption {
+                visible: !!page.selected.id && page.editorState.editing
+                text: page.t("stock_reason")
+            }
+            TextArea {
+                id: reason
+                objectName: "snapshotReason"
+                visible: !!page.selected.id && page.editorState.editing
+                Layout.fillWidth: true
+                implicitHeight: Math.max(96, contentHeight + topPadding + bottomPadding)
+                text: page.form.reason || ""
+                readOnly: !page.canEdit
+                enabled: !page.working
+                selectByMouse: true
+                textFormat: TextEdit.PlainText
+                wrapMode: TextEdit.WrapAnywhere
+                topPadding: 12; bottomPadding: 12; leftPadding: 12; rightPadding: 12
+                topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
+                background: Rectangle { color: "white"; radius: 8; border.color: "#c4cedc" }
+                Accessible.name: page.t("stock_reason")
+                onTextChanged: if (activeFocus) page.snapshots.setField("reason", text)
+                Keys.priority: Keys.BeforeItem
+                Keys.onTabPressed: event => { page.moveFocus(reason, true); event.accepted = true }
+                Keys.onBacktabPressed: event => { page.moveFocus(reason, false); event.accepted = true }
+                onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { page.reveal(reason) })
+            }
             FormButton {
                 objectName: "snapshotSave"
                 visible: page.canEdit
@@ -288,6 +423,38 @@ ColumnLayout {
             Detail { caption: page.t("snapshot_issued"); value: page.editorState.totals.ordinary_issued_display }
         }
     }
+    FormPanel {
+        visible: !!page.selected.id
+        implicitHeight: historyLayout.implicitHeight + 40
+        ColumnLayout {
+            id: historyLayout
+            anchors.fill: parent; anchors.margins: 20
+            spacing: 12
+            Heading { text: page.t("snapshot_history") }
+            Repeater {
+                model: page.editorState.history
+                delegate: FormButton {
+                    id: revisionButton
+                    required property var modelData
+                    objectName: "snapshotHistoryRevision" + modelData.revision
+                    Layout.fillWidth: true
+                    highlighted: page.selected.revision === modelData.revision
+                    text: page.t("revision") + " " + modelData.revision + " · "
+                        + page.snapshots.formatTime(modelData.event_at)
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 24)
+                    contentItem: Text {
+                        text: revisionButton.text; font: revisionButton.font
+                        textFormat: Text.PlainText; wrapMode: Text.WordWrap
+                        color: revisionButton.highlighted ? "white" : "#1967d2"
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    working: page.working
+                    onClicked: page.requestRecord("revision", modelData.revision)
+                    onReveal: control => page.reveal(control)
+                }
+            }
+        }
+    }
     ConfirmationDialog {
         id: discardDialog
         objectName: "snapshotDiscardDialog"
@@ -295,6 +462,6 @@ ColumnLayout {
         message: page.t("unsaved_stock_snapshot_changes")
         acceptLabel: page.t("discard_changes")
         rejectLabel: page.t("keep_editing")
-        onConfirmed: page.snapshots.newSnapshot(true)
+        onConfirmed: page.switchRecord(page.pendingAction, page.pendingId, true)
     }
 }

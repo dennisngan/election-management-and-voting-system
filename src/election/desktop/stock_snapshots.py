@@ -788,3 +788,17 @@ class StockSnapshotsController(QObject):
             self.stateChanged.emit()
 
         self._download(self._path() + suffix, loaded, failed)
+
+    @Slot(str, result=str)
+    def formatTime(self, value: str) -> str:
+        try:
+            parsed = datetime.fromisoformat(value)
+            if parsed.tzinfo is None:
+                return "—"
+            local = parsed.astimezone(HKT)
+            precision = (
+                "microseconds" if local.microsecond else "seconds" if local.second else "minutes"
+            )
+            return local.isoformat(sep=" ", timespec=precision).removesuffix("+08:00") + " HKT"
+        except TypeError, ValueError, OverflowError:
+            return "—"

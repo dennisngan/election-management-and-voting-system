@@ -126,3 +126,79 @@ def test_missing_counter_is_incomplete_but_an_explicit_zero_is_a_complete_new_ob
     assert rows[0]["complete"] is False and rows[0]["ordinary_issued_quantity"] is None
     assert rows[1]["complete"] is True and rows[1]["ordinary_issued_quantity"] == 6
     assert rows[1]["counters"][0]["ranges"] == []
+
+
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_officer_amends_and_reviews_precise_saved_snapshot_revisions_in_material(
+    snapshot_qml_setup: dict,
+    locale: str,
+) -> None:
+    from uuid import uuid4
+
+    setup = snapshot_qml_setup
+    created = setup["api"].post(
+        setup["base"] + "/stock-snapshots",
+        json={
+            "request_id": str(uuid4()),
+            "event_at": "2026-11-15T09:30:17.123456+08:00",
+            "counters": [
+                {
+                    "counter_id": setup["qml"]["counter_id"],
+                    "ranges": [
+                        {"series": "普通系列 A", "serial_from": "000004", "serial_to": "000006"}
+                    ],
+                }
+            ],
+        },
+    )
+    assert created.status_code == 201
+    original = created.json()
+    run_workspace_qml(
+        {**setup["qml"], "locale": locale},
+        """
+        click('stockSnapshotsNavigation')
+        editor = controller.property('stockSnapshots')
+        def idle():
+            return not any(editor.property('state')[key] for key in ('busy', 'refreshing'))
+        wait(idle)
+        choose('snapshotPicker', 0)
+        wait(idle)
+        suffix = str(setup['counter_id'])
+        assert control('snapshotSerialFrom' + suffix + '_0').property('readOnly') is True
+        assert '09:30:17.123456 HKT' in control('snapshotEventContext').property('text')
+        click('snapshotEdit')
+        enter('snapshotSerialFrom' + suffix + '_0', '000005')
+        enter('snapshotReason', '紙本核對第一行：第四號已發出。\\n第二行：保留原始版本。')
+        assert_multiline_inside_border('snapshotReason')
+        QTest.keyClick(window, Qt.Key.Key_Tab)
+        wait(lambda: control('snapshotSave').property('activeFocus'))
+        QTest.keyClick(window, Qt.Key.Key_Backtab)
+        wait(lambda: control('snapshotReason').property('activeFocus'))
+        assert_multiline_inside_border('snapshotReason')
+        click('snapshotSave')
+        wait(idle)
+        assert editor.property('state')['error'] == ''
+        assert editor.property('state')['selected']['revision'] == 2
+        assert control('snapshotRemainingTotal').property('text') == '2'
+        click('snapshotHistoryRevision1')
+        wait(idle)
+        assert editor.property('state')['historical'] is True
+        assert control('snapshotSerialFrom' + suffix + '_0').property('text') == '000004'
+        assert control('snapshotSerialFrom' + suffix + '_0').property('readOnly') is True
+        assert control('snapshotSave').property('visible') is False
+        assert control('snapshotEdit').property('visible') is False
+        assert control('snapshotRemainingTotal').property('text') == '3'
+        assert control('snapshotCurrentIssued').property('text') == '4'
+        click('snapshotReload')
+        wait(idle)
+        assert editor.property('state')['selected']['revision'] == 2
+        assert control('snapshotRemainingTotal').property('text') == '2'
+        """,
+    )
+    history = setup["api"].get(setup["base"] + f"/stock-snapshots/{original['id']}/history")
+    assert history.status_code == 200
+    revisions = history.json()["items"]
+    assert revisions[0] == original
+    assert revisions[1]["event_at"] == original["event_at"]
+    assert revisions[1]["reason"] == "紙本核對第一行：第四號已發出。\n第二行：保留原始版本。"
+    assert revisions[1]["ordinary_issued_quantity"] == 4

@@ -69,6 +69,21 @@ def focus(name):
     wait(ready)
     return item
 
+def assert_multiline_inside_border(name):
+    field = control(name)
+    field.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+    wait(lambda: field.property('activeFocus'))
+    background = field.property('background')
+    for position in (0, len(field.property('text'))):
+        field.setProperty('cursorPosition', position)
+        frame()
+        cursor = field.property('cursorRectangle')
+        inside = field.mapToItem(background, QPointF(cursor.x(), cursor.y()))
+        assert inside.y() >= 8, name + ' crosses its visible top border'
+        assert inside.y() + cursor.height() <= background.height() - 8
+        assert inside.x() >= 8, name + ' crosses its visible left border'
+        assert inside.x() + cursor.width() <= background.width() - 8
+
 def click(name):
     item = focus(name)
     center = item.mapToScene(QPointF(item.width()/2, item.height()/2)).toPoint()

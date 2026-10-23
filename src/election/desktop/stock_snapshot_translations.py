@@ -2,6 +2,30 @@
 
 STOCK_SNAPSHOT_TRANSLATIONS = {
     "tc": {
+        "snapshot_records": (
+            "已儲存的結餘觀察"
+        ),
+        "snapshot_empty": (
+            "本站尚未儲存結餘觀察。"
+        ),
+        "snapshot_select": (
+            "選擇已儲存的結餘觀察"
+        ),
+        "snapshot_record": (
+            "結餘觀察"
+        ),
+        "snapshot_edit": (
+            "建立有原因的修訂"
+        ),
+        "snapshot_history": (
+            "結餘觀察修訂歷史"
+        ),
+        "snapshot_historical": (
+            "此為歷史版本，只供查看。請重新載入目前版本後才修訂。"
+        ),
+        "stock_snapshot_newer_revision": (
+            "伺服器已有較新版本；您審閱的版本及未儲存內容仍保留。"
+        ),
         "snapshot_new": "新增結餘觀察",
         "unsaved_stock_snapshot_changes": (
             '結餘表格有未儲存內容。捨棄後才會新增觀察。'
@@ -39,6 +63,30 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_issued": "庫存推算已發出選票",
     },
     "sc": {
+        "snapshot_records": (
+            "已保存的结余观察"
+        ),
+        "snapshot_empty": (
+            "本站尚未保存结余观察。"
+        ),
+        "snapshot_select": (
+            "选择已保存的结余观察"
+        ),
+        "snapshot_record": (
+            "结余观察"
+        ),
+        "snapshot_edit": (
+            "建立有原因的修订"
+        ),
+        "snapshot_history": (
+            "结余观察修订历史"
+        ),
+        "snapshot_historical": (
+            "此为历史版本，仅供查看。请重新载入当前版本后才修订。"
+        ),
+        "stock_snapshot_newer_revision": (
+            "服务器已有较新版本；您审阅的版本及未保存内容仍保留。"
+        ),
         "snapshot_new": "新增结余观察",
         "unsaved_stock_snapshot_changes": (
             '结余表格有未保存内容。舍弃后才会新增观察。'
@@ -76,6 +124,38 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_issued": "库存推算已发出选票",
     },
     "en": {
+        "snapshot_records": (
+            "Saved balance observations"
+        ),
+        "snapshot_empty": (
+            "No balance observations have b"
+            "een saved at this station."
+        ),
+        "snapshot_select": (
+            "Choose a saved balance observa"
+            "tion"
+        ),
+        "snapshot_record": (
+            "Balance observation"
+        ),
+        "snapshot_edit": (
+            "Prepare a reasoned amendment"
+        ),
+        "snapshot_history": (
+            "Balance observation revision h"
+            "istory"
+        ),
+        "snapshot_historical": (
+            "This historical revision is re"
+            "ad-only. Reload the current re"
+            "vision before amending."
+        ),
+        "stock_snapshot_newer_revision": (
+            "A newer server revision is ava"
+            "ilable. Your reviewed revision"
+            " and unsaved input are retaine"
+            "d."
+        ),
         "snapshot_new": "New balance observation",
         "unsaved_stock_snapshot_changes": (
             'The balance form has unsaved input.'
