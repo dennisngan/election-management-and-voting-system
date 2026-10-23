@@ -9,7 +9,7 @@ from PySide6.QtTest import QTest
 
 from election.desktop.controller import DesktopController
 from tests.configuration_desktop_support import ready_setup
-from tests.desktop_support import HttpsServer, state_of, wait_for, wait_for_editor_idle
+from tests.desktop_support import HttpsServer, sign_in, state_of, wait_for, wait_for_editor_idle
 from tests.lifecycle_support import lifecycle_database_url
 from tests.test_staff_desktop import create_officer
 
@@ -78,5 +78,32 @@ def test_password_reset_preserves_a_concurrent_held_profile_and_sends_one_reset(
     wait_for(qt_app, https_server.profile_finished.is_set)
     QTest.qWait(100)
     assert state_of(desktop)["phase"] == "workspace"
+    assert state_of(desktop)["error"] == ""
+    assert state_of(desktop)["connection"] == "connected"
+
+
+def test_held_profile_waits_for_explicit_release_while_qt_processes_events(
+    desktop: DesktopController,
+    https_server: HttpsServer,
+    account: dict[str, str],
+    qt_app: QCoreApplication,
+) -> None:
+    https_server.hold_profile = True
+    sign_in(desktop, https_server, account, qt_app)
+    wait_for(qt_app, https_server.profile_entered.is_set)
+    # Sign-in's real authenticated refresh stays held beyond the former fixture
+    # timeout. Process Qt events and yield to the Python server thread throughout,
+    # staying below the unchanged eight-second transport limit.
+    held_until = time.monotonic() + 5.3
+    while time.monotonic() < held_until:
+        QTest.qWait(10)
+        time.sleep(0.01)
+    assert not https_server.release_profile.is_set()
+    assert not https_server.profile_finished.is_set()
+    https_server.release_profile.set()
+    wait_for(qt_app, https_server.profile_finished.is_set)
+    assert https_server.delayed_profile_status == 200
+    QTest.qWait(100)
+    assert state_of(desktop)["phase"] == "password_change"
     assert state_of(desktop)["error"] == ""
     assert state_of(desktop)["connection"] == "connected"

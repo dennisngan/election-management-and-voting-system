@@ -132,7 +132,9 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
         if delayed_profile:
             endpoint.hold_profile = False
             endpoint.profile_entered.set()
-            await asyncio.to_thread(endpoint.release_profile.wait, 5)
+            # This controlled barrier ends only on explicit release; fixture
+            # cleanup also releases it, including after a failed assertion.
+            await asyncio.to_thread(endpoint.release_profile.wait)
         if (
             request.method == "GET"
             and request.url.path == "/api/elections"
