@@ -942,9 +942,16 @@ def test_return_correction_cannot_restore_ownership_after_paper_is_reallocated(
         ] == [("000007", "000008", 2)]
 
 
-@pytest.mark.parametrize("has_reallocation", [False, True])
+@pytest.mark.parametrize(
+    ("has_reallocation", "has_second_return"),
+    [
+        pytest.param(False, False, id="False"),
+        pytest.param(True, False, id="True"),
+        pytest.param(True, True, id="returned-again"),
+    ],
+)
 def test_compatible_allocation_revision_preserves_return_lineage_and_current_availability(
-    admin: TestClient, database_url: str, has_reallocation: bool
+    admin: TestClient, database_url: str, has_reallocation: bool, has_second_return: bool
 ) -> None:
     scope, clock = turnout_scope(admin, activate=False), TurnoutClock()
     station_id = scope["stations"][0]["id"]
@@ -1002,6 +1009,7 @@ def test_compatible_allocation_revision_preserves_return_lineage_and_current_ava
             for row in original_return["allocation_basis"]
         ] == [(original["id"], 1)]
         claimed = None
+        descendant_return = None
         if has_reallocation:
             response = officer.post(
                 base + "/allocations",
@@ -1015,6 +1023,23 @@ def test_compatible_allocation_revision_preserves_return_lineage_and_current_ava
             )
             assert response.status_code == 201
             claimed = response.json()
+            if has_second_return:
+                response = officer.post(
+                    base + "/stock-returns",
+                    json={
+                        **command,
+                        "request_id": str(uuid4()),
+                        "counter_id": counters["C2"]["id"],
+                        "serial_from": "000006",
+                        "event_at": "2026-11-15T10:10:00+08:00",
+                    },
+                )
+                assert response.status_code == 201
+                descendant_return = response.json()
+                assert descendant_return["allocation_basis"] == [{
+                    "allocation_id": claimed["id"], "revision": 1,
+                    "serial_from": "000006", "serial_to": "000006", "quantity": 1,
+                }]
         target = base + f"/allocations/{original['id']}"
         correction = {
             **command,
@@ -1023,7 +1048,7 @@ def test_compatible_allocation_revision_preserves_return_lineage_and_current_ava
             "reason": "核對紙本交收資料，原範圍及派發時間確認無誤",
         }
         corrected = officer.put(target, json=correction)
-        assert corrected.status_code == 200
+        assert corrected.status_code == 200, corrected.json().get("detail")
         second = corrected.json()
         assert second["id"] == original["id"] and second["revision"] == 2
         assert second["counter"] == counters["C1"] and second["series"] == "普通系列 A"
@@ -1037,6 +1062,19 @@ def test_compatible_allocation_revision_preserves_return_lineage_and_current_ava
         ]
         frozen_return = officer.get(base + f"/stock-returns/{original_return['id']}")
         assert frozen_return.status_code == 200 and frozen_return.json() == original_return
+        return_history = officer.get(base + f"/stock-returns/{original_return['id']}/history")
+        assert return_history.status_code == 200
+        assert return_history.json()["items"] == [original_return]
+        if descendant_return is not None:
+            return_target = base + f"/stock-returns/{descendant_return['id']}"
+            retained_return = officer.get(return_target)
+            assert (
+                retained_return.status_code == 200
+                and retained_return.json() == descendant_return
+            )
+            return_history = officer.get(return_target + "/history")
+            assert return_history.status_code == 200
+            assert return_history.json()["items"] == [descendant_return]
         historical = officer.get(target, params={"revision": 1})
         assert historical.status_code == 200 and historical.json() == original
         history = officer.get(target + "/history")
@@ -1046,7 +1084,7 @@ def test_compatible_allocation_revision_preserves_return_lineage_and_current_ava
         balance = availability.json()["availability"][0]
         assert balance["ordinary_received_quantity"] == 8
         assert balance["replacement_quantity"] == 1 and balance["tendered_quantity"] == 1
-        if has_reallocation:
+        if has_reallocation and not has_second_return:
             assert balance["allocated_quantity"] == 6 and balance["available_quantity"] == 2
             expected = [("000007", "000008", 2)]
         else:
@@ -1058,6 +1096,30 @@ def test_compatible_allocation_revision_preserves_return_lineage_and_current_ava
         if claimed is not None:
             retained = officer.get(base + f"/allocations/{claimed['id']}")
             assert retained.status_code == 200 and retained.json() == claimed
+        if descendant_return is not None:
+            statement = officer.get(base + "/allocations/statement?locale=en")
+            assert statement.status_code == 200
+            assert statement.json()["availability"][0]["allocated_quantity"] == 5
+            assert statement.json()["availability"][0]["available_quantity"] == 3
+            rejected = officer.post(
+                base + "/allocations",
+                json={
+                    **command,
+                    "request_id": str(uuid4()),
+                    "serial_from": "000006",
+                    "event_at": "2026-11-15T10:07:00+08:00",
+                },
+            )
+            assert rejected.status_code == 409
+            assert rejected.json()["detail"]["code"] == "allocation_before_return"
+            heads = officer.get(base + "/allocations")
+            assert heads.status_code == 200 and heads.json()["items"] == [second, claimed]
+            assert heads.json()["availability"] == availability.json()["availability"]
+            history = officer.get(target + "/history")
+            assert history.status_code == 200 and history.json()["items"] == [original, second]
+            assert claimed is not None
+            history = officer.get(base + f"/allocations/{claimed['id']}/history")
+            assert history.status_code == 200 and history.json()["items"] == [claimed]
 
 
 def test_counter_return_collection_lists_stable_current_heads_and_retains_revision_history(
