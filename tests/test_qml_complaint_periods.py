@@ -214,3 +214,105 @@ def test_counting_officer_reads_frozen_zero_and_live_stale_basis_then_previews_b
             """,
         )
         assert reader.get(path + "/1").json()["total_received"] == 0
+
+
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_p19_preview_and_multiline_amendment_fit_borders_and_preserve_read_only_text(
+    admin: TestClient, database_url: str, https_server: HttpsServer, locale: str
+) -> None:
+    scope, clock = complaint_period_scope(admin), ComplaintClock()
+    station_id, path = scope["station"]["id"], scope["path"]
+    https_server.clock.value = clock.value
+    reason = "時段修訂第一行：核對紙本案件。\n時段修訂第二行：確認本時段明確零宗。"
+    with complaint_staff(admin, database_url, clock, "polling_officer", [station_id]) as (
+        api,
+        account,
+    ):
+        assert api.put(path + "/1", json=period_command()).status_code == 200
+        assert api.post(path + "/1/submit", json=period_command(1)).status_code == 200
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": locale,
+                "reason": reason,
+            },
+            """
+            def inside_border(name):
+                field = control(name)
+                field.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+                wait(lambda: field.property('activeFocus'))
+                background = field.property('background')
+                for position in (0, len(field.property('text'))):
+                    field.setProperty('cursorPosition', position)
+                    frame()
+                    cursor = field.property('cursorRectangle')
+                    inside = field.mapToItem(background, QPointF(cursor.x(), cursor.y()))
+                    assert inside.y() >= 8, name + ' crosses its visible top border'
+                    assert inside.y() + cursor.height() <= background.height() - 8
+                    assert inside.x() >= 8, name + ' crosses its visible left border'
+                    assert inside.x() + cursor.width() <= background.width() - 8
+
+            click('complaintPeriodsNavigation')
+            periods = controller.property('complaintPeriods')
+            wait(lambda: not periods.property('state')['busy'])
+            assert periods.property('state')['selected']['status'] == 'submitted'
+            frame()
+            click('complaintPeriodPreview')
+            wait(lambda: not periods.property('state')['busy'])
+            assert periods.property('state')['error'] == ''
+            assert periods.property('state')['report']['locale'] == setup['locale']
+            preview = control('complaintPeriodReportPreview')
+            assert preview.property('readOnly') is True
+            inside_border('complaintPeriodReportPreview')
+            original_preview = preview.property('text')
+            QTest.keyClick(window, Qt.Key.Key_9)
+            assert preview.property('text') == original_preview
+            QTest.keyClick(window, Qt.Key.Key_Tab)
+            wait(lambda: not preview.property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_Backtab)
+            wait(lambda: preview.property('activeFocus'))
+            inside_border('complaintPeriodReportPreview')
+
+            enter('complaintPeriodReason', setup['reason'])
+            inside_border('complaintPeriodReason')
+            QTest.keyClick(window, Qt.Key.Key_Tab)
+            wait(lambda: control('complaintPeriodAmend').property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_Backtab)
+            wait(lambda: control('complaintPeriodReason').property('activeFocus'))
+            inside_border('complaintPeriodReason')
+            assert control('complaintPeriodReason').property('text') == setup['reason']
+            click('complaintPeriodAmend')
+            wait(lambda: not periods.property('state')['busy'])
+            saved = periods.property('state')
+            assert saved['error'] == '' and saved['selected']['revision'] == 2
+            assert saved['selected']['amendment_reason'] == setup['reason']
+            assert saved['selected']['total_received'] == 0
+            assert saved['selected']['members'] == []
+            frame()
+            click('complaintPeriodPreview')
+            wait(lambda: not periods.property('state')['busy'])
+            assert periods.property('state')['error'] == ''
+            assert periods.property('state')['report']['revision'] == 2
+            inside_border('complaintPeriodReportPreview')
+            saved_preview = preview.property('text')
+            assert all(line in saved_preview for line in setup['reason'].splitlines())
+            QTest.keyClick(window, Qt.Key.Key_9)
+            assert preview.property('text') == saved_preview
+            """,
+        )
+        current = api.get(path + "/1")
+        assert current.status_code == 200
+        row = current.json()
+        assert row["revision"] == 2 and row["status"] == "draft"
+        assert row["amendment_reason"] == reason
+        assert row["total_received"] == row["total_completed"] == row["total_in_progress"] == 0
+        assert row["members"] == []
+        history = api.get(path + "/1/history")
+        assert history.status_code == 200
+        rows = history.json()["items"]
+        assert [entry["revision"] for entry in rows] == [1, 2]
+        assert rows[0]["status"] == "submitted" and rows[0]["amendment_reason"] == ""
+        assert rows[1]["amendment_reason"] == reason

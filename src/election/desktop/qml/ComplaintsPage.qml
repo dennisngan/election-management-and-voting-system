@@ -128,7 +128,12 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: Math.max(92, contentHeight + topPadding + bottomPadding)
         textFormat: TextEdit.PlainText; wrapMode: TextEdit.WordWrap
-        selectByMouse: true; clip: true; padding: 12
+        selectByMouse: true; clip: true
+        leftPadding: 12
+        rightPadding: 12
+        topPadding: 12
+        bottomPadding: 12
+        topInset: 0
         enabled: !page.editorState.busy; readOnly: !page.editable
         Keys.priority: Keys.BeforeItem
         Keys.onTabPressed: event => { page.moveFocus(field, true); event.accepted = true }

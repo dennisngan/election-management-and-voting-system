@@ -110,6 +110,97 @@ def test_officer_creates_completes_and_reviews_case_history_through_visible_cont
         assert case["completed_at"] == "2026-11-15T01:15:00Z"
 
 
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_multiline_case_inputs_fit_their_borders_and_save_frozen_source_context(
+    admin: TestClient, database_url: str, https_server: HttpsServer, locale: str
+) -> None:
+    station, clock = complaint_stations(admin)["N1"], ComplaintClock()
+    https_server.clock.value = clock.value
+    path = f"/api/workspace/stations/{station['id']}/complaints"
+    description = "案件描述第一行：入口安排需要協助。\n案件描述第二行：保留原文及換行。"
+    reason = "補錄說明第一行：核對紙本資料。\n補錄說明第二行：記錄原始情況。"
+    with complaint_staff(admin, database_url, clock, "polling_officer", [station["id"]]) as (
+        api,
+        account,
+    ):
+        category = station_categories(api, station["id"])[0]
+        assert category["source_english"]
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station["id"],
+                "locale": locale,
+                "description": description,
+                "reason": reason,
+                "category_source": category["source_english"],
+            },
+            """
+            def inside_border(name):
+                field = control(name)
+                field.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+                wait(lambda: field.property('activeFocus'))
+                background = field.property('background')
+                for position in (0, len(field.property('text'))):
+                    field.setProperty('cursorPosition', position)
+                    frame()
+                    cursor = field.property('cursorRectangle')
+                    inside = field.mapToItem(background, QPointF(cursor.x(), cursor.y()))
+                    assert inside.y() >= 8, name + ' crosses its visible top border'
+                    assert inside.y() + cursor.height() <= background.height() - 8
+                    assert inside.x() >= 8, name + ' crosses its visible left border'
+                    assert inside.x() + cursor.width() <= background.width() - 8
+
+            click('complaintsNavigation')
+            cases = controller.property('complaints')
+            wait(lambda: not cases.property('state')['busy'])
+            frame()
+            enter('complaintReference', 'GEOM0001')
+            enter('complaintReceivedTime', '2026-11-15 08:15')
+            choose('complaintCategory', 0)
+            enter('complaintDescription', setup['description'])
+            inside_border('complaintDescription')
+            QTest.keyClick(window, Qt.Key.Key_Tab)
+            wait(lambda: control('complaintWorkStatus').property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_Backtab)
+            wait(lambda: control('complaintDescription').property('activeFocus'))
+            inside_border('complaintDescription')
+            assert control('complaintDescription').property('text') == setup['description']
+            enter('complaintReason', setup['reason'])
+            inside_border('complaintReason')
+            QTest.keyClick(window, Qt.Key.Key_Tab)
+            wait(lambda: control('complaintCreate').property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_Backtab)
+            wait(lambda: control('complaintReason').property('activeFocus'))
+            inside_border('complaintReason')
+            assert control('complaintReason').property('text') == setup['reason']
+            click('complaintCreate')
+            wait(lambda: not cases.property('state')['busy'])
+            saved = cases.property('state')
+            assert saved['error'] == '' and saved['selected']['revision'] == 1
+            assert saved['selected']['description'] == setup['description']
+            assert saved['selected']['amendment_reason'] == setup['reason']
+            assert saved['form_category']['frozen'] is True
+            assert saved['form_category']['source_english'] == setup['category_source']
+            frame()
+            assert control('complaintFrozenCategory').property('visible') is True
+            source = control('complaintCategorySource')
+            assert source.property('visible') is True
+            assert setup['category_source'] in source.property('value')
+            inside_border('complaintDescription')
+            """,
+        )
+        response = api.get(path)
+        assert response.status_code == 200
+        (case,) = response.json()["items"]
+        assert case["case_reference"] == "GEOM0001" and case["revision"] == 1
+        assert case["description"] == description and case["amendment_reason"] == reason
+        assert case["category_id"] == category["id"]
+        assert case["category_revision"] == category["revision"]
+        assert case["category_source_english"] == category["source_english"]
+
+
 def test_receipt_correction_into_submitted_period_has_a_reasoned_gui_recovery_path(
     admin: TestClient, database_url: str, https_server: HttpsServer
 ) -> None:
