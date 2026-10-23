@@ -18,6 +18,8 @@ from election.server import (  # noqa: F401 -- register tables with Base.metadat
     staff_models,
     station_models,
     stock_models,
+    stock_return_models,
+    stock_snapshot_models,
     turnout_models,
 )
 from election.server.config import Settings

@@ -34,6 +34,9 @@ from election.server.staff import staff_router, station_access_router
 from election.server.stations import stations_router
 from election.server.stock import stock_router
 from election.server.stock_reports import stock_reports_router
+from election.server.stock_returns import stock_return_router
+from election.server.stock_snapshot_reports import stock_snapshot_reports_router
+from election.server.stock_snapshots import stock_snapshot_router
 from election.server.turnout import turnout_router
 from election.server.turnout_reports import turnout_reports_router
 
@@ -149,6 +152,9 @@ def create_app(
     app.include_router(stock_reports_router(database, ready_account, timestamp))
     app.include_router(allocation_reports_router(database, ready_account, timestamp))
     app.include_router(allocation_router(database, ready_account, timestamp))
+    app.include_router(stock_snapshot_reports_router(database, ready_account, timestamp))
+    app.include_router(stock_snapshot_router(database, ready_account, timestamp))
+    app.include_router(stock_return_router(database, ready_account, timestamp))
 
     def new_session(db: Session, account: Account) -> dict[str, Any]:
         token = token_urlsafe(32)
