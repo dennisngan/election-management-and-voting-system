@@ -3,6 +3,7 @@
 from election.desktop.allocation_translations import ALLOCATION_TRANSLATIONS
 from election.desktop.complaint_period_translations import COMPLAINT_PERIOD_TRANSLATIONS
 from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
+from election.desktop.counter_return_translations import COUNTER_RETURN_TRANSLATIONS
 from election.desktop.stock_snapshot_translations import STOCK_SNAPSHOT_TRANSLATIONS
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
@@ -1940,3 +1941,6 @@ for language, allocation_labels in ALLOCATION_TRANSLATIONS.items():
 
 for language, snapshot_labels in STOCK_SNAPSHOT_TRANSLATIONS.items():
     TRANSLATIONS[language].update(snapshot_labels)
+
+for language, return_labels in COUNTER_RETURN_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(return_labels)

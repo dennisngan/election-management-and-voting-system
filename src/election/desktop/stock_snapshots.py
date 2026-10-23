@@ -10,6 +10,7 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
+from election.desktop.event_times import format_event_time
 from election.desktop.lifecycle import HKT
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 from election.desktop.stock import serial
@@ -809,14 +810,4 @@ class StockSnapshotsController(QObject):
 
     @Slot(str, result=str)
     def formatTime(self, value: str) -> str:
-        try:
-            parsed = datetime.fromisoformat(value)
-            if parsed.tzinfo is None:
-                return "—"
-            local = parsed.astimezone(HKT)
-            precision = (
-                "microseconds" if local.microsecond else "seconds" if local.second else "minutes"
-            )
-            return local.isoformat(sep=" ", timespec=precision).removesuffix("+08:00") + " HKT"
-        except TypeError, ValueError, OverflowError:
-            return "—"
+        return format_event_time(value)

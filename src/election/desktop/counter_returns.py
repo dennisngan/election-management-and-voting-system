@@ -10,6 +10,7 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler, positive_integer
+from election.desktop.event_times import format_event_time
 from election.desktop.lifecycle import HKT
 from election.desktop.stock import serial
 
@@ -511,3 +512,7 @@ class CounterReturnsController(QObject):
             saved,
             suffix=f"/{return_id}" if return_id else "",
         )
+
+    @Slot(str, result=str)
+    def formatTime(self, value: str) -> str:
+        return format_event_time(value)
