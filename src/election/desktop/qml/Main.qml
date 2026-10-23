@@ -32,16 +32,19 @@ ApplicationWindow {
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
     onCurrentPageChanged: Qt.callLater(function() { if (scroll.contentItem) scroll.contentItem.contentY = 0 })
+    onActiveFocusItemChanged: Qt.callLater(function() {
+        window.revealIn(sidebarScroll, window.activeFocusItem)
+    })
 
     function t(key) { return words[key] || key }
     function submitLogin() { controller.signIn(serverField.text, usernameField.text, passwordField.text) }
     function submitPassword() { controller.changePassword(currentField.text, newField.text, confirmField.text) }
-    function revealField(control) {
-        if (!control || !scroll.contentItem) return
+    function revealIn(scrollView, control) {
+        if (!control || !scrollView || !scrollView.contentItem) return
         var ancestor = control
-        while (ancestor && ancestor !== scroll) ancestor = ancestor.parent
-        if (ancestor !== scroll) return
-        var viewport = scroll.contentItem
+        while (ancestor && ancestor !== scrollView) ancestor = ancestor.parent
+        if (ancestor !== scrollView) return
+        var viewport = scrollView.contentItem
         var origin = control.mapToItem(viewport, 0, 0)
         var target = viewport.contentY
         if (origin.y < 12) target += origin.y - 12
@@ -50,6 +53,7 @@ ApplicationWindow {
         viewport.contentY = Math.max(0, Math.min(target,
             Math.max(0, viewport.contentHeight - viewport.height)))
     }
+    function revealField(control) { revealIn(scroll, control) }
 
     Connections {
         target: controller
@@ -197,6 +201,9 @@ ApplicationWindow {
                 anchors.fill: parent
                 clip: true
                 contentWidth: availableWidth
+                onHeightChanged: Qt.callLater(function() {
+                    window.revealIn(sidebarScroll, window.activeFocusItem)
+                })
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ColumnLayout {
                 width: sidebarScroll.availableWidth - 36
@@ -205,6 +212,7 @@ ApplicationWindow {
                 spacing: 8
                 Caption { text: window.t("workspace"); Layout.topMargin: 10; Layout.bottomMargin: 12 }
                 Button {
+                    objectName: "accountNavigation"
                     text: window.t("account"); Layout.fillWidth: true
                     highlighted: window.currentPage === "account"; flat: true
                     Material.background: window.currentPage === "account" ? "#dceaff" : "transparent"
