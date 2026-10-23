@@ -1,7 +1,6 @@
 """Record never-issued ordinary stock returned from a counter to the PRO."""
 
 import json
-import re
 from copy import deepcopy
 from datetime import datetime
 from typing import Any
@@ -10,7 +9,7 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler, positive_integer
-from election.desktop.event_times import format_event_time
+from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.lifecycle import HKT
 from election.desktop.stock import serial
 
@@ -403,26 +402,14 @@ class CounterReturnsController(QObject):
                 raise ValueError("A ballot series is required")
             if serial(form["serial_to"]) < serial(form["serial_from"]):
                 raise ValueError("Range is reversed")
-            event_text = form["event_time"].strip()
-            if not re.fullmatch(
-                r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,6})?)?",
-                event_text,
-            ):
-                raise ValueError("Use a local Hong Kong date and time")
-            event = datetime.fromisoformat(event_text).replace(tzinfo=HKT)
             selected = self._state["selected"]
-            original = selected.get("event_at")
-            unchanged_minute = bool(
-                original
-                and event_text
-                == datetime.fromisoformat(original).astimezone(HKT).strftime("%Y-%m-%d %H:%M")
-            )
+            event_at = parse_event_time(form["event_time"], selected.get("event_at"))
             payload = {
                 "counter_id": counter_id,
                 "series": form["series"],
                 "serial_from": form["serial_from"],
                 "serial_to": form["serial_to"],
-                "event_at": original if unchanged_minute else event.isoformat(),
+                "event_at": event_at,
             }
             if selected:
                 reason = form["reason"]

@@ -1,7 +1,6 @@
 """Remaining-stock entry retains exact ranges and server-derived issuance."""
 
 import json
-import re
 from copy import deepcopy
 from datetime import datetime
 from typing import Any
@@ -10,7 +9,7 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
-from election.desktop.event_times import format_event_time
+from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.lifecycle import HKT
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 from election.desktop.stock import serial
@@ -593,13 +592,10 @@ class StockSnapshotsController(QObject):
 
     def _payload(self) -> dict[str, Any] | None:
         try:
-            event_text = self._state["forms"]["event_time"].strip()
-            if not re.fullmatch(
-                r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,6})?)?",
-                event_text,
-            ):
-                raise ValueError("Use a local Hong Kong date and time")
-            event = datetime.fromisoformat(event_text).replace(tzinfo=HKT)
+            selected = self._state["selected"]
+            event_at = parse_event_time(
+                self._state["forms"]["event_time"], selected.get("event_at")
+            )
             counters = []
             for row in self._state["counter_reports"]:
                 if not row["reported"]:
@@ -614,15 +610,8 @@ class StockSnapshotsController(QObject):
                         {key: line[key] for key in ("series", "serial_from", "serial_to")}
                     )
                 counters.append({"counter_id": row["counter"]["id"], "ranges": ranges})
-            selected = self._state["selected"]
-            original = selected.get("event_at")
-            unchanged_minute = bool(
-                original
-                and event_text
-                == datetime.fromisoformat(original).astimezone(HKT).strftime("%Y-%m-%d %H:%M")
-            )
             payload = {
-                "event_at": original if unchanged_minute else event.isoformat(),
+                "event_at": event_at,
                 "counters": counters,
             }
             if selected:
