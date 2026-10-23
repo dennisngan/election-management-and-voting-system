@@ -2,6 +2,10 @@
 
 ALLOCATION_TRANSLATIONS = {
     "tc": {
+        "allocation_before_return": (
+            "此編號範圍是在擬記錄的派發時間之後才退回。請將派發時間設為該"
+            "次退回時間或之後。"
+        ),
         "allocation_title": "P(14) 櫃台選票派發",
         "allocation_record": "櫃台派發記錄",
         "allocation_records": "已儲存的櫃台派發記錄",
@@ -67,6 +71,10 @@ ALLOCATION_TRANSLATIONS = {
         "allocation_basis": "此派發版本的接收記錄基礎",
     },
     "sc": {
+        "allocation_before_return": (
+            "此编号范围是在拟记录的派发时间之后才退回。请将派发时间设为该"
+            "次退回时间或之后。"
+        ),
         "allocation_title": "P(14) 柜台选票派发",
         "allocation_record": "柜台派发记录",
         "allocation_records": "已保存的柜台派发记录",
@@ -132,6 +140,13 @@ ALLOCATION_TRANSLATIONS = {
         "allocation_basis": "此派发版本的接收记录依据",
     },
     "en": {
+        "allocation_before_return": (
+            "These papers were returned aft"
+            "er the proposed allocation tim"
+            "e. Enter an allocation time at"
+            " or after the return that rele"
+            "ases this range."
+        ),
         "allocation_title": "P(14) Counter stock allocations",
         "allocation_record": "Counter allocation",
         "allocation_records": "Saved counter allocations",
