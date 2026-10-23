@@ -14,7 +14,10 @@ single-election activation; their current verification status is recorded in the
 Ticket 06 adds revision-bound opening/closing records and Supervisor approval. Ticket 07 adds
 received-stock pools, retained corrections and translated receipt statements. Independent slices
 also implement normal turnout, complaint cases/statistics, queue observations and box handover.
-Tickets 01–07 are complete. Tickets 11, 13, 14 and 15 retain pending native Computer checks;
+Ticket 08 adds ordinary-stock allocations to issuance counters, shared ownership guards and
+P(14) current/historical statements. Tickets 01–08 are complete;
+[Ticket 08 evidence](docs/evidence/ticket-08/README.md) records 861 passing full-suite cases
+and 54 native captures. Tickets 11, 13, 14 and 15 retain pending native Computer checks;
 remaining stock-flow/counting/delivery work follows the dependency plan. Illustrative
 design-preview figures are not application data.
 
