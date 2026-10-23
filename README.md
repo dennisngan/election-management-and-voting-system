@@ -15,17 +15,22 @@ Ticket 06 adds revision-bound opening/closing records and Supervisor approval. T
 received-stock pools, retained corrections and translated receipt statements. Independent slices
 also implement normal turnout, complaint cases/statistics, queue observations and box handover.
 Ticket 08 adds ordinary-stock allocations to issuance counters, shared ownership guards and
-P(14) current/historical statements. Tickets 01–08, 11 and 14 are complete;
-[Ticket 08 evidence](docs/evidence/ticket-08/README.md) records 861 passing full-suite cases
-and 54 native captures. [Ticket 11 evidence](docs/evidence/ticket-11/README.md) records the
-earlier 866-test checkpoint, 59 native captures and seven actual exports.
-[Ticket 14 evidence](docs/evidence/ticket-14/README.md) records the current `165a748` suite:
-869 passed, 24 known warnings in 1320.53 seconds; 33 native capture pairs, seven exports,
-four native PDF pages and 422 checks. Its layout source `3ef03a2` and test-helper `165a748`
-review follow-ups have zero Standards/zero Spec findings. Ticket 09 is in progress;
-Tickets 13 and 15 retain pending native Computer checks. Windows verification remains Ticket 27;
-remaining stock-flow/counting/delivery work follows the dependency plan. Illustrative
-design-preview figures are not application data.
+P(14) current/historical statements. Tickets 01–08, 11, 13 and 14 are complete.
+[Ticket 13 evidence](docs/evidence/ticket-13/README.md) records the latest completed frozen
+`431e8e2` suite: **875 passed, 24 recorded warnings in 1369.33 seconds**, exit 0; production
+source `5308e5e`, 68 native capture pairs, seven actual exports and eleven native PDF pages.
+Its final evidence review has zero documented/heuristic Standards findings and zero definite
+Spec findings. Separate manifests retain 309 checks for six exports and 163 checks for the
+historical Counting Officer CSV. [Ticket 08 evidence](docs/evidence/ticket-08/README.md)
+retains its earlier 861-test checkpoint and 54 native captures.
+[Ticket 11 evidence](docs/evidence/ticket-11/README.md) retains the earlier 866-test checkpoint,
+59 native captures and seven actual exports. [Ticket 14 evidence](docs/evidence/ticket-14/README.md)
+retains its `165a748` checkpoint: 869 passed, 24 known warnings in 1320.53 seconds; 33 native
+capture pairs, seven exports, four native PDF pages and 422 checks. Its layout source
+`3ef03a2` and test-helper `165a748` review follow-ups have zero Standards/zero Spec findings.
+Ticket 09 is in progress; Ticket 15 native Computer verification is in progress. Windows
+verification remains Ticket 27; remaining stock-flow/counting/delivery work follows the
+dependency plan. Illustrative design-preview figures are not application data.
 
 After signing in as an Administrator and changing the initial password, open **Election setup**.
 Create or choose a saved election, then create or choose a constituency and its candidates. Saved
