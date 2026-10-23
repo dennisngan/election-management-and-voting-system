@@ -31,6 +31,8 @@ class HttpsServer:
     url: str
     clock: ControlledClock
     requests: list[tuple[str, str]] = field(default_factory=list)
+    # ASGI middleware timings stop at response-header readiness, before transport completion.
+    request_timings: list[dict[str, str | int | float]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
     hold_profile: bool = False
     hold_password_response: bool = False

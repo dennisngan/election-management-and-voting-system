@@ -123,10 +123,20 @@ def test_visible_amendment_history_and_report_scope_controls_keep_reviewed_revis
         wait(idle)
         enter('allocationSerialTo', '000004')
         enter('allocationReason', '紙本派發單更正至四張')
+        frame()
+        reason = control('allocationReason')
+        background = reason.property('background')
+        cursor = reason.property('cursorRectangle')
+        inside = reason.mapToItem(background, QPointF(cursor.x(), cursor.y()))
+        assert inside.y() >= 8, 'The reason text crosses its visible top border'
+        assert inside.y() + cursor.height() <= background.height() - 8
         QTest.keyClick(window, Qt.Key.Key_Tab)
         wait(lambda: control('allocationSave').property('activeFocus'))
         QTest.keyClick(window, Qt.Key.Key_Backtab)
         wait(lambda: control('allocationReason').property('activeFocus'))
+        cursor = reason.property('cursorRectangle')
+        inside = reason.mapToItem(background, QPointF(cursor.x(), cursor.y()))
+        assert inside.y() >= 8, 'Reverse focus moves the reason outside its border'
         click('allocationSave')
         wait(idle)
         assert editor.property('state')['error'] == ''

@@ -50,6 +50,15 @@ def category_editor(
     return editor
 
 
+def category_mutations(server: HttpsServer, path: str) -> list[tuple[str, str]]:
+    with server.lock:
+        return [
+            (method, route)
+            for method, route in server.requests
+            if method in ("POST", "PUT") and (route == path or route.startswith(path + "/"))
+        ]
+
+
 def test_admin_selects_election_reads_verified_seed_and_saves_project_category(
     admin: TestClient,
     desktop: DesktopController,
@@ -101,6 +110,7 @@ def test_verified_source_stays_immutable_while_labels_and_availability_are_confi
     qt_app: QCoreApplication,
 ) -> None:
     election = create_election(admin)
+    path = f"/api/elections/{election['id']}/complaint-categories"
     editor = category_editor(desktop, https_server, account, qt_app)
     assert editor.selectElection(election["id"], False)
     wait_for(qt_app, lambda: setup_idle(editor))
@@ -124,7 +134,8 @@ def test_verified_source_stays_immutable_while_labels_and_availability_are_confi
     assert editor.property("state")["selected"] == row
     other = next(item for item in editor.property("state")["items"] if item["is_other"])
     assert editor.loadCategory(other["id"], False)
-    requests_before = len(https_server.requests)
+    requests_before = category_mutations(https_server, path)
+    health_requests = https_server.request_count("GET", "/api/health")
     editor.setEnabled(False)
     editor.save()
     assert editor.property("state")["error"] == "complaint_other_required"
@@ -132,8 +143,10 @@ def test_verified_source_stays_immutable_while_labels_and_availability_are_confi
     editor.setDescriptionRequired(False)
     editor.save()
     assert editor.property("state")["error"] == "complaint_other_required"
-    assert len(https_server.requests) == requests_before
-    stored = admin.get(f"/api/elections/{election['id']}/complaint-categories").json()["items"]
+    desktop.refresh()
+    wait_for(qt_app, lambda: https_server.request_count("GET", "/api/health") > health_requests)
+    assert category_mutations(https_server, path) == requests_before
+    stored = admin.get(path).json()["items"]
     assert next(item for item in stored if item["is_other"]) == other
 
 
@@ -200,6 +213,7 @@ def test_finalized_category_view_and_logged_out_state_block_local_changes(
     database_url: str,
 ) -> None:
     election = create_election(admin)
+    path = f"/api/elections/{election['id']}/complaint-categories"
     editor = category_editor(desktop, https_server, account, qt_app)
     assert editor.selectElection(election["id"], False)
     wait_for(qt_app, lambda: setup_idle(editor))
@@ -209,14 +223,14 @@ def test_finalized_category_view_and_logged_out_state_block_local_changes(
     editor.refresh()
     wait_for(qt_app, lambda: setup_idle(editor))
     assert editor.property("state")["election"]["status"] == "finalized"
-    before = len(https_server.requests)
+    before = category_mutations(https_server, path)
     editor.setField("label_tc", "不可變更")
     editor.setEnabled(False)
     editor.setDescriptionRequired(True)
     editor.save()
     assert editor.property("state")["selected"] == category
     assert editor.property("state")["dirty"] is False
-    assert len(https_server.requests) == before
+    assert category_mutations(https_server, path) == before
     desktop.signOut()
     wait_for(qt_app, lambda: not desktop.property("state")["busy"])
     assert editor.property("state")["election_id"] == 0
@@ -464,11 +478,16 @@ def test_blank_labels_and_duplicate_codes_keep_category_input_and_do_not_replace
     original = editor.property("state")["items"]
     new_boundary_category(editor)
     editor.setField("label_tc", "   ")
-    request_count = len(https_server.requests)
+    requests_before = category_mutations(https_server, path)
+    invalid_form = editor.property("state")["form"]
+    health_requests = https_server.request_count("GET", "/api/health")
     editor.save()
     assert editor.property("state")["error"] == "complaint_category_validation"
     assert editor.property("state")["dirty"]
-    assert len(https_server.requests) == request_count
+    desktop.refresh()
+    wait_for(qt_app, lambda: https_server.request_count("GET", "/api/health") > health_requests)
+    assert category_mutations(https_server, path) == requests_before
+    assert editor.property("state")["form"] == invalid_form
     editor.setField("label_tc", "重複代碼保留輸入")
     editor.setField("code", "9")
     form = editor.property("state")["form"]
@@ -478,4 +497,5 @@ def test_blank_labels_and_duplicate_codes_keep_category_input_and_do_not_replace
     assert editor.property("state")["dirty"]
     assert editor.property("state")["form"] == form
     assert editor.property("state")["items"] == original
+    assert category_mutations(https_server, path) == requests_before + [("POST", path)]
     assert admin.get(path).json()["items"] == original

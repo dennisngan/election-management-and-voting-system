@@ -1,10 +1,12 @@
 """Use a named, disposable MySQL test database; never substitute SQLite."""
 
 import asyncio
+import json
 import os
 import socket
 import threading
-from collections.abc import Awaitable, Callable, Iterator
+import time
+from collections.abc import Awaitable, Callable, Generator, Iterator
 from uuid import uuid4
 
 import pytest
@@ -28,6 +30,54 @@ from tests.desktop_support import (
     HttpsServer,
     wait_for,
 )
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[object]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    report = yield
+    if report.when != "call" or not report.failed:
+        return report
+    fixtures = getattr(item, "funcargs", {})
+    desktop, endpoint = fixtures.get("desktop"), fixtures.get("https_server")
+    if not isinstance(desktop, DesktopController) or not isinstance(endpoint, HttpsServer):
+        return report
+    try:
+        # Read public state only after the unchanged assertion has failed. Never
+        # process more events, wait, retry, or replace the original test verdict.
+        staff = desktop.property("staff").property("state")
+        selected = staff.get("selected", {})
+        diagnostic = {
+            "observed_at": time.monotonic(),
+            "staff": {
+                **{
+                    key: staff.get(key)
+                    for key in ("busy", "refreshing", "error", "notice")
+                },
+                "selected_id": selected.get("id"),
+                "account_count": len(staff.get("accounts", [])),
+                "station_count": len(staff.get("station_options", [])),
+            },
+            "timing_boundary": "ASGI response-header readiness; not full transport completion",
+        }
+        with endpoint.lock:
+            diagnostic["recent_arrivals"] = endpoint.requests[-20:]
+            diagnostic["recent_header_timings"] = [
+                {
+                    key: row.get(key)
+                    for key in (
+                        "method", "path", "arrived_at", "headers_ready_at", "elapsed", "status"
+                    )
+                }
+                for row in endpoint.request_timings[-20:]
+            ]
+        report.sections.append(("Staff HTTP diagnostic", json.dumps(diagnostic, indent=2)))
+    except AttributeError, RuntimeError, TypeError:
+        # A test may intentionally dispose its Qt objects. Diagnostic collection
+        # must not replace its original failure with a reporting error.
+        pass
+    return report
 
 
 @pytest.fixture(scope="session")
@@ -72,6 +122,7 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
     async def observe_requests(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        arrived_at = time.monotonic()
         # Observe only public method/path, never credentials, bodies, or authorization headers.
         with endpoint.lock:
             endpoint.requests.append((request.method, request.url.path))
@@ -99,6 +150,20 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
             endpoint.hold_allocation_list = False
             endpoint.allocation_list_entered.set()
         response = await call_next(request)
+        headers_ready_at = time.monotonic()
+        # Observe only method/path/status and monotonic times. This is ASGI
+        # response-header readiness, not full body delivery or Qt transport completion.
+        with endpoint.lock:
+            endpoint.request_timings.append(
+                {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "arrived_at": arrived_at,
+                    "headers_ready_at": headers_ready_at,
+                    "elapsed": headers_ready_at - arrived_at,
+                    "status": response.status_code,
+                }
+            )
         if delayed_allocations:
             await asyncio.to_thread(endpoint.release_allocation_list.wait, 5)
         if (

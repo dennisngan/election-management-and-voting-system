@@ -32,13 +32,19 @@ def ready_staff(
 def create_officer(staff: Any, qt_app: QCoreApplication) -> tuple[dict, str]:
     password = "Desktop-Staff-Initial-42!"
     assert staff.loadAccount(0, False)
-    staff.setField("username", "desktop_staff_" + uuid4().hex[:12])
+    username = "desktop_staff_" + uuid4().hex[:12]
+    staff.setField("username", username)
     staff.setField("display_name", "職員測試帳戶")
     staff.setField("role", "polling_officer")
     staff.save(password, password)
-    wait_for(qt_app, lambda: setup_idle(staff))
-    assert staff.property("state")["error"] == ""
-    return staff.property("state")["selected"], password
+    # Creation acknowledgement is independent of background directory polling.
+    wait_for(qt_app, lambda: not staff.property("state")["busy"])
+    saved = staff.property("state")
+    assert saved["error"] == ""
+    selected = saved["selected"]
+    assert selected["username"] == username
+    assert type(selected["id"]) is int and selected["id"] > 0
+    return selected, password
 
 
 def test_desktop_creates_assigned_officer_and_edit_revokes_their_first_login_session(

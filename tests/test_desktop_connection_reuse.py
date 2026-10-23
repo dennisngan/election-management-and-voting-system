@@ -61,11 +61,16 @@ def test_password_reset_preserves_a_concurrent_held_profile_and_sends_one_reset(
     wait_for(qt_app, https_server.profile_entered.is_set)
     path = f"/api/accounts/{created['id']}/password-reset"
     before = https_server.request_count("POST", path)
+    previous_revision = staff.property("state")["selected"]["revision"]
     password = "Transport-Reset-Test-126!"
     staff.resetPassword(password, password)
-    wait_for(qt_app, lambda: setup_idle(staff))
-    assert staff.property("state")["error"] == ""
-    assert staff.property("state")["selected"]["must_change_password"] is True
+    wait_for(qt_app, lambda: not staff.property("state")["busy"])
+    reset = staff.property("state")
+    assert reset["error"] == ""
+    assert reset["notice"] == "password_reset_success"
+    assert reset["selected"]["id"] == created["id"]
+    assert reset["selected"]["must_change_password"] is True
+    assert reset["selected"]["revision"] == previous_revision + 1
     assert https_server.request_count("POST", path) == before + 1
     assert not https_server.profile_finished.is_set()
     assert state_of(desktop)["error"] == ""

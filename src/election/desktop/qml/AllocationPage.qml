@@ -506,7 +506,11 @@ ColumnLayout {
                 selectByMouse: true
                 enabled: !page.editorState.busy
                 readOnly: !page.canEdit
-                padding: 12
+                leftPadding: 12
+                rightPadding: 12
+                topPadding: 12
+                bottomPadding: 12
+                topInset: 0
                 Accessible.name: page.t("stock_reason")
                 onTextEdited: page.allocations.setField("reason", text)
                 onActiveFocusChanged: if (activeFocus)

@@ -234,9 +234,13 @@ def test_officer_old_password_is_rejected_while_an_administrator_desktop_refresh
     staff.setField("username", username)
     staff.setField("display_name", "規模測試職員")
     staff.save(initial_password, initial_password)
-    wait_for(qt_app, lambda: setup_idle(staff))
+    # Credential setup observes command acknowledgements while dashboard refresh
+    # remains enabled. The complete directory assertions above stay independent.
+    wait_for(qt_app, lambda: not staff.property("state")["busy"])
     assert staff.property("state")["error"] == ""
     created = staff.property("state")["selected"]
+    assert created["username"] == username
+    assert type(created["id"]) is int and created["id"] > 0
 
     officer = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
     try:
@@ -245,11 +249,20 @@ def test_officer_old_password_is_rejected_while_an_administrator_desktop_refresh
         officer.changePassword(initial_password, personal_password, personal_password)
         wait_for(qt_app, lambda: state_of(officer)["phase"] == "workspace")
         assert staff.loadAccount(created["id"], False)
-        wait_for(qt_app, lambda: setup_idle(staff))
+        wait_for(qt_app, lambda: not staff.property("state")["busy"])
+        loaded = staff.property("state")
+        assert loaded["error"] == ""
+        assert loaded["selected"]["id"] == created["id"]
+        assert loaded["selected"]["must_change_password"] is False
+        previous_revision = loaded["selected"]["revision"]
         staff.resetPassword(reset_password, reset_password)
-        wait_for(qt_app, lambda: setup_idle(staff))
-        assert staff.property("state")["error"] == ""
-        assert staff.property("state")["selected"]["must_change_password"] is True
+        wait_for(qt_app, lambda: not staff.property("state")["busy"])
+        reset = staff.property("state")
+        assert reset["error"] == ""
+        assert reset["notice"] == "password_reset_success"
+        assert reset["selected"]["id"] == created["id"]
+        assert reset["selected"]["must_change_password"] is True
+        assert reset["selected"]["revision"] == previous_revision + 1
         officer.refresh()
         wait_for(qt_app, lambda: state_of(officer)["phase"] == "signed_out")
         assert state_of(officer)["error"] == "session_expired"
