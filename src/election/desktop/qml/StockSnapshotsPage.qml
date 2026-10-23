@@ -43,7 +43,8 @@ ColumnLayout {
     }
     function requestRecord(action, recordId) {
         if (working) return
-        if (!switchRecord(action, recordId, false) && editorState.dirty) {
+        if (!editorState.dirty && switchRecord(action, recordId, false)) return
+        if (editorState.dirty) {
             pendingAction = action
             pendingId = recordId
             discardDialog.open()
@@ -79,6 +80,23 @@ ColumnLayout {
             color: action.enabled ? (action.highlighted ? "white" : "#1967d2") : "#8a96a8"
         }
         onReveal: control => page.reveal(control)
+    }
+    component MultilineField: TextArea {
+        id: field
+        // The preview already rechecks focus before delayed scrolling.
+        property bool revealOnlyWhileFocused: false
+        Layout.fillWidth: true
+        selectByMouse: true
+        textFormat: TextEdit.PlainText
+        wrapMode: TextEdit.WrapAnywhere
+        topPadding: 12; bottomPadding: 12; leftPadding: 12; rightPadding: 12
+        topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
+        Keys.priority: Keys.BeforeItem
+        Keys.onTabPressed: event => { page.moveFocus(field, true); event.accepted = true }
+        Keys.onBacktabPressed: event => { page.moveFocus(field, false); event.accepted = true }
+        onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+            if (!field.revealOnlyWhileFocused || field.activeFocus) page.reveal(field)
+        })
     }
     component Heading: Label {
         color: "#25344b"
@@ -123,6 +141,7 @@ ColumnLayout {
         }
     }
     FormNotice {
+        objectName: "snapshotFeedback"
         words: page.words
         error: page.editorState.error
         notice: page.editorState.notice
@@ -369,6 +388,7 @@ ColumnLayout {
                                     }
                                 }
                                 FormButton {
+                                    objectName: "snapshotRemoveRange" + rangeRow.suffix
                                     visible: page.canEdit
                                     text: page.t("stock_remove_range")
                                     highlighted: false; flat: true
@@ -391,30 +411,20 @@ ColumnLayout {
                 }
             }
             FormCaption {
-                visible: !!page.selected.id && page.editorState.editing
+                visible: !!page.selected.id && (page.editorState.editing || page.editorState.dirty)
                 text: page.t("stock_reason")
             }
-            TextArea {
+            MultilineField {
                 id: reason
                 objectName: "snapshotReason"
-                visible: !!page.selected.id && page.editorState.editing
-                Layout.fillWidth: true
+                visible: !!page.selected.id && (page.editorState.editing || page.editorState.dirty)
                 implicitHeight: Math.max(96, contentHeight + topPadding + bottomPadding)
                 text: page.form.reason || ""
                 readOnly: !page.canEdit
                 enabled: !page.working
-                selectByMouse: true
-                textFormat: TextEdit.PlainText
-                wrapMode: TextEdit.WrapAnywhere
-                topPadding: 12; bottomPadding: 12; leftPadding: 12; rightPadding: 12
-                topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
                 background: Rectangle { color: "white"; radius: 8; border.color: "#c4cedc" }
                 Accessible.name: page.t("stock_reason")
                 onTextChanged: if (activeFocus) page.snapshots.setField("reason", text)
-                Keys.priority: Keys.BeforeItem
-                Keys.onTabPressed: event => { page.moveFocus(reason, true); event.accepted = true }
-                Keys.onBacktabPressed: event => { page.moveFocus(reason, false); event.accepted = true }
-                onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { page.reveal(reason) })
             }
             FormButton {
                 objectName: "snapshotSave"
@@ -524,29 +534,19 @@ ColumnLayout {
                 text: page.t("stock_preview_language") + " · "
                     + page.languageName((page.editorState.report || ({})).locale || page.locale)
             }
-            TextArea {
+            MultilineField {
                 id: reportText
                 objectName: "snapshotReportPreview"
                 visible: !!page.editorState.report_text
-                Layout.fillWidth: true
                 implicitHeight: Math.max(120, contentHeight + topPadding + bottomPadding)
                 text: page.editorState.report_text || ""
                 readOnly: true
-                selectByMouse: true
-                textFormat: TextEdit.PlainText
-                wrapMode: TextEdit.WrapAnywhere
-                topPadding: 12; bottomPadding: 12; leftPadding: 12; rightPadding: 12
-                topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
+                revealOnlyWhileFocused: true
                 background: Rectangle { color: "#f7f9fd"; radius: 8; border.color: "#c4cedc" }
                 Accessible.name: page.t("snapshot_report")
-                Keys.priority: Keys.BeforeItem
-                Keys.onTabPressed: event => { page.moveFocus(reportText, true); event.accepted = true }
-                Keys.onBacktabPressed: event => { page.moveFocus(reportText, false); event.accepted = true }
                 Keys.onEscapePressed: event => {
                     previewButton.forceActiveFocus(Qt.OtherFocusReason); event.accepted = true
                 }
-                onActiveFocusChanged: if (activeFocus)
-                    Qt.callLater(function() { if (reportText.activeFocus) page.reveal(reportText) })
             }
             FormCaption {
                 objectName: "snapshotExportPath"

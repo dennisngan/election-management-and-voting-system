@@ -105,9 +105,24 @@ def test_missing_counter_is_incomplete_but_an_explicit_zero_is_a_complete_new_ob
         assert control('snapshotRemainingTotal').property('text') == '—'
         click('snapshotNew')
         wait(idle)
+        frame()
         enter('snapshotEventTime', '2026-11-15 09:45')
         suffix = str(setup['counter_id'])
         click('snapshotReported' + suffix)
+        frame()
+        click('snapshotAddRange' + suffix)
+        frame()
+        enter('snapshotSeries' + suffix + '_0', '普通系列 A')
+        enter('snapshotSerialFrom' + suffix + '_0', '000006')
+        enter('snapshotSerialTo' + suffix + '_0', '000006')
+        assert control('snapshotQuantity' + suffix + '_0').property('text') == '1'
+        click('snapshotReported' + suffix)
+        assert editor.property('state')['counter_reports'][0]['reported'] is False
+        click('snapshotReported' + suffix)
+        frame()
+        assert control('snapshotSerialFrom' + suffix + '_0').property('text') == '000006'
+        click('snapshotRemoveRange' + suffix + '_0')
+        assert editor.property('state')['counter_reports'][0]['ranges'] == []
         assert control('snapshotExplicitZero' + suffix).property('visible') is True
         click('snapshotSave')
         wait(idle)
@@ -271,3 +286,48 @@ def test_historical_p12_preview_in_material_keeps_its_saved_revision(
         assert control('snapshotCurrentIssued').property('text') == '4'
         """,
     )
+
+
+def test_dirty_snapshot_reload_describes_and_executes_the_chosen_action(
+    saved_snapshot_qml_setup: dict,
+) -> None:
+    setup = saved_snapshot_qml_setup
+    run_workspace_qml(
+        {**setup["qml"], "locale": "en"},
+        """
+        from PySide6.QtCore import QObject
+        click('stockSnapshotsNavigation')
+        editor = controller.property('stockSnapshots')
+        def idle():
+            return not any(editor.property('state')[key] for key in ('busy', 'refreshing'))
+        wait(idle)
+        choose('snapshotPicker', 0)
+        wait(idle)
+        click('snapshotEdit')
+        suffix = str(setup['counter_id'])
+        enter('snapshotSerialFrom' + suffix + '_0', '000005')
+        enter('snapshotReason', 'Unsaved correction retained until explicit discard')
+        click('snapshotReload')
+        dialog = window.findChild(QObject, 'snapshotDiscardDialog')
+        assert dialog is not None and dialog.property('visible') is True
+        wait(lambda: dialog.property('opened') and dialog.property('activeFocus'))
+        assert 'new observation' not in dialog.property('message').lower()
+        assert editor.property('state')['dirty'] is True
+        assert control('snapshotSerialFrom' + suffix + '_0').property('text') == '000005'
+        QTest.keyClick(window, Qt.Key.Key_Escape)
+        wait(lambda: dialog.property('visible') is False)
+        assert editor.property('state')['dirty'] is True
+        assert editor.property('state')['forms']['reason'].startswith('Unsaved correction')
+        click('snapshotReload')
+        wait(lambda: dialog.property('visible'))
+        click_confirmation(dialog, controller.texts['discard_changes'])
+        wait(idle)
+        assert editor.property('state')['selected']['revision'] == 1
+        assert editor.property('state')['dirty'] is False
+        assert control('snapshotSerialFrom' + suffix + '_0').property('text') == '000004'
+        """,
+    )
+    history = setup["api"].get(
+        setup["base"] + f"/stock-snapshots/{setup['snapshot']['id']}/history"
+    )
+    assert history.status_code == 200 and history.json()["items"] == [setup["snapshot"]]

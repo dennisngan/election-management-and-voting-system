@@ -2,6 +2,17 @@
 
 STOCK_SNAPSHOT_TRANSLATIONS = {
     "tc": {
+        "stock_snapshot_validation": (
+            "請核對原始香港時間、已申報櫃台及剩餘範圍。系列須完全相符，編"
+            "號使用一至十八位半形數字，起始不可大於結束；修訂須填原因。"
+        ),
+        "event_time_in_future": (
+            "原始事件時間不可晚於伺服器現在時間，請核對香港日期及時間。"
+        ),
+        "remaining_outside_owned_stock": (
+            "此剩餘範圍超出該櫃台於觀察時間持有的普通選票。請核對派發、未"
+            "發出選票退回、系列及編號。"
+        ),
         "snapshot_report": "P(12) 所選結餘版本報表",
         "snapshot_report_hint": (
             "預覽及匯出保留所選已儲存版本的範圍、數量與基礎，包括歷史版本"
@@ -33,7 +44,8 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         ),
         "snapshot_new": "新增結餘觀察",
         "unsaved_stock_snapshot_changes": (
-            '結餘表格有未儲存內容。捨棄後才會新增觀察。'
+            "結餘表格有未儲存內容。儲存或明確捨棄後，才會切換所審閱的觀察"
+            "或版本。"
         ),
         "snapshot_title": "P(12) 櫃台結餘與發票",
         "snapshot_intro": (
@@ -68,6 +80,17 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_issued": "庫存推算已發出選票",
     },
     "sc": {
+        "stock_snapshot_validation": (
+            "请核对原始香港时间、已申报柜台及剩余范围。系列须完全匹配，编"
+            "号使用一至十八位半角数字，起始不可大于结束；修订须填原因。"
+        ),
+        "event_time_in_future": (
+            "原始事件时间不可晚于服务器现在时间，请核对香港日期及时间。"
+        ),
+        "remaining_outside_owned_stock": (
+            "此剩余范围超出该柜台于观察时间持有的普通选票。请核对派发、未"
+            "发出选票退回、系列及编号。"
+        ),
         "snapshot_report": "P(12) 所选结余版本报表",
         "snapshot_report_hint": (
             "预览及导出保留所选已保存版本的范围、数量与依据，包括历史版本"
@@ -99,7 +122,8 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         ),
         "snapshot_new": "新增结余观察",
         "unsaved_stock_snapshot_changes": (
-            '结余表格有未保存内容。舍弃后才会新增观察。'
+            "结余表格有未保存内容。保存或明确舍弃后，才会切换所审阅的观察"
+            "或版本。"
         ),
         "snapshot_title": "P(12) 柜台结余与发票",
         "snapshot_intro": (
@@ -134,6 +158,27 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_issued": "库存推算已发出选票",
     },
     "en": {
+        "stock_snapshot_validation": (
+            "Check the original HKT time, r"
+            "eported counters and remaining"
+            " ranges. Use the exact series "
+            "and ordered serials of 1–18 AS"
+            "CII digits. Amendments require"
+            " a reason."
+        ),
+        "event_time_in_future": (
+            "The original event time cannot"
+            " be later than server time. Ch"
+            "eck the Hong Kong date and tim"
+            "e."
+        ),
+        "remaining_outside_owned_stock": (
+            "This remaining range is outsid"
+            "e ordinary stock owned by that"
+            " counter at the observation ti"
+            "me. Check allocations, unissue"
+            "d returns, series and serials."
+        ),
         "snapshot_report": "P(12) selected balance revision statement",
         "snapshot_report_hint": (
             "Preview and export retain the "
@@ -177,9 +222,11 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         ),
         "snapshot_new": "New balance observation",
         "unsaved_stock_snapshot_changes": (
-            'The balance form has unsaved input.'
-            ' Discard it before starting a new o'
-            'bservation.'
+            "The balance form has unsaved i"
+            "nput. Save it or explicitly di"
+            "scard it before changing the r"
+            "eviewed observation or revisio"
+            "n."
         ),
         "snapshot_title": "P(12) Counter balances",
         "snapshot_intro": (
