@@ -24,6 +24,7 @@ from election.desktop.polling import PollingController
 from election.desktop.queue import QueueController
 from election.desktop.staff import StaffController
 from election.desktop.stock import StockController
+from election.desktop.stock_snapshots import StockSnapshotsController
 from election.desktop.translations import TRANSLATIONS
 from election.desktop.turnout import TurnoutController
 from election.desktop.workspace import WorkspaceController
@@ -68,6 +69,7 @@ class DesktopController(QObject):
         self._allocations = AllocationController(
             self._authorized_request, self._authorized_download, self
         )
+        self._stock_snapshots = StockSnapshotsController(self._authorized_request, self)
         self._queue = QueueController(
             self._authorized_request, self, download=self._authorized_download
         )
@@ -91,6 +93,8 @@ class DesktopController(QObject):
                 or self._stock.property("state")["busy"]
                 or self._allocations.property("state")["dirty"]
                 or self._allocations.property("state")["busy"]
+                or self._stock_snapshots.property("state")["dirty"]
+                or self._stock_snapshots.property("state")["busy"]
                 or self._queue.property("state")["dirty"]
                 or self._queue.property("state")["busy"]
                 or self._boxes.property("state")["dirty"]
@@ -106,6 +110,7 @@ class DesktopController(QObject):
         self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
         self._stock.stateChanged.connect(self._workspace.stateChanged.emit)
         self._allocations.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._stock_snapshots.stateChanged.connect(self._workspace.stateChanged.emit)
         self._queue.stateChanged.connect(self._workspace.stateChanged.emit)
         self._boxes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._turnout.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -175,6 +180,10 @@ class DesktopController(QObject):
         return self._allocations
 
     @Property(QObject, constant=True)
+    def stockSnapshots(self) -> StockSnapshotsController:
+        return self._stock_snapshots
+
+    @Property(QObject, constant=True)
     def queue(self) -> QueueController:
         return self._queue
 
@@ -199,6 +208,7 @@ class DesktopController(QObject):
         self._polling.set_context(context)
         self._stock.set_context(context)
         self._allocations.set_context(context)
+        self._stock_snapshots.set_context(context)
         self._queue.set_context(context)
         self._boxes.set_context(context)
         self._turnout.set_context(context)
@@ -563,6 +573,7 @@ class DesktopController(QObject):
             self._polling.refresh()
             self._stock.refresh()
             self._allocations.refresh()
+            self._stock_snapshots.refresh()
             self._queue.refresh()
             self._boxes.refresh()
             self._turnout.refresh()
@@ -596,6 +607,7 @@ class DesktopController(QObject):
         self._polling.reset()
         self._stock.reset()
         self._allocations.reset()
+        self._stock_snapshots.reset()
         self._queue.reset()
         self._boxes.reset()
         self._turnout.reset()
