@@ -110,6 +110,64 @@ def test_officer_creates_completes_and_reviews_case_history_through_visible_cont
         assert case["completed_at"] == "2026-11-15T01:15:00Z"
 
 
+def test_receipt_correction_into_submitted_period_has_a_reasoned_gui_recovery_path(
+    admin: TestClient, database_url: str, https_server: HttpsServer
+) -> None:
+    scope, clock = complaint_period_scope(admin), ComplaintClock()
+    sid, path, periods = scope["station"]["id"], scope["case_path"], scope["path"]
+    https_server.clock.value = clock.value
+    with complaint_staff(admin, database_url, clock, "polling_officer", [sid]) as (api, account):
+        created = api.post(
+            path,
+            json=complaint_payload(
+                station_categories(api, sid)[0], received_at="2026-11-15T06:30:00+08:00"
+            ),
+        )
+        assert created.status_code == 201
+        original = created.json()
+        assert original["requires_amendment"] is False
+        assert api.put(periods + "/1", json=period_command()).status_code == 200
+        assert api.post(periods + "/1/submit", json=period_command(1)).status_code == 200
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": sid,
+                "locale": "en",
+            },
+            """
+            click('complaintsNavigation')
+            cases = controller.property('complaints')
+            wait(lambda: not cases.property('state')['busy'])
+            frame()
+            choose('complaintPicker', 0)
+            wait(lambda: not cases.property('state')['busy'])
+            assert not cases.property('state')['requires_amendment']
+            enter('complaintReceivedTime', '2026-11-15 08:15')
+            click('complaintEdit')
+            wait(lambda: not cases.property('state')['busy'])
+            assert cases.property('state')['error'] == 'complaint_amendment_required'
+            assert cases.property('state')['forms']['received_time'] == '2026-11-15 08:15'
+            assert control('complaintAmend').property('visible')
+            enter('complaintReason', '紙本顯示接收時間應屬已提交時段，保留修正原因')
+            click('complaintAmend')
+            wait(lambda: not cases.property('state')['busy'])
+            assert cases.property('state')['error'] == ''
+            assert cases.property('state')['selected']['revision'] == 2
+            assert cases.property('state')['selected']['requires_amendment']
+            """,
+        )
+        history = api.get(f"{path}/{original['id']}/history").json()["items"]
+        assert len(history) == 2
+        assert history[0]["received_at"] == "2026-11-14T22:30:00Z"
+        assert history[1]["received_at"] == "2026-11-15T00:15:00Z"
+        assert history[1]["amendment_reason"] == "紙本顯示接收時間應屬已提交時段，保留修正原因"
+        report = api.get(periods + "/1").json()
+        assert report["total_received"] == 0 and report["members"] == []
+        assert report["basis_current"] is False
+
+
 def test_protected_case_uses_reasoned_amendment_and_late_new_case_keeps_reason_accessible(
     admin: TestClient, database_url: str, https_server: HttpsServer
 ) -> None:

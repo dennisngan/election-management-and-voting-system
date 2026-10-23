@@ -372,7 +372,7 @@ ColumnLayout {
                 }
                 Action {
                     objectName: "complaintAmend"
-                    visible: page.canRecord && !!page.selected.id && !!page.editorState.requires_amendment
+                    visible: page.canRecord && !!page.selected.id
                     text: page.t("complaint_case_amend"); working: page.editorState.busy
                     enabled: page.editable
                     onClicked: page.complaints.amend()
