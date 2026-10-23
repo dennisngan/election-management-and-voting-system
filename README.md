@@ -15,11 +15,15 @@ Ticket 06 adds revision-bound opening/closing records and Supervisor approval. T
 received-stock pools, retained corrections and translated receipt statements. Independent slices
 also implement normal turnout, complaint cases/statistics, queue observations and box handover.
 Ticket 08 adds ordinary-stock allocations to issuance counters, shared ownership guards and
-P(14) current/historical statements. Tickets 01–08 and 11 are complete;
+P(14) current/historical statements. Tickets 01–08, 11 and 14 are complete;
 [Ticket 08 evidence](docs/evidence/ticket-08/README.md) records 861 passing full-suite cases
 and 54 native captures. [Ticket 11 evidence](docs/evidence/ticket-11/README.md) records the
-current 866-test passing suite, 59 native captures and seven actual exports. Tickets 13, 14 and 15
-retain pending native Computer checks;
+earlier 866-test checkpoint, 59 native captures and seven actual exports.
+[Ticket 14 evidence](docs/evidence/ticket-14/README.md) records the current `165a748` suite:
+869 passed, 24 known warnings in 1320.53 seconds; 33 native capture pairs, seven exports,
+four native PDF pages and 422 checks. Its layout source `3ef03a2` and test-helper `165a748`
+review follow-ups have zero Standards/zero Spec findings. Ticket 09 is in progress;
+Tickets 13 and 15 retain pending native Computer checks. Windows verification remains Ticket 27;
 remaining stock-flow/counting/delivery work follows the dependency plan. Illustrative
 design-preview figures are not application data.
 
