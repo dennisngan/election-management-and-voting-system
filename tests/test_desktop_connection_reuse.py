@@ -1,0 +1,77 @@
+"""Credential commands survive idle sockets while concurrent public reads continue."""
+
+import time
+from collections.abc import Iterator
+
+import pytest
+from PySide6.QtCore import QCoreApplication
+from PySide6.QtTest import QTest
+
+from election.desktop.controller import DesktopController
+from tests.configuration_desktop_support import ready_setup, setup_idle
+from tests.desktop_support import HttpsServer, state_of, wait_for
+from tests.lifecycle_support import lifecycle_database_url
+from tests.test_staff_desktop import create_officer
+
+
+@pytest.fixture(scope="session")
+def database_url() -> Iterator[str]:
+    yield from lifecycle_database_url()
+
+
+def test_bad_login_after_idle_preserves_concurrent_health_and_sends_one_credential_command(
+    desktop: DesktopController,
+    https_server: HttpsServer,
+    account: dict[str, str],
+    qt_app: QCoreApplication,
+) -> None:
+    ready_setup(desktop, https_server, account, qt_app)
+    desktop.signOut()
+    wait_for(qt_app, lambda: https_server.request_count("DELETE", "/api/auth/session") == 1)
+    # Drain the local logout response before deliberately withholding Qt events.
+    # This models a busy/resuming client across the server's five-second idle close.
+    QTest.qWait(100)
+    before_login = https_server.request_count("POST", "/api/auth/login")
+    before_health = https_server.request_count("GET", "/api/health")
+    time.sleep(5.3)
+    desktop.refresh()
+    desktop.signIn(https_server.url, account["username"], "Incorrect-Idle-Password!")
+    wait_for(qt_app, lambda: not state_of(desktop)["busy"])
+    assert state_of(desktop)["error"] == "invalid_credentials"
+    wait_for(qt_app, lambda: https_server.request_count("GET", "/api/health") > before_health)
+    QTest.qWait(100)
+    assert state_of(desktop)["connection"] == "connected"
+    assert state_of(desktop)["phase"] == "signed_out"
+    assert https_server.request_count("POST", "/api/auth/login") == before_login + 1
+
+
+def test_password_reset_preserves_a_concurrent_held_profile_and_sends_one_reset(
+    desktop: DesktopController,
+    https_server: HttpsServer,
+    account: dict[str, str],
+    qt_app: QCoreApplication,
+) -> None:
+    ready_setup(desktop, https_server, account, qt_app)
+    staff = desktop.property("staff")
+    staff.open()
+    wait_for(qt_app, lambda: setup_idle(staff))
+    created, _ = create_officer(staff, qt_app)
+    https_server.hold_profile = True
+    desktop.refresh()
+    wait_for(qt_app, https_server.profile_entered.is_set)
+    path = f"/api/accounts/{created['id']}/password-reset"
+    before = https_server.request_count("POST", path)
+    password = "Transport-Reset-Test-126!"
+    staff.resetPassword(password, password)
+    wait_for(qt_app, lambda: setup_idle(staff))
+    assert staff.property("state")["error"] == ""
+    assert staff.property("state")["selected"]["must_change_password"] is True
+    assert https_server.request_count("POST", path) == before + 1
+    assert not https_server.profile_finished.is_set()
+    assert state_of(desktop)["error"] == ""
+    https_server.release_profile.set()
+    wait_for(qt_app, https_server.profile_finished.is_set)
+    QTest.qWait(100)
+    assert state_of(desktop)["phase"] == "workspace"
+    assert state_of(desktop)["error"] == ""
+    assert state_of(desktop)["connection"] == "connected"

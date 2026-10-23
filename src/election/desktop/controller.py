@@ -355,14 +355,28 @@ class DesktopController(QObject):
             request.setRawHeader(
                 QByteArray(b"Authorization"), QByteArray(b"Bearer " + token.encode())
             )
+        # Send credentials on a fresh connection after an idle server close.
+        # Background reads retain their existing manager and active replies.
+        credential_request = (
+            method == "POST"
+            and payload is not None
+            and not {
+                "password",
+                "current_password",
+                "new_password",
+                "temporary_password",
+            }.isdisjoint(payload)
+        )
+        credential_manager = QNetworkAccessManager(self) if credential_request else None
+        manager = credential_manager if credential_manager is not None else self._manager
         if method == "POST":
-            reply = self._manager.post(request, QByteArray(json.dumps(payload).encode()))
+            reply = manager.post(request, QByteArray(json.dumps(payload).encode()))
         elif method == "PUT":
-            reply = self._manager.put(request, QByteArray(json.dumps(payload).encode()))
+            reply = manager.put(request, QByteArray(json.dumps(payload).encode()))
         elif method == "DELETE":
-            reply = self._manager.sendCustomRequest(request, QByteArray(b"DELETE"))
+            reply = manager.sendCustomRequest(request, QByteArray(b"DELETE"))
         else:
-            reply = self._manager.get(request)
+            reply = manager.get(request)
         generation = self._generation
         ssl_failed = False
 
@@ -413,6 +427,8 @@ class DesktopController(QObject):
                     )
             finally:
                 reply.deleteLater()
+                if credential_manager is not None:
+                    credential_manager.deleteLater()
 
         reply.finished.connect(finished)
         return reply
