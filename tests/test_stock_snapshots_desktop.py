@@ -135,6 +135,7 @@ def test_officer_saves_remaining_stock_and_another_client_reads_the_same_snapsho
 class SnapshotBoundaryServer(HttpsServer):
     save_fault: str = ""
     collection_fault: str = ""
+    history_fault: bool = False
     commands: list[dict] = field(default_factory=list)
 
 
@@ -153,6 +154,8 @@ def snapshot_boundary_server(
 
     @application.middleware("http")
     async def boundary(request: Request, call_next: Any) -> Response:
+        with endpoint.lock:
+            endpoint.requests.append((request.method, request.url.path))
         mutation = request.method == "POST" and request.url.path.endswith("/stock-snapshots")
         if mutation:
             # Whitelist the stock command body; never capture headers or authentication bodies.
@@ -162,6 +165,15 @@ def snapshot_boundary_server(
                     {key: command[key] for key in ("request_id", "event_at", "counters")}
                 )
         response = await call_next(request)
+        if (
+            request.method == "GET"
+            and "/stock-snapshots/" in request.url.path
+            and request.url.path.endswith("/history")
+            and response.status_code == 200
+            and endpoint.history_fault
+        ):
+            endpoint.history_fault = False
+            return JSONResponse({"items": [{}]})
         collection = request.method == "GET" and request.url.path.endswith("/stock-snapshots")
         if (
             mutation
@@ -426,6 +438,117 @@ def test_reasoned_snapshot_amendment_preserves_precise_time_and_immutable_histor
             wait_for(qt_app, lambda: setup_idle(editor))
             assert editor.property("state")["selected"] == {}
             assert editor.property("state")["forms"] == {"event_time": "", "reason": ""}
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
+
+
+def test_failed_history_keeps_a_known_historical_revision_read_only_until_verified(
+    admin: TestClient,
+    database_url: str,
+    snapshot_boundary_server: SnapshotBoundaryServer,
+    qt_app: QCoreApplication,
+) -> None:
+    server = snapshot_boundary_server
+    scope, clock = turnout_scope(admin), TurnoutClock()
+    server.clock.value = clock.value
+    station_id = scope["stations"][0]["id"]
+    base = f"/api/workspace/stations/{station_id}"
+    path = base + "/stock-snapshots"
+    with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
+        counter, _ = arrange_counter_stock(api, base)
+        command = {
+            "request_id": str(uuid4()),
+            "event_at": "2026-11-15T09:30:17.123456+08:00",
+            "counters": [
+                {
+                    "counter_id": counter["id"],
+                    "ranges": [
+                        {
+                            "series": "普通系列 A",
+                            "serial_from": "000004",
+                            "serial_to": "000006",
+                        }
+                    ],
+                }
+            ],
+        }
+        created = api.post(path, json=command)
+        assert created.status_code == 201
+        original = created.json()
+        target = path + f"/{original['id']}"
+        corrected = api.put(
+            target,
+            json={
+                **command,
+                "request_id": str(uuid4()),
+                "revision": 1,
+                "reason": "核對第四號已發出",
+                "counters": [
+                    {
+                        "counter_id": counter["id"],
+                        "ranges": [
+                            {
+                                "series": "普通系列 A",
+                                "serial_from": "000005",
+                                "serial_to": "000006",
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        assert corrected.status_code == 200
+        current = corrected.json()
+        client = DesktopController(server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(server.url, account["username"], READY_PASSWORD)
+            wait_for(qt_app, lambda: state_of(client)["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for(qt_app, lambda: setup_idle(workspace))
+            workspace.selectStation(station_id)
+            wait_for(qt_app, lambda: setup_idle(workspace))
+            editor = client.property("stockSnapshots")
+            assert editor is not None
+            editor.open()
+            wait_for(qt_app, lambda: setup_idle(editor))
+            assert editor.loadSnapshot(current["id"], False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+            assert editor.property("state")["selected"] == current
+            assert editor.property("state")["history"] == [original, current]
+            server.history_fault = True
+            assert editor.loadRevision(1, False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+            failed = editor.property("state")
+            assert failed["error"] == "request_failed" and failed["selected"] == original
+            assert editor.editSelected() is False
+            assert failed["historical"] is True and failed["history_verified"] is False
+            assert failed["history"] == [original, current]
+            writes = server.request_count("PUT", target)
+            editor.setRangeField(counter["id"], 0, "serial_from", "000006")
+            editor.setField("reason", "未核實的歷史版本不可修正")
+            editor.save()
+            readonly = editor.property("state")
+            assert readonly["selected"] == original and readonly["dirty"] is False
+            assert readonly["forms"] == failed["forms"]
+            assert readonly["counter_reports"] == failed["counter_reports"]
+            assert server.request_count("PUT", target) == writes == 0
+            history = api.get(target + "/history")
+            assert history.status_code == 200 and history.json()["items"] == [original, current]
+            server.history_fault = False
+            assert editor.loadRevision(1, False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+            verified = editor.property("state")
+            assert verified["error"] == "" and verified["history_verified"] is True
+            assert verified["selected"] == original and verified["historical"] is True
+            assert editor.editSelected() is False
+            assert editor.loadSnapshot(current["id"], False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+            head = editor.property("state")
+            assert head["selected"] == current and head["historical"] is False
+            assert head["history_verified"] is True and editor.editSelected() is True
         finally:
             client.shutdown()
             client.deleteLater()

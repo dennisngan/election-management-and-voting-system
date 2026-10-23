@@ -78,6 +78,7 @@ class StockSnapshotsController(QObject):
             "counter_reports": [],
             "totals": display_totals({}),
             "history": [],
+            "history_verified": False,
             "dirty": False,
             "editing": False,
             "historical": False,
@@ -115,6 +116,7 @@ class StockSnapshotsController(QObject):
             and self._state["context"].get("election", {}).get("status") in ("draft", "active")
             and not self._state["busy"]
             and not self._state["historical"]
+            and (not self._state["selected"] or self._state["history_verified"])
         )
 
     def _editable(self) -> bool:
@@ -381,7 +383,7 @@ class StockSnapshotsController(QObject):
             return
         self._send("GET", None, self._loaded, background=True)
 
-    def _can_select(self, discard: bool) -> bool:
+    def _begin_selection(self, discard: bool) -> bool:
         if not self._state["station_id"] or self._state["busy"]:
             return False
         if self._state["dirty"] and not discard:
@@ -389,7 +391,9 @@ class StockSnapshotsController(QObject):
             return False
         self._generation += 1
         self._pending = None
-        self._state.update(refreshing=False, error="", notice="")
+        self._state.update(
+            refreshing=False, error="", notice="", history_verified=False, editing=False
+        )
         return True
 
     def _history(self, *, refresh_after: bool = False) -> None:
@@ -412,6 +416,7 @@ class StockSnapshotsController(QObject):
             head = rows[-1]
             self._state.update(
                 history=deepcopy(rows),
+                history_verified=True,
                 historical=selected["revision"] < head["revision"],
                 newer_revision=selected != head,
             )
@@ -430,7 +435,7 @@ class StockSnapshotsController(QObject):
     @Slot(int, result=bool)
     @Slot(int, bool, result=bool)
     def loadSnapshot(self, snapshot_id: int, discard: bool = False) -> bool:
-        if snapshot_id < 1 or not self._can_select(discard):
+        if snapshot_id < 1 or not self._begin_selection(discard):
             return False
 
         def loaded(data: dict[str, Any]) -> None:
@@ -447,7 +452,7 @@ class StockSnapshotsController(QObject):
     @Slot(int, bool, result=bool)
     def loadRevision(self, revision: int, discard: bool = False) -> bool:
         selected = self._state["selected"]
-        if not selected or revision < 1 or not self._can_select(discard):
+        if not selected or revision < 1 or not self._begin_selection(discard):
             return False
         snapshot_id = selected["id"]
 
@@ -468,7 +473,7 @@ class StockSnapshotsController(QObject):
     @Slot(result=bool)
     @Slot(bool, result=bool)
     def newSnapshot(self, discard: bool = False) -> bool:
-        if not self._can_select(discard):
+        if not self._begin_selection(discard):
             return False
         self._state.update(
             selected={},
@@ -479,6 +484,7 @@ class StockSnapshotsController(QObject):
                 for row in self._state["counters"]
             ],
             history=[],
+            history_verified=False,
             dirty=False,
             editing=False,
             historical=False,
@@ -600,14 +606,22 @@ class StockSnapshotsController(QObject):
 
     def _accept(self, data: dict[str, Any]) -> None:
         local = datetime.fromisoformat(data["event_at"]).astimezone(HKT)
+        previous = self._state["selected"]
+        same_snapshot = previous.get("id") == data["id"]
+        history = deepcopy(self._state["history"]) if same_snapshot else []
+        known = history + [row for row in self._state["items"] if row["id"] == data["id"]]
+        if same_snapshot:
+            known.append(previous)
+        head_revision = max([data["revision"], *[row["revision"] for row in known]])
         self._state.update(
             selected=deepcopy(data),
             totals=display_totals(data),
             dirty=False,
             editing=False,
-            historical=False,
-            newer_revision=False,
-            history=[],
+            historical=data["revision"] < head_revision,
+            newer_revision=data["revision"] < head_revision,
+            history=history,
+            history_verified=False,
             forms={"event_time": local.strftime("%Y-%m-%d %H:%M"), "reason": ""},
             counter_reports=[
                 {
