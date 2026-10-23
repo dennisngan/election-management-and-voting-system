@@ -313,3 +313,121 @@ def test_incomplete_stock_responses_keep_draft_and_recover_at_public_tls_boundar
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             qt_app.processEvents()
+
+
+def test_reasoned_snapshot_amendment_preserves_precise_time_and_immutable_history(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    scope, clock = turnout_scope(admin), TurnoutClock()
+    https_server.clock.value = clock.value
+    station_id = scope["stations"][0]["id"]
+    base = f"/api/workspace/stations/{station_id}"
+    path = base + "/stock-snapshots"
+    with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
+        counter, _ = arrange_counter_stock(api, base)
+        created = api.post(
+            path,
+            json={
+                "request_id": str(uuid4()),
+                "event_at": "2026-11-15T09:30:17.123456+08:00",
+                "counters": [
+                    {
+                        "counter_id": counter["id"],
+                        "ranges": [
+                            {
+                                "series": "普通系列 A",
+                                "serial_from": "000004",
+                                "serial_to": "000006",
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        assert created.status_code == 201
+        original = created.json()
+        assert original["ordinary_issued_quantity"] == 3
+        target = path + f"/{original['id']}"
+        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(https_server.url, account["username"], READY_PASSWORD)
+            wait_for(qt_app, lambda: state_of(client)["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for(qt_app, lambda: setup_idle(workspace))
+            workspace.selectStation(station_id)
+            wait_for(qt_app, lambda: setup_idle(workspace))
+            editor = client.property("stockSnapshots")
+            assert editor is not None
+            editor.open()
+            wait_for(qt_app, lambda: setup_idle(editor))
+            assert editor.loadSnapshot(original["id"], False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+            reviewed = editor.property("state")
+            assert reviewed["selected"] == original and reviewed["history"] == [original]
+            assert reviewed["editing"] is False and reviewed["historical"] is False
+            assert reviewed["forms"]["event_time"] == "2026-11-15 09:30"
+            editor.setRangeField(counter["id"], 0, "serial_from", "000005")
+            assert editor.property("state")["counter_reports"] == reviewed["counter_reports"]
+            assert editor.editSelected()
+            assert editor.property("state")["editing"] is True
+            editor.setRangeField(counter["id"], 0, "serial_from", "000005")
+            reason = "核對紙本：第四號已經發出。\n第二行：保留原有快照時間。"
+            editor.setField("reason", reason)
+            draft = editor.property("state")
+            assert draft["dirty"] is True and draft["forms"]["event_time"] == "2026-11-15 09:30"
+            assert editor.loadRevision(1, False) is False
+            assert editor.newSnapshot(False) is False
+            assert editor.property("state")["error"] == "unsaved_stock_snapshot_changes"
+            assert editor.property("state")["counter_reports"] == draft["counter_reports"]
+            editor.save()
+            wait_for(qt_app, lambda: setup_idle(editor))
+            saved = editor.property("state")
+            assert saved["error"] == "" and saved["notice"] == "stock_snapshot_saved"
+            assert saved["dirty"] is False and saved["editing"] is False
+            corrected = saved["selected"]
+            assert corrected["id"] == original["id"] and corrected["revision"] == 2
+            assert corrected["reason"] == reason
+            assert corrected["event_at"] == original["event_at"] == "2026-11-15T01:30:17.123456Z"
+            assert corrected["ordinary_allocated_quantity"] == 6
+            assert corrected["ordinary_remaining_quantity"] == 2
+            assert corrected["ordinary_issued_quantity"] == 4
+            assert saved["history"] == [original, corrected]
+            current = api.get(target)
+            assert current.status_code == 200 and current.json() == corrected
+            history = api.get(target + "/history")
+            assert history.status_code == 200 and history.json()["items"] == [original, corrected]
+            normal = api.get(scope["path"])
+            assert normal.status_code == 200
+            assert normal.json()["items"] and all(
+                row["record"] is None for row in normal.json()["items"]
+            )
+            assert editor.loadRevision(1, False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+            historical = editor.property("state")
+            assert historical["selected"] == original
+            assert historical["historical"] is True and historical["editing"] is False
+            assert historical["history"] == [original, corrected]
+            assert historical["totals"]["ordinary_allocated_display"] == "6"
+            assert historical["totals"]["ordinary_remaining_display"] == "3"
+            assert historical["totals"]["ordinary_issued_display"] == "3"
+            writes = https_server.request_count("PUT", target)
+            assert writes == 1
+            assert editor.editSelected() is False
+            editor.setRangeField(counter["id"], 0, "serial_from", "000006")
+            editor.save()
+            assert editor.property("state")["counter_reports"] == historical["counter_reports"]
+            assert https_server.request_count("PUT", target) == writes
+            retained = api.get(target + "/history")
+            assert retained.status_code == 200 and retained.json()["items"] == [original, corrected]
+            assert editor.newSnapshot(False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+            assert editor.property("state")["selected"] == {}
+            assert editor.property("state")["forms"] == {"event_time": "", "reason": ""}
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()

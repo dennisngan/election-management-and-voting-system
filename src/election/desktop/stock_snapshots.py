@@ -79,6 +79,9 @@ class StockSnapshotsController(QObject):
             "totals": display_totals({}),
             "history": [],
             "dirty": False,
+            "editing": False,
+            "historical": False,
+            "newer_revision": False,
             "busy": False,
             "refreshing": False,
             "error": "",
@@ -105,14 +108,17 @@ class StockSnapshotsController(QObject):
     def _path(self) -> str:
         return f"/api/workspace/stations/{self._state['station_id']}/stock-snapshots"
 
-    def _editable(self) -> bool:
+    def _writable(self) -> bool:
         return bool(
             self._state["station_id"]
             and self._state["role"] == "polling_officer"
             and self._state["context"].get("election", {}).get("status") in ("draft", "active")
             and not self._state["busy"]
-            and not self._state["selected"]
+            and not self._state["historical"]
         )
+
+    def _editable(self) -> bool:
+        return self._writable() and bool(not self._state["selected"] or self._state["editing"])
 
     def _error(self, code: str) -> None:
         self._state.update(
@@ -127,6 +133,7 @@ class StockSnapshotsController(QObject):
         success: ResultHandler,
         *,
         background: bool = False,
+        suffix: str = "",
     ) -> None:
         generation = self._generation
         activity = "refreshing" if background else "busy"
@@ -145,7 +152,7 @@ class StockSnapshotsController(QObject):
                 self._state[activity] = False
                 self._error(code)
 
-        self._request(self._path(), method, payload, done, failed)
+        self._request(self._path() + suffix, method, payload, done, failed)
 
     @staticmethod
     def _identity(value: Any) -> bool:
@@ -250,8 +257,15 @@ class StockSnapshotsController(QObject):
         except KeyError, TypeError, ValueError, OverflowError:
             return False
 
-    def _matches_command(self, data: dict[str, Any], payload: dict[str, Any]) -> bool:
-        if not self._snapshot(data) or data["revision"] != 1:
+    def _matches_command(
+        self, data: dict[str, Any], payload: dict[str, Any], snapshot_id: int
+    ) -> bool:
+        if (
+            not self._snapshot(data)
+            or data["revision"] != payload.get("revision", 0) + 1
+            or snapshot_id
+            and data["id"] != snapshot_id
+        ):
             return False
         required = {row["id"] for row in self._state["counters"]}
         identities = {row["counter"]["id"] for row in data["counters"]}
@@ -269,7 +283,7 @@ class StockSnapshotsController(QObject):
                 return False
         return bool(
             datetime.fromisoformat(data["event_at"]) == datetime.fromisoformat(payload["event_at"])
-            and data["reason"] == ""
+            and data["reason"] == payload.get("reason", "")
         )
 
     def _loaded(self, data: dict[str, Any]) -> None:
@@ -342,11 +356,14 @@ class StockSnapshotsController(QObject):
             current_ordinary_issued_quantity=current,
             current_ordinary_issued_display="—" if current is None else str(current),
         )
-        existing = {row["counter"]["id"]: row for row in self._state["counter_reports"]}
-        self._state["counter_reports"] = [
-            existing.get(row["id"], {"counter": deepcopy(row), "reported": False, "ranges": []})
-            for row in counters
-        ]
+        if not self._state["selected"] and not self._state["dirty"]:
+            self._state["counter_reports"] = [
+                {"counter": deepcopy(row), "reported": False, "ranges": []} for row in counters
+            ]
+        selected = self._state["selected"]
+        if selected:
+            head = next((row for row in items if row["id"] == selected["id"]), None)
+            self._state["newer_revision"] = head is None or head != selected
 
     @Slot()
     def open(self) -> None:
@@ -363,6 +380,122 @@ class StockSnapshotsController(QObject):
         ):
             return
         self._send("GET", None, self._loaded, background=True)
+
+    def _can_select(self, discard: bool) -> bool:
+        if not self._state["station_id"] or self._state["busy"]:
+            return False
+        if self._state["dirty"] and not discard:
+            self._error("unsaved_stock_snapshot_changes")
+            return False
+        self._generation += 1
+        self._pending = None
+        self._state.update(refreshing=False, error="", notice="")
+        return True
+
+    def _history(self, *, refresh_after: bool = False) -> None:
+        snapshot_id = self._state["selected"]["id"]
+
+        def loaded(data: dict[str, Any]) -> None:
+            rows = data.get("items")
+            selected = self._state["selected"]
+            if not (
+                isinstance(rows, list)
+                and rows
+                and all(
+                    self._snapshot(row) and row["id"] == snapshot_id and row["revision"] == index
+                    for index, row in enumerate(rows, 1)
+                )
+                and any(row == selected for row in rows)
+            ):
+                self._error("request_failed")
+                return
+            head = rows[-1]
+            self._state.update(
+                history=deepcopy(rows),
+                historical=selected["revision"] < head["revision"],
+                newer_revision=selected != head,
+            )
+            if self._state["historical"]:
+                self._state["editing"] = False
+            items = {row["id"]: row for row in self._state["items"]}
+            items[snapshot_id] = deepcopy(head)
+            self._state["items"] = sorted(
+                items.values(), key=lambda row: (datetime.fromisoformat(row["event_at"]), row["id"])
+            )
+            if refresh_after:
+                self.refresh()
+
+        self._send("GET", None, loaded, suffix=f"/{snapshot_id}/history")
+
+    @Slot(int, result=bool)
+    @Slot(int, bool, result=bool)
+    def loadSnapshot(self, snapshot_id: int, discard: bool = False) -> bool:
+        if snapshot_id < 1 or not self._can_select(discard):
+            return False
+
+        def loaded(data: dict[str, Any]) -> None:
+            if not self._snapshot(data) or data["id"] != snapshot_id:
+                self._error("request_failed")
+                return
+            self._accept(data)
+            self._history()
+
+        self._send("GET", None, loaded, suffix=f"/{snapshot_id}")
+        return True
+
+    @Slot(int, result=bool)
+    @Slot(int, bool, result=bool)
+    def loadRevision(self, revision: int, discard: bool = False) -> bool:
+        selected = self._state["selected"]
+        if not selected or revision < 1 or not self._can_select(discard):
+            return False
+        snapshot_id = selected["id"]
+
+        def loaded(data: dict[str, Any]) -> None:
+            if (
+                not self._snapshot(data)
+                or data["id"] != snapshot_id
+                or data["revision"] != revision
+            ):
+                self._error("request_failed")
+                return
+            self._accept(data)
+            self._history()
+
+        self._send("GET", None, loaded, suffix=f"/{snapshot_id}?revision={revision}")
+        return True
+
+    @Slot(result=bool)
+    @Slot(bool, result=bool)
+    def newSnapshot(self, discard: bool = False) -> bool:
+        if not self._can_select(discard):
+            return False
+        self._state.update(
+            selected={},
+            forms={"event_time": "", "reason": ""},
+            totals=display_totals({}),
+            counter_reports=[
+                {"counter": deepcopy(row), "reported": False, "ranges": []}
+                for row in self._state["counters"]
+            ],
+            history=[],
+            dirty=False,
+            editing=False,
+            historical=False,
+            newer_revision=False,
+        )
+        self.stateChanged.emit()
+        self.refresh()
+        return True
+
+    @Slot(result=bool)
+    def editSelected(self) -> bool:
+        if not self._state["selected"] or not self._writable():
+            self._error("election_read_only")
+            return False
+        self._state.update(editing=True, error="", notice="")
+        self.stateChanged.emit()
+        return True
 
     def _counter(self, counter_id: int) -> dict[str, Any] | None:
         return next(
@@ -444,21 +577,38 @@ class StockSnapshotsController(QObject):
                         {key: line[key] for key in ("series", "serial_from", "serial_to")}
                     )
                 counters.append({"counter_id": row["counter"]["id"], "ranges": ranges})
-            return {"event_at": event.isoformat(), "counters": counters}
+            selected = self._state["selected"]
+            original = selected.get("event_at")
+            unchanged_minute = bool(
+                original
+                and event_text
+                == datetime.fromisoformat(original).astimezone(HKT).strftime("%Y-%m-%d %H:%M")
+            )
+            payload = {
+                "event_at": original if unchanged_minute else event.isoformat(),
+                "counters": counters,
+            }
+            if selected:
+                reason = self._state["forms"]["reason"]
+                if not reason.strip() or len(reason) > 1000:
+                    raise ValueError("A correction reason is required")
+                payload.update(revision=selected["revision"], reason=reason)
+            return payload
         except ValueError:
             self._error("stock_snapshot_validation")
             return None
 
     def _accept(self, data: dict[str, Any]) -> None:
         local = datetime.fromisoformat(data["event_at"]).astimezone(HKT)
-        precision = (
-            "microseconds" if local.microsecond else "seconds" if local.second else "minutes"
-        )
         self._state.update(
             selected=deepcopy(data),
             totals=display_totals(data),
             dirty=False,
-            forms={"event_time": local.isoformat(sep=" ", timespec=precision)[:-6], "reason": ""},
+            editing=False,
+            historical=False,
+            newer_revision=False,
+            history=[],
+            forms={"event_time": local.strftime("%Y-%m-%d %H:%M"), "reason": ""},
             counter_reports=[
                 {
                     "counter": deepcopy(row["counter"]),
@@ -479,8 +629,10 @@ class StockSnapshotsController(QObject):
         payload = self._payload()
         if payload is None:
             return
+        snapshot_id = self._state["selected"].get("id", 0)
         signature = json.dumps(
-            {"station": self._state["station_id"], "data": payload}, sort_keys=True
+            {"station": self._state["station_id"], "snapshot": snapshot_id, "data": payload},
+            sort_keys=True,
         )
         if not self._pending or self._pending[0] != signature:
             self._pending = signature, str(uuid4())
@@ -489,12 +641,17 @@ class StockSnapshotsController(QObject):
         self._state.update(refreshing=False, error="", notice="")
 
         def saved(data: dict[str, Any]) -> None:
-            if not self._matches_command(data, payload):
+            if not self._matches_command(data, payload, snapshot_id):
                 self._error("request_failed")
                 return
             self._accept(data)
             self._pending = None
             self._state["notice"] = "stock_snapshot_saved"
-            self.refresh()
+            self._history(refresh_after=True)
 
-        self._send("POST", payload, saved)
+        self._send(
+            "PUT" if snapshot_id else "POST",
+            payload,
+            saved,
+            suffix=f"/{snapshot_id}" if snapshot_id else "",
+        )
