@@ -31,6 +31,29 @@ class HistoryTable:
     split_in_row: bool = True
 
 
+# ReportLab does not ship type information for its Flowable subclasses.
+class WholeRowTable(Table):  # type: ignore[misc]
+    """Keep fitting rows whole; continue oversized rows only from a fresh frame."""
+
+    def split(self, availWidth: float, availHeight: float) -> list[Any]:
+        parts: list[Any] = super().split(availWidth, availHeight)
+        # ReportLab 5.1's Frame.split attaches this context for the duration of
+        # splitting. Without it, preserve the ordinary whole-row policy. Public
+        # PDF regressions cover this adapter against the locked library version.
+        if parts or not getattr(getattr(self, "_frame", None), "_atTop", False):
+            return parts
+        self.splitInRow = 1
+        try:
+            parts = super().split(availWidth, availHeight)
+        finally:
+            self.splitInRow = 0
+        # Table clones its own class while splitting. Later ordinary rows must
+        # still move intact to the next page, including after an oversized row.
+        for part in parts:
+            part.splitInRow = 0
+        return parts
+
+
 def history_pdf(
     title: str,
     metadata: list[list[str]],
@@ -108,7 +131,8 @@ def history_pdf(
         )
         story = [paragraph(title, title_style), context_table]
         for section in sections:
-            table = Table(
+            table_class = Table if section.split_in_row else WholeRowTable
+            table = table_class(
                 [
                     [
                         paragraph(value, available_width=table_width * section.widths[index] - 12)

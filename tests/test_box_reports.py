@@ -607,6 +607,58 @@ def test_pdf_box_overview_keeps_short_english_headers_and_fractional_times_reada
     assert any("23:01:00.250000 HKT" in line for line in lines)
 
 
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_pdf_exports_an_accepted_multiline_identity_larger_than_a_page(
+    report_setup: dict, tmp_path: Path, locale: str
+) -> None:
+    seal = "\n".join(["S"] * 64) + "Z"
+    created = report_setup["sender"].post(
+        report_setup["source"],
+        json=prepared_box(box_reference="MULTILINE_LAST", seal_reference=seal),
+    )
+    assert created.status_code == 201
+    assert created.json()["seal_reference"] == seal
+    following = report_setup["sender"].post(
+        report_setup["source"],
+        json=prepared_box(box_reference="AFTER_TALL_END", seal_reference="FINAL_SEAL"),
+    )
+    assert following.status_code == 201
+    csv_response = report_setup["receiver"].get(
+        report_setup["target"] + f"/statement.csv?locale={locale}"
+    )
+    assert csv_response.status_code == 200
+    assert seal in [
+        value
+        for row in csv.reader(StringIO(csv_response.content.decode("utf-8-sig")))
+        for value in row
+    ]
+    response = report_setup["receiver"].get(
+        report_setup["target"] + f"/statement.pdf?locale={locale}"
+    )
+    assert response.status_code == 200
+    document = PdfReader(BytesIO(response.content))
+    assert len(document.pages) >= 3
+    lines = [line.strip() for page in document.pages for line in page.extract_text().splitlines()]
+    assert lines.count("S") == 63
+    assert lines.count("SZ") == 1
+    assert "MULTILINE_LAST" in "".join(lines)
+    assert "AFTER_TALL_END" in "".join(lines)
+    assert "FINAL_SEAL" in "".join(lines)
+    seal_end_page = next(
+        index for index, page in enumerate(document.pages) if "SZ" in page.extract_text()
+    )
+    following_page = next(
+        index for index, page in enumerate(document.pages) if "FINAL_SEAL" in page.extract_text()
+    )
+    assert following_page >= seal_end_page
+    report = (
+        report_setup["receiver"].get(report_setup["target"] + f"/statement?locale={locale}").json()
+    )
+    for index, page in enumerate(document.pages, start=1):
+        assert f"{report['labels']['page']} {index}" in page.extract_text()
+    (tmp_path / f"box-oversized-identity-{locale}.pdf").write_bytes(response.content)
+
+
 def test_history_exports_disambiguate_identical_references_from_two_origin_stations(
     admin: TestClient, database_url: str
 ) -> None:

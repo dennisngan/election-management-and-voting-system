@@ -17,7 +17,6 @@ from election.server.boxes import (
 )
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
-from election.server.station_models import PollingStation
 
 type ReportLocale = Literal["tc", "sc", "en"]
 HKT = timezone(timedelta(hours=8), "HKT")
@@ -402,14 +401,7 @@ def box_reports_router(
         station_id: int, db: Database, actor: Ready, locale: ReportLocale = "tc"
     ) -> dict[str, Any]:
         snapshot = box_snapshot(db, actor, station_id)
-        items = []
-        for box in snapshot["items"]:
-            row = dict(box)
-            for key in ("origin", "destination"):
-                station = db.get(PollingStation, row[key + "_station_id"])
-                assert station is not None
-                row[key] = {"id": station.id, "name": station.name, "code": station.code}
-            items.append(row)
+        items = snapshot["items"]
         report = {
             "scope": snapshot["context"],
             "items": items,
