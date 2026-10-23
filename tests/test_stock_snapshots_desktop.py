@@ -135,7 +135,7 @@ def test_officer_saves_remaining_stock_and_another_client_reads_the_same_snapsho
 class SnapshotBoundaryServer(HttpsServer):
     save_fault: str = ""
     collection_fault: str = ""
-    history_fault: bool = False
+    history_fault: str = ""
     commands: list[dict] = field(default_factory=list)
 
 
@@ -172,7 +172,10 @@ def snapshot_boundary_server(
             and response.status_code == 200
             and endpoint.history_fault
         ):
-            endpoint.history_fault = False
+            fault, endpoint.history_fault = endpoint.history_fault, ""
+            if fault == "truncated":
+                body = json.loads(b"".join([chunk async for chunk in response.body_iterator]))
+                return JSONResponse({"items": body["items"][:1]})
             return JSONResponse({"items": [{}]})
         collection = request.method == "GET" and request.url.path.endswith("/stock-snapshots")
         if (
@@ -445,11 +448,13 @@ def test_reasoned_snapshot_amendment_preserves_precise_time_and_immutable_histor
             qt_app.processEvents()
 
 
+@pytest.mark.parametrize("history_fault", ["malformed", "truncated"])
 def test_failed_history_keeps_a_known_historical_revision_read_only_until_verified(
     admin: TestClient,
     database_url: str,
     snapshot_boundary_server: SnapshotBoundaryServer,
     qt_app: QCoreApplication,
+    history_fault: str,
 ) -> None:
     server = snapshot_boundary_server
     scope, clock = turnout_scope(admin), TurnoutClock()
@@ -518,10 +523,11 @@ def test_failed_history_keeps_a_known_historical_revision_read_only_until_verifi
             wait_for(qt_app, lambda: setup_idle(editor))
             assert editor.property("state")["selected"] == current
             assert editor.property("state")["history"] == [original, current]
-            server.history_fault = True
+            server.history_fault = history_fault
             assert editor.loadRevision(1, False)
             wait_for(qt_app, lambda: setup_idle(editor))
             failed = editor.property("state")
+            assert failed["historical"] is True and failed["newer_revision"] is True
             assert failed["error"] == "request_failed" and failed["selected"] == original
             assert editor.editSelected() is False
             assert failed["historical"] is True and failed["history_verified"] is False
@@ -537,7 +543,7 @@ def test_failed_history_keeps_a_known_historical_revision_read_only_until_verifi
             assert server.request_count("PUT", target) == writes == 0
             history = api.get(target + "/history")
             assert history.status_code == 200 and history.json()["items"] == [original, current]
-            server.history_fault = False
+            server.history_fault = ""
             assert editor.loadRevision(1, False)
             wait_for(qt_app, lambda: setup_idle(editor))
             verified = editor.property("state")
@@ -549,6 +555,49 @@ def test_failed_history_keeps_a_known_historical_revision_read_only_until_verifi
             head = editor.property("state")
             assert head["selected"] == current and head["historical"] is False
             assert head["history_verified"] is True and editor.editSelected() is True
+            editor.setField("reason", "本機未儲存的快照核對")
+            draft = editor.property("state")
+            peer = api.put(
+                target,
+                json={
+                    **command,
+                    "request_id": str(uuid4()),
+                    "revision": 2,
+                    "reason": "另一部電腦核對至第五號已發出",
+                    "counters": [{
+                        "counter_id": counter["id"],
+                        "ranges": [{
+                            "series": "普通系列 A",
+                            "serial_from": "000006",
+                            "serial_to": "000006",
+                        }],
+                    }],
+                },
+            )
+            assert peer.status_code == 200
+            peer_head = peer.json()
+            assert peer_head["revision"] == 3 and peer_head["ordinary_issued_quantity"] == 5
+            editor.refresh()
+            wait_for(qt_app, lambda: setup_idle(editor))
+            stale = editor.property("state")
+            assert stale["selected"] == current and stale["dirty"] is True
+            assert stale["forms"] == draft["forms"]
+            assert stale["counter_reports"] == draft["counter_reports"]
+            assert stale["history"] == [original, current] and stale["items"] == [peer_head]
+            assert stale["newer_revision"] is True and stale["historical"] is True
+            assert stale["history_verified"] is False and editor.editSelected() is False
+            editor.save()
+            assert server.request_count("PUT", target) == writes == 0
+            assert editor.loadSnapshot(current["id"], False) is False
+            assert editor.property("state")["forms"] == draft["forms"]
+            assert editor.loadSnapshot(current["id"], True) is True
+            wait_for(qt_app, lambda: setup_idle(editor))
+            recovered = editor.property("state")
+            assert recovered["selected"] == peer_head and recovered["historical"] is False
+            assert recovered["history"] == [original, current, peer_head]
+            assert recovered["history_verified"] is True and editor.editSelected() is True
+            assert api.get(target + "?revision=1").json() == original
+            assert api.get(target + "?revision=2").json() == current
         finally:
             client.shutdown()
             client.deleteLater()

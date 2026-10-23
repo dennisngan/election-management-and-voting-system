@@ -376,7 +376,17 @@ class StockSnapshotsController(QObject):
         selected = self._state["selected"]
         if selected:
             head = next((row for row in items if row["id"] == selected["id"]), None)
-            self._state["newer_revision"] = head is None or head != selected
+            history = self._state["history"]
+            known = [selected, *history, *([head] if head is not None else [])]
+            historical = selected["revision"] < max(row["revision"] for row in known)
+            self._state.update(
+                historical=historical,
+                newer_revision=historical or head is None or head != selected,
+            )
+            if head is None or not any(row == head for row in history):
+                self._state["history_verified"] = False
+            if historical:
+                self._state["editing"] = False
 
     @Slot()
     def open(self) -> None:
@@ -414,6 +424,11 @@ class StockSnapshotsController(QObject):
         def loaded(data: dict[str, Any]) -> None:
             rows = data.get("items")
             selected = self._state["selected"]
+            known = [
+                selected,
+                *self._state["history"],
+                *[row for row in self._state["items"] if row["id"] == snapshot_id],
+            ]
             if not (
                 isinstance(rows, list)
                 and rows
@@ -421,7 +436,10 @@ class StockSnapshotsController(QObject):
                     self._snapshot(row) and row["id"] == snapshot_id and row["revision"] == index
                     for index, row in enumerate(rows, 1)
                 )
-                and any(row == selected for row in rows)
+                and all(
+                    saved["revision"] <= len(rows) and rows[saved["revision"] - 1] == saved
+                    for saved in known
+                )
             ):
                 self._error("request_failed")
                 return
