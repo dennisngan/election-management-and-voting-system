@@ -16,8 +16,10 @@ from election.server.station_models import IssuanceCounter
 from election.server.stock import stock_scope, stock_write
 from election.server.stock_inventory import (
     allocation_fragments,
+    covering_fragments,
     current_allocations,
     current_returns,
+    preserve_issued_observations,
     reject_known_issued,
     validate_return_ownership,
 )
@@ -155,32 +157,19 @@ def stock_return_router(
             fragments = allocation_fragments(allocations, returns)
             first, last = serial_number(data.serial_from), serial_number(data.serial_to)
             reject_known_issued(db, station_id, data.series, first, last, event_at)
-            cursor = first
-            basis: list[dict[str, int | str]] = []
-            for fragment in sorted(fragments, key=lambda row: row.serial_from_value):
-                if (
-                    fragment.counter_id != counter.id
-                    or fragment.series != data.series
-                    or fragment.serial_to_value < cursor
-                ):
-                    continue
-                if fragment.serial_from_value > cursor:
-                    break
-                end = min(last, fragment.serial_to_value)
-                basis.append(
-                    {
-                        "allocation_id": fragment.allocation.allocation_id,
-                        "revision": fragment.allocation.revision,
-                        "serial_from": str(cursor).zfill(len(data.serial_from)),
-                        "serial_to": str(end).zfill(len(data.serial_to)),
-                        "quantity": end - cursor + 1,
-                    }
-                )
-                cursor = end + 1
-                if cursor > last:
-                    break
-            if cursor <= last:
+            portions = covering_fragments(fragments, counter.id, data.series, first, last)
+            if portions is None:
                 raise HTTPException(409, detail={"code": "return_outside_owned_stock"})
+            basis: list[dict[str, int | str]] = [
+                {
+                    "allocation_id": fragment.allocation.allocation_id,
+                    "revision": fragment.allocation.revision,
+                    "serial_from": str(start).zfill(len(data.serial_from)),
+                    "serial_to": str(end).zfill(len(data.serial_to)),
+                    "quantity": end - start + 1,
+                }
+                for fragment, start, end in portions
+            ]
             if head is None:
                 head = CounterStockReturn(station_id=station_id, revision=1, created_at=now)
                 db.add(head)
@@ -205,15 +194,14 @@ def stock_return_router(
                 reason=data.reason if isinstance(data, AllocationCorrection) else "",
                 allocation_basis=basis,
             )
-            validate_return_ownership(
-                current_allocations(db, station_id, lock=True),
-                [
-                    item
-                    for item in current_returns(db, station_id, lock=True)
-                    if item.return_id != return_id
-                ]
-                + [row],
-            )
+            all_allocations = current_allocations(db, station_id, lock=True)
+            proposed_returns = [
+                item
+                for item in current_returns(db, station_id, lock=True)
+                if item.return_id != return_id
+            ] + [row]
+            validate_return_ownership(all_allocations, proposed_returns)
+            preserve_issued_observations(db, station_id, all_allocations, proposed_returns)
             db.add(row)
             db.add(
                 AuditEvent(

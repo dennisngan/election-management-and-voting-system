@@ -17,8 +17,10 @@ from election.server.station_models import IssuanceCounter
 from election.server.stock import stock_scope, stock_write
 from election.server.stock_inventory import (
     allocation_fragments,
+    covering_fragments,
     current_allocations,
     current_returns,
+    preserve_later_remaining,
     receipt_basis,
     received_ranges,
     reject_known_issued,
@@ -166,25 +168,17 @@ def snapshot_accounting(
         net_allocated = allocated - returned
         report = reports.get(counter.id)
         for remaining in report.ranges if report else []:
-            cursor, last = serial_number(remaining.serial_from), serial_number(remaining.serial_to)
+            first, last = serial_number(remaining.serial_from), serial_number(remaining.serial_to)
             reject_known_issued(
                 db,
                 station_id,
                 remaining.series,
-                cursor,
+                first,
                 last,
                 event_at,
                 exclude_snapshot_id=exclude_snapshot_id,
             )
-            for allocation in sorted(owned, key=lambda row: row.serial_from_value):
-                if allocation.series != remaining.series or allocation.serial_to_value < cursor:
-                    continue
-                if allocation.serial_from_value > cursor:
-                    break
-                cursor = max(cursor, allocation.serial_to_value + 1)
-                if cursor > last:
-                    break
-            if cursor <= last:
+            if covering_fragments(fragments, counter.id, remaining.series, first, last) is None:
                 raise HTTPException(409, detail={"code": "remaining_outside_owned_stock"})
         remaining_quantity = sum(row.quantity for row in report.ranges) if report else None
         if remaining_quantity is not None and remaining_quantity > net_allocated:
@@ -349,6 +343,13 @@ def stock_snapshot_router(
             if data.event_at.astimezone(UTC).replace(tzinfo=None) > now:
                 raise HTTPException(422, detail={"code": "event_time_in_future"})
             accounting = snapshot_accounting(db, station_id, data, exclude_snapshot_id=snapshot_id)
+            preserve_later_remaining(
+                db,
+                station_id,
+                data.event_at.astimezone(UTC).replace(tzinfo=None),
+                accounting["counters"],
+                exclude_snapshot_id=snapshot_id,
+            )
             if head is None:
                 head = StockSnapshot(station_id=station_id, revision=1, created_at=now)
                 db.add(head)
@@ -375,8 +376,8 @@ def stock_snapshot_router(
                     details={
                         "station_id": station_id,
                         "snapshot_id": head.id,
-                        "revision": head.revision,
                         **values,
+                        "revision": head.revision,
                     },
                 )
             )

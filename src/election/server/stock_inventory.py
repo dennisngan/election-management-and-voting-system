@@ -247,6 +247,33 @@ class AllocationFragment:
         return self.serial_to_value - self.serial_from_value + 1
 
 
+def covering_fragments(
+    fragments: Sequence[AllocationFragment],
+    counter_id: int,
+    series: str,
+    first: int,
+    last: int,
+) -> list[tuple[AllocationFragment, int, int]] | None:
+    """Return inclusive lineage portions covering a range, or None when ownership has a gap."""
+    portions: list[tuple[AllocationFragment, int, int]] = []
+    cursor = first
+    for fragment in sorted(fragments, key=lambda row: row.serial_from_value):
+        if (
+            fragment.counter_id != counter_id
+            or fragment.series != series
+            or fragment.serial_to_value < cursor
+        ):
+            continue
+        if fragment.serial_from_value > cursor:
+            return None
+        end = min(last, fragment.serial_to_value)
+        portions.append((fragment, cursor, end))
+        cursor = end + 1
+        if cursor > last:
+            return portions
+    return None
+
+
 def subtract_intervals(
     first: int, last: int, removed: Sequence[tuple[int, int]]
 ) -> list[tuple[int, int]]:
@@ -305,7 +332,7 @@ def allocation_fragments(
     ]
 
 
-def preserve_observed_stock(
+def preserve_returned_stock(
     db: Session,
     station_id: int,
     allocation_id: int,
@@ -315,8 +342,7 @@ def preserve_observed_stock(
     last: int,
     event_at: datetime,
 ) -> None:
-    """A correction cannot release known-issued stock or orphan a physical return."""
-    allocations = current_allocations(db, station_id, lock=True)
+    """A correction must retain every physical return in its original allocation lineage."""
     returns = current_returns(db, station_id, lock=True)
     for returned in returns:
         for part in returned.allocation_basis:
@@ -328,46 +354,6 @@ def preserve_observed_stock(
                 or event_at > returned.event_at
             ):
                 raise HTTPException(409, detail={"code": "stock_returns_conflict"})
-    proposed = [
-        (row.counter_id, row.series, row.serial_from_value, row.serial_to_value, row.event_at)
-        for row in allocations
-        if row.allocation_id != allocation_id
-    ]
-    proposed.append((counter_id, series, first, last, event_at))
-    observations = db.scalars(
-        select(StockSnapshotRevision)
-        .join(
-            StockSnapshot,
-            and_(
-                StockSnapshot.id == StockSnapshotRevision.snapshot_id,
-                StockSnapshot.revision == StockSnapshotRevision.revision,
-            ),
-        )
-        .where(StockSnapshot.station_id == station_id)
-        .with_for_update()
-    )
-    for observation in observations:
-        for counter in observation.data["counters"]:
-            for issued in counter.get("issued_ranges", []):
-                cursor = serial_number(issued["serial_from"])
-                issued_last = serial_number(issued["serial_to"])
-                for owner_id, owner_series, start, end, allocated_at in sorted(
-                    proposed, key=lambda p: p[2]
-                ):
-                    if (
-                        owner_id != counter["counter"]["id"]
-                        or owner_series != issued["series"]
-                        or allocated_at > observation.event_at
-                        or end < cursor
-                    ):
-                        continue
-                    if start > cursor:
-                        break
-                    cursor = max(cursor, end + 1)
-                    if cursor > issued_last:
-                        break
-                if cursor <= issued_last:
-                    raise HTTPException(409, detail={"code": "stock_observations_conflict"})
 
 
 def reject_known_issued(
@@ -434,3 +420,75 @@ def validate_return_ownership(
                 and fragment.serial_to_value >= allocation.serial_from_value
             ):
                 raise HTTPException(409, detail={"code": "stock_returns_conflict"})
+
+
+def preserve_issued_observations(
+    db: Session,
+    station_id: int,
+    allocations: Sequence[StockAllocationRevision],
+    returns: Sequence[CounterStockReturnRevision],
+) -> None:
+    """Backdated movements must retain the stock already observed as issued."""
+    observations = db.scalars(
+        select(StockSnapshotRevision)
+        .join(
+            StockSnapshot,
+            and_(
+                StockSnapshot.id == StockSnapshotRevision.snapshot_id,
+                StockSnapshot.revision == StockSnapshotRevision.revision,
+            ),
+        )
+        .where(StockSnapshot.station_id == station_id)
+        .with_for_update()
+    )
+    for observation in observations:
+        fragments = allocation_fragments(
+            [row for row in allocations if row.event_at <= observation.event_at],
+            [row for row in returns if row.event_at <= observation.event_at],
+        )
+        for counter in observation.data["counters"]:
+            for issued in counter.get("issued_ranges", []):
+                if covering_fragments(
+                    fragments,
+                    counter["counter"]["id"],
+                    issued["series"],
+                    serial_number(issued["serial_from"]),
+                    serial_number(issued["serial_to"]),
+                ) is None:
+                    raise HTTPException(409, detail={"code": "stock_observations_conflict"})
+
+
+def preserve_later_remaining(
+    db: Session,
+    station_id: int,
+    event_at: datetime,
+    counters: list[dict[str, Any]],
+    *,
+    exclude_snapshot_id: int | None = None,
+) -> None:
+    """An earlier observation cannot issue papers retained by a later observation."""
+    observations = db.scalars(
+        select(StockSnapshotRevision)
+        .join(
+            StockSnapshot,
+            and_(
+                StockSnapshot.id == StockSnapshotRevision.snapshot_id,
+                StockSnapshot.revision == StockSnapshotRevision.revision,
+            ),
+        )
+        .where(StockSnapshot.station_id == station_id, StockSnapshotRevision.event_at >= event_at)
+        .with_for_update()
+    )
+    issued = [part for counter in counters for part in counter.get("issued_ranges", [])]
+    for observation in observations:
+        if observation.snapshot_id == exclude_snapshot_id:
+            continue
+        for counter in observation.data["counters"]:
+            for remaining in counter.get("ranges") or []:
+                if any(
+                    part["series"] == remaining["series"]
+                    and serial_number(part["serial_from"]) <= serial_number(remaining["serial_to"])
+                    and serial_number(part["serial_to"]) >= serial_number(remaining["serial_from"])
+                    for part in issued
+                ):
+                    raise HTTPException(409, detail={"code": "stock_observations_conflict"})

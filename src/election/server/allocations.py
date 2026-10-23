@@ -21,7 +21,8 @@ from election.server.stock_inventory import (
     availability,
     current_allocations,
     current_returns,
-    preserve_observed_stock,
+    preserve_issued_observations,
+    preserve_returned_stock,
     receipt_basis,
     received_ranges,
     subtract_intervals,
@@ -194,6 +195,18 @@ def allocation_router(
             reason=reason,
             receipt_basis=basis,
         )
+        if isinstance(data, AllocationCorrection):
+            proposed_allocations = [
+                item
+                for item in current_allocations(db, head.station_id, lock=True)
+                if item.allocation_id != head.id
+            ] + [row]
+            preserve_issued_observations(
+                db,
+                head.station_id,
+                proposed_allocations,
+                current_returns(db, head.station_id, lock=True),
+            )
         db.add(row)
         db.add(
             AuditEvent(
@@ -314,7 +327,7 @@ def allocation_router(
             if head.revision != data.revision:
                 raise HTTPException(409, detail={"code": "revision_conflict"})
             counter, basis = validate_stock(db, station_id, data, exclude_id=head.id)
-            preserve_observed_stock(
+            preserve_returned_stock(
                 db,
                 station_id,
                 head.id,
