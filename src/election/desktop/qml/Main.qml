@@ -27,7 +27,7 @@ ApplicationWindow {
     readonly property color line: "#e1e7f0"
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
-    readonly property bool stationPage: ["polling", "stock", "turnout", "complaints",
+    readonly property bool stationPage: ["polling", "stock", "allocations", "turnout", "complaints",
         "complaintPeriods", "queue", "boxes"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
@@ -301,6 +301,30 @@ ApplicationWindow {
                         window.currentPage = "stock"
                         controller.workspace.open()
                         controller.stock.open()
+                    }
+                }
+                Button {
+                    id: allocationNavigation
+                    objectName: "allocationNavigation"
+                    text: window.t("allocation_title"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "allocations"
+                    Material.background: window.currentPage === "allocations" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: allocationNavigation.text
+                        textFormat: Text.PlainText
+                        font: allocationNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "allocations"
+                        controller.workspace.open()
+                        controller.allocations.open()
                     }
                 }
                 Button {
@@ -674,6 +698,14 @@ ApplicationWindow {
                         visible: window.currentPage === "stock"
                         Layout.fillWidth: true
                         stock: controller.stock
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    AllocationPage {
+                        visible: window.currentPage === "allocations"
+                        Layout.fillWidth: true
+                        allocations: controller.allocations
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)

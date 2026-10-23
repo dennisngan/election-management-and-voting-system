@@ -1,6 +1,11 @@
 """P(14) reports distinguish an exact saved revision from current station stock."""
 
+import csv
 from datetime import datetime
+from io import BytesIO, StringIO
+
+import pytest
+from pypdf import PdfReader
 
 from tests.test_allocation_api import allocation_payload
 from tests.test_allocation_api import allocation_setup as allocation_setup
@@ -53,3 +58,68 @@ def test_selected_historical_report_does_not_mix_current_station_totals(
         (row["serial_from"], row["serial_to"], row["quantity"])
         for row in overview["availability"][0]["ranges"]
     ] == [("000001", "000001", 1), ("000006", "000008", 3)]
+
+
+def test_saved_revision_csv_and_preview_preserve_scope_counter_and_serials(
+    allocation_setup: dict,
+) -> None:
+    setup = allocation_setup
+    officer, path = setup["officer"], setup["base"] + "/allocations"
+    saved = officer.post(path, json=allocation_payload(setup["counter"]["id"]))
+    assert saved.status_code == 201
+    allocation_id = saved.json()["id"]
+    params = {"allocation_id": allocation_id, "revision": 1, "locale": "tc"}
+    downloaded = officer.get(path + "/statement.csv", params=params)
+    assert downloaded.status_code == 200
+    assert downloaded.headers["content-type"].startswith("text/csv")
+    assert f"p14-allocation-{allocation_id}-r1-tc.csv" in downloaded.headers["content-disposition"]
+    assert downloaded.content.startswith(b"\xef\xbb\xbf")
+    rows = list(csv.reader(StringIO(downloaded.content.decode("utf-8-sig"))))
+    assert rows[0] == ["P(14) 發票櫃台選票派發紀錄"]
+    assert ["派票記錄編號", str(allocation_id)] in rows
+    assert ["修訂版本", "1"] in rows
+    assert ["發票櫃台", "C1 · 發票櫃台一"] in rows
+    assert any(row[-3:] == ["000001", "000003", "3"] for row in rows)
+    preview = officer.get(path + "/statement", params=params).json()["preview_lines"]
+    assert preview[0] == "P(14) 發票櫃台選票派發紀錄"
+    assert any("000001" in line and "000003" in line for line in preview)
+
+
+@pytest.mark.parametrize(
+    ("locale", "title", "counter_label"),
+    [
+        ("tc", "P(14) 發票櫃台選票派發紀錄", "發票櫃台"),
+        ("sc", "P(14) 发票柜台选票分配记录", "发票柜台"),
+        ("en", "P(14) Counter ballot allocations", "Issuance counter"),
+    ],
+)
+def test_selected_revision_pdf_has_translated_context_and_exact_serials(
+    allocation_setup: dict, locale: str, title: str, counter_label: str
+) -> None:
+    setup = allocation_setup
+    officer, path = setup["officer"], setup["base"] + "/allocations"
+    saved = officer.post(path, json=allocation_payload(setup["counter"]["id"]))
+    assert saved.status_code == 201
+    allocation_id = saved.json()["id"]
+    exported = officer.get(
+        path + "/statement.pdf",
+        params={"allocation_id": allocation_id, "revision": 1, "locale": locale},
+    )
+    assert exported.status_code == 200
+    assert exported.headers["content-type"] == "application/pdf"
+    assert (
+        f"p14-allocation-{allocation_id}-r1-{locale}.pdf" in exported.headers["content-disposition"]
+    )
+    text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(exported.content)).pages)
+    for expected in (
+        title,
+        counter_label,
+        "C1",
+        "發票櫃台一",
+        "普通系列 A",
+        "000001",
+        "000003",
+        "2026-11-08 08:05:00 HKT",
+        "Asia/Hong_Kong (UTC+08:00)",
+    ):
+        assert expected in text

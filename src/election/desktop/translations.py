@@ -1,5 +1,6 @@
 """Staff-facing interface labels for the three supported desktop languages."""
 
+from election.desktop.allocation_translations import ALLOCATION_TRANSLATIONS
 from election.desktop.complaint_period_translations import COMPLAINT_PERIOD_TRANSLATIONS
 from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
 
@@ -1932,3 +1933,6 @@ for language, complaint_labels in COMPLAINT_TRANSLATIONS.items():
 
 for language, period_labels in COMPLAINT_PERIOD_TRANSLATIONS.items():
     TRANSLATIONS[language].update(period_labels)
+
+for language, allocation_labels in ALLOCATION_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(allocation_labels)

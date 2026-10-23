@@ -13,6 +13,7 @@ from PySide6.QtNetwork import (
     QSslConfiguration,
 )
 
+from election.desktop.allocations import AllocationController
 from election.desktop.boxes import BoxesController
 from election.desktop.complaint_categories import ComplaintCategoriesController
 from election.desktop.complaint_periods import ComplaintPeriodsController
@@ -64,6 +65,9 @@ class DesktopController(QObject):
         self._staff.accessChanged.connect(self._access_changed)
         self._polling = PollingController(self._authorized_request, self)
         self._stock = StockController(self._authorized_request, self._authorized_download, self)
+        self._allocations = AllocationController(
+            self._authorized_request, self._authorized_download, self
+        )
         self._queue = QueueController(
             self._authorized_request, self, download=self._authorized_download
         )
@@ -85,6 +89,8 @@ class DesktopController(QObject):
                 or self._polling.property("state")["busy"]
                 or self._stock.property("state")["dirty"]
                 or self._stock.property("state")["busy"]
+                or self._allocations.property("state")["dirty"]
+                or self._allocations.property("state")["busy"]
                 or self._queue.property("state")["dirty"]
                 or self._queue.property("state")["busy"]
                 or self._boxes.property("state")["dirty"]
@@ -99,6 +105,7 @@ class DesktopController(QObject):
         )
         self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
         self._stock.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._allocations.stateChanged.connect(self._workspace.stateChanged.emit)
         self._queue.stateChanged.connect(self._workspace.stateChanged.emit)
         self._boxes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._turnout.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -164,6 +171,10 @@ class DesktopController(QObject):
         return self._stock
 
     @Property(QObject, constant=True)
+    def allocations(self) -> AllocationController:
+        return self._allocations
+
+    @Property(QObject, constant=True)
     def queue(self) -> QueueController:
         return self._queue
 
@@ -187,6 +198,7 @@ class DesktopController(QObject):
         context = self._workspace.property("state")["selected"]
         self._polling.set_context(context)
         self._stock.set_context(context)
+        self._allocations.set_context(context)
         self._queue.set_context(context)
         self._boxes.set_context(context)
         self._turnout.set_context(context)
@@ -550,6 +562,7 @@ class DesktopController(QObject):
             self._workspace.refresh()
             self._polling.refresh()
             self._stock.refresh()
+            self._allocations.refresh()
             self._queue.refresh()
             self._boxes.refresh()
             self._turnout.refresh()
@@ -582,6 +595,7 @@ class DesktopController(QObject):
         self._workspace.reset()
         self._polling.reset()
         self._stock.reset()
+        self._allocations.reset()
         self._queue.reset()
         self._boxes.reset()
         self._turnout.reset()

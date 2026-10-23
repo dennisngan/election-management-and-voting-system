@@ -90,7 +90,31 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
             endpoint.hold_configuration_list = False
             endpoint.configuration_list_entered.set()
             await asyncio.to_thread(endpoint.release_configuration_list.wait, 5)
+        delayed_allocations = (
+            request.method == "GET"
+            and request.url.path.endswith("/allocations")
+            and endpoint.hold_allocation_list
+        )
+        if delayed_allocations:
+            endpoint.hold_allocation_list = False
+            endpoint.allocation_list_entered.set()
         response = await call_next(request)
+        if delayed_allocations:
+            await asyncio.to_thread(endpoint.release_allocation_list.wait, 5)
+        if (
+            request.method in ("POST", "PUT")
+            and "/allocations" in request.url.path
+            and response.status_code in (200, 201)
+            and endpoint.truncate_next_allocation_write
+        ):
+            # Commit the real authenticated command, then interrupt only its TLS
+            # response. Public retries must recover its one saved effect.
+            endpoint.truncate_next_allocation_write = False
+            return StreamingResponse(
+                iter([b'{"incomplete":']),
+                media_type="application/json",
+                headers={"Content-Length": "4096"},
+            )
         if delayed_profile:
             endpoint.delayed_profile_status = response.status_code
             endpoint.profile_finished.set()
@@ -141,6 +165,7 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
         endpoint.release_configuration_list.set()
         endpoint.release_profile.set()
         endpoint.release_password_response.set()
+        endpoint.release_allocation_list.set()
         server.should_exit = True
         wait_for(qt_app, lambda: not thread.is_alive())
         thread.join(timeout=0)

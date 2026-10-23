@@ -36,6 +36,10 @@ class HttpsServer:
     hold_password_response: bool = False
     hold_configuration_list: bool = False
     truncate_next_report: bool = False
+    truncate_next_allocation_write: bool = False
+    hold_allocation_list: bool = False
+    allocation_list_entered: threading.Event = field(default_factory=threading.Event)
+    release_allocation_list: threading.Event = field(default_factory=threading.Event)
     configuration_list_entered: threading.Event = field(default_factory=threading.Event)
     release_configuration_list: threading.Event = field(default_factory=threading.Event)
     profile_entered: threading.Event = field(default_factory=threading.Event)
