@@ -7,7 +7,7 @@ from PySide6.QtCore import QCoreApplication
 
 from election.desktop.controller import DesktopController
 from tests.configuration_desktop_support import ready_setup, setup_idle
-from tests.desktop_support import HttpsServer, state_of, wait_for
+from tests.desktop_support import HttpsServer, state_of, wait_for, wait_for_editor_idle
 from tests.lifecycle_support import lifecycle_database_url
 
 
@@ -50,7 +50,7 @@ def test_profile_polling_defers_staff_directories_until_open_and_keeps_manual_re
     assert staff.property("state")["station_options"] == []
 
     staff.open()
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     opened = staff.property("state")
     assert opened["error"] == ""
     assert all(https_server.request_count("GET", path) > 0 for path in paths)
@@ -60,11 +60,21 @@ def test_profile_polling_defers_staff_directories_until_open_and_keeps_manual_re
         for row in opened["accounts"]
     )
     assert isinstance(opened["station_options"], list)
+    expected_accounts = {row["id"] for row in opened["accounts"]}
+    expected_stations = {row["station"]["id"] for row in opened["station_options"]}
 
     before_refresh = {path: https_server.request_count("GET", path) for path in paths}
     staff.refresh()
-    wait_for(qt_app, lambda: setup_idle(staff))
-    assert staff.property("state")["error"] == ""
+    wait_for_editor_idle(qt_app, staff)
+    refreshed = staff.property("state")
+    assert refreshed["error"] == ""
+    assert len(refreshed["accounts"]) == len(opened["accounts"])
+    assert len(refreshed["station_options"]) == len(opened["station_options"])
+    assert {row["id"] for row in refreshed["accounts"]} == expected_accounts
+    assert {row["station"]["id"] for row in refreshed["station_options"]} == expected_stations
+    assert next(row for row in refreshed["accounts"] if row["id"] == current["id"]) == next(
+        row for row in opened["accounts"] if row["id"] == current["id"]
+    )
     assert all(
         https_server.request_count("GET", path) > before_refresh[path] for path in paths
     )
