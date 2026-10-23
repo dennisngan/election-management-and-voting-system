@@ -306,7 +306,7 @@ ApplicationWindow {
                 Button {
                     id: turnoutNavigation
                     objectName: "turnoutNavigation"
-                    text: window.t("turnout"); Layout.fillWidth: true; flat: true
+                    text: window.t("turnout_title"); Layout.fillWidth: true; flat: true
                     visible: !window.administrator
                     highlighted: window.currentPage === "turnout"
                     Material.background: window.currentPage === "turnout" ? "#dceaff" : "transparent"
@@ -350,7 +350,7 @@ ApplicationWindow {
                 Button {
                     id: complaintPeriodsNavigation
                     objectName: "complaintPeriodsNavigation"
-                    text: window.t("complaint_periods"); Layout.fillWidth: true; flat: true
+                    text: window.t("complaint_period_title"); Layout.fillWidth: true; flat: true
                     visible: !window.administrator
                     highlighted: window.currentPage === "complaintPeriods"
                     Material.background: window.currentPage === "complaintPeriods" ? "#dceaff" : "transparent"

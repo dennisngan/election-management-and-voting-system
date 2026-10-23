@@ -5,6 +5,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from election.desktop.translations import TRANSLATIONS
 from tests.complaint_period_support import READY_PASSWORD, complaint_period_scope, period_command
 from tests.complaint_support import (
     ComplaintClock,
@@ -46,8 +47,11 @@ def test_officer_prepares_zero_submits_amends_and_reads_old_p19_through_controls
                 "password": READY_PASSWORD,
                 "station_id": station_id,
                 "locale": locale,
+                "navigation_label": TRANSLATIONS[locale]["complaint_period_title"],
             },
             """
+            assert (control('complaintPeriodsNavigation').property('text')
+                    == setup['navigation_label'])
             click('complaintPeriodsNavigation')
             periods = controller.property('complaintPeriods')
             wait(lambda: not periods.property('state')['busy'])

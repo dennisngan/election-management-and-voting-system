@@ -5,6 +5,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from election.desktop.translations import TRANSLATIONS
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
@@ -45,8 +46,10 @@ def test_officer_uses_visible_turnout_controls_to_save_and_submit_explicit_zero(
                 "password": READY_PASSWORD,
                 "station_id": station_id,
                 "locale": locale,
+                "navigation_label": TRANSLATIONS[locale]["turnout_title"],
             },
             """
+            assert control('turnoutNavigation').property('text') == setup['navigation_label']
             click('turnoutNavigation')
             turnout = controller.property('turnout')
             wait(lambda: not turnout.property('state')['busy'])

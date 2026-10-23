@@ -150,14 +150,14 @@ ColumnLayout {
             anchors.fill: parent
             anchors.margins: 20
             spacing: 12
-            FormCaption { text: page.t("election") }
+            FormCaption { text: page.t("selected_election") }
             Picker {
                 id: electionPicker
                 objectName: "complaintCategoryElection"
                 model: page.editorState.elections
                 textRole: "name"
                 currentIndex: page.indexOf(model, page.editorState.election_id)
-                Accessible.name: page.t("election")
+                Accessible.name: page.t("selected_election")
                 onActivated: index => {
                     if (index >= 0) page.choose("election", model[index].id)
                 }
@@ -185,7 +185,8 @@ ColumnLayout {
                     contentItem: Text {
                         id: optionText
                         text: option.modelData.code + " · " + page.label(option.modelData)
-                            + (option.modelData.enabled ? "" : " · " + page.t("disabled"))
+                            + (option.modelData.enabled ? "" : " · "
+                                + page.t("complaint_category_disabled_label"))
                         textFormat: Text.PlainText
                         font: option.font
                         color: "#25344b"

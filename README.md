@@ -12,9 +12,11 @@ Ticket 03 adds scoped polling stations, issuance counters and same-constituency 
 Tickets 04 and 05 add staff administration, assigned-station workspaces, election schedules and
 single-election activation; their current verification status is recorded in the local tickets.
 Ticket 06 adds revision-bound opening/closing records and Supervisor approval. Ticket 07 adds
-received-stock pools, retained corrections and translated receipt statements. Their verification
-progress remains recorded in the local tickets. Later turnout and counting features follow;
-illustrative design-preview figures are not application data.
+received-stock pools, retained corrections and translated receipt statements. Independent slices
+also implement normal turnout, complaint cases/statistics, queue observations and box handover.
+Tickets 01–06 are complete. Tickets 07, 11, 13, 14 and 15 retain pending native Computer checks;
+remaining stock-flow/counting/delivery work follows the dependency plan. Illustrative
+design-preview figures are not application data.
 
 After signing in as an Administrator and changing the initial password, open **Election setup**.
 Create or choose a saved election, then create or choose a constituency and its candidates. Saved
@@ -54,6 +56,35 @@ remain read-only. Select a saved revision to preview or export its statement as 
 in the selected language. PDFs use the [bundled Chinese font](docs/report-font.md). Characters that
 the PDF renderer cannot represent produce a visible export error; preview and CSV retain the
 source text. The server serializes PDF builds around the shared font's subsetting state.
+
+Open **Normal-mode turnout** to enter supplied hourly/cumulative figures and their external source
+for a configured reporting period. An explicit zero is a saved report; a missing period stays missing.
+A Supervisor confirms the exact submitted revision using their own existing password. Approved
+totals use compatible consecutive periods from a zero starting baseline. Earlier amendments
+retain the original approvals and flag affected later periods for renewed review. Choose the
+reviewed revision or current station overview before previewing/exporting P(15).
+
+Open **Complaint categories** as an Administrator to configure three-language display labels and
+availability. Verified reference labels remain separate from project translations/custom labels;
+Other remains available and requires a description. Assigned officers use **Complaint cases** to
+record receipt, category, progress/completion and reasoned corrections. Older case revisions retain
+their category labels and references. Cases outside the schedule remain explicitly identified.
+
+Open **P(19) complaint period statistics** to prepare period statistics from saved cases, including
+an explicit zero. The received cohort and work status are frozen when the revision is prepared.
+Submit the reviewed revision for Supervisor confirmation. Late case entries and corrections can
+make that basis stale; use reasoned amendments and renewed review while earlier counts, members
+and approvals remain available. Report selection distinguishes the reviewed revision from the
+current station overview. Complaint recording and zero reporting do not require an opening event.
+
+Open **Queue waiting times** to record a waiting-time band or explicitly confirm the same band,
+retaining the observation time and history. The shared reminder uses the latest actual observation and the
+30-minute update boundary. Open **Box handover and milestones** to prepare sealed boxes at their
+origin, record departure where applicable, and acknowledge receipt at the configured counting
+destination. Local boxes still require receipt. Counting Officers record conversion completion,
+first-box opening and the start of questionable-paper determination. Count completion remains
+unrecorded until the later counting workflow supplies it. Translated PDF/CSV statements retain
+origin, destination, event corrections and exact source references.
 
 ## Development prerequisites
 
