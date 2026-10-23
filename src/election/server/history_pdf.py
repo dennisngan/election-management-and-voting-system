@@ -162,7 +162,10 @@ def history_pdf(
                     ]
                 )
             )
-            story += [Spacer(1, 14), paragraph(section.title, heading), table]
+            section_heading = paragraph(section.title, heading)
+            # Untitled continuation tables retain their existing split placement.
+            section_heading.keepWithNext = bool(section.title)
+            story += [Spacer(1, 14), section_heading, table]
             if section.empty_message:
                 story += [Spacer(1, 8), paragraph(section.empty_message)]
 
