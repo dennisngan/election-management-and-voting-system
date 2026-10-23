@@ -33,6 +33,29 @@ from tests.test_stock_snapshot_api import database_url as database_url
 from tests.turnout_support import READY_PASSWORD, TurnoutClock, turnout_scope, turnout_staff
 
 
+def arrange_counter_stock(api: TestClient, base: str) -> tuple[dict, list[dict]]:
+    """Receive eight ordinary papers and allocate the first six through the real API."""
+    receipt = api.post(base + "/stock", json=stock_payload())
+    assert receipt.status_code == 201
+    options = api.get(base + "/allocations")
+    assert options.status_code == 200
+    counters = options.json()["counters"]
+    counter = next(row for row in counters if row["code"] == "C1")
+    allocation = api.post(
+        base + "/allocations",
+        json={
+            "request_id": str(uuid4()),
+            "counter_id": counter["id"],
+            "series": "普通系列 A",
+            "serial_from": "000001",
+            "serial_to": "000006",
+            "event_at": "2026-11-15T09:00:00+08:00",
+        },
+    )
+    assert allocation.status_code == 201
+    return counter, counters
+
+
 def test_officer_saves_remaining_stock_and_another_client_reads_the_same_snapshot(
     admin: TestClient,
     database_url: str,
@@ -44,23 +67,7 @@ def test_officer_saves_remaining_stock_and_another_client_reads_the_same_snapsho
     station_id = scope["stations"][0]["id"]
     base = f"/api/workspace/stations/{station_id}"
     with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
-        receipt = api.post(base + "/stock", json=stock_payload())
-        assert receipt.status_code == 201
-        options = api.get(base + "/allocations")
-        assert options.status_code == 200
-        counter = next(row for row in options.json()["counters"] if row["code"] == "C1")
-        allocation = api.post(
-            base + "/allocations",
-            json={
-                "request_id": str(uuid4()),
-                "counter_id": counter["id"],
-                "series": "普通系列 A",
-                "serial_from": "000001",
-                "serial_to": "000006",
-                "event_at": "2026-11-15T09:00:00+08:00",
-            },
-        )
-        assert allocation.status_code == 201
+        counter, counters = arrange_counter_stock(api, base)
         client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
         try:
             client.signIn(https_server.url, account["username"], READY_PASSWORD)
@@ -79,7 +86,7 @@ def test_officer_saves_remaining_stock_and_another_client_reads_the_same_snapsho
             assert initial["snapshot_state"] == "missing" and initial["items"] == []
             assert initial["selected"] == {} and initial["current_ordinary_issued_quantity"] is None
             assert initial["role"] == "polling_officer"
-            assert initial["counters"] == options.json()["counters"]
+            assert initial["counters"] == counters
             assert initial["counter_reports"][0]["reported"] is False
             editor.setField("event_time", "2026-11-15 09:30")
             editor.setCounterReported(counter["id"], True)
@@ -232,23 +239,7 @@ def test_incomplete_stock_responses_keep_draft_and_recover_at_public_tls_boundar
     station_id = scope["stations"][0]["id"]
     base = f"/api/workspace/stations/{station_id}"
     with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
-        receipt = api.post(base + "/stock", json=stock_payload())
-        assert receipt.status_code == 201
-        options = api.get(base + "/allocations")
-        assert options.status_code == 200
-        counter = next(row for row in options.json()["counters"] if row["code"] == "C1")
-        allocation = api.post(
-            base + "/allocations",
-            json={
-                "request_id": str(uuid4()),
-                "counter_id": counter["id"],
-                "series": "普通系列 A",
-                "serial_from": "000001",
-                "serial_to": "000006",
-                "event_at": "2026-11-15T09:00:00+08:00",
-            },
-        )
-        assert allocation.status_code == 201
+        counter, _ = arrange_counter_stock(api, base)
         client = DesktopController(server.url, str(TLS_DIRECTORY / "ca.pem"))
         try:
             client.signIn(server.url, account["username"], READY_PASSWORD)
