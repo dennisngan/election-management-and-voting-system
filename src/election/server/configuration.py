@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from election.server.complaint_categories import seed_election_categories
 from election.server.configuration_inputs import CodedInput, NamedInput
 from election.server.configuration_models import Candidate, Constituency, Election
 from election.server.configuration_store import (
@@ -144,6 +145,7 @@ def configuration_router(
         db.add(row)
         try:
             db.flush()
+            seed_election_categories(db, row.id, actor.id, timestamp())
             audit(
                 db,
                 actor,

@@ -260,6 +260,7 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
     ]
     event_keys = (
         "box_reference",
+        "origin",
         "revision",
         "kind",
         "event_at",
@@ -272,6 +273,7 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
         *[
             [
                 boxes[row["box_id"]]["box_reference"],
+                station_name(boxes[row["box_id"]]["origin"]),
                 str(row["revision"]),
                 labels[row["kind"]],
                 recorded_time(row["event_at"]),
@@ -289,6 +291,7 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
         "entered_at",
         "actor_id",
         "box_reference",
+        "origin",
         "reason",
     )
     milestone_rows = [
@@ -301,6 +304,9 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
                 recorded_time(row["entered_at"]),
                 str(row["actor_id"]),
                 boxes[row["box_id"]]["box_reference"] if row["box_id"] else labels["none"],
+                station_name(boxes[row["box_id"]]["origin"])
+                if row["box_id"]
+                else labels["none"],
                 row["reason"] or labels["none"],
             ]
             for row in report["milestone_history"]
@@ -323,13 +329,14 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
         HistoryTable(
             labels["boxes"],
             box_rows,
-            (0.12, 0.10, 0.12, 0.12, 0.09, 0.05, 0.13, 0.13, 0.14),
+            (0.12, 0.10, 0.115, 0.115, 0.09, 0.065, 0.13, 0.13, 0.135),
             labels["empty_boxes"] if not boxes else "",
+            split_in_row=False,
         ),
         HistoryTable(
             labels["event_history"],
             event_rows,
-            (0.14, 0.06, 0.14, 0.17, 0.17, 0.07, 0.25),
+            (0.12, 0.12, 0.06, 0.13, 0.13, 0.13, 0.07, 0.24),
             labels["empty_history"] if not report["box_history"] else "",
         ),
         HistoryTable(
@@ -341,7 +348,7 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
         HistoryTable(
             labels["milestone_history"],
             milestone_rows,
-            (0.18, 0.06, 0.16, 0.16, 0.07, 0.12, 0.25),
+            (0.14, 0.06, 0.13, 0.13, 0.07, 0.11, 0.12, 0.24),
             labels["empty_milestones"] if not report["milestone_history"] else "",
         ),
     ]

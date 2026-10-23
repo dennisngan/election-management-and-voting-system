@@ -363,6 +363,48 @@ def test_box_and_milestone_drafts_have_independent_discard_guards(
             assert editor.property("state")["dirty"] is False
 
 
+@pytest.mark.parametrize("dirty_form", ["milestone", "box"])
+def test_changing_one_review_target_preserves_the_other_dirty_form_without_discard(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    dirty_form: str,
+) -> None:
+    station, clock = box_stations(admin)["N1"], BoxClock()
+    https_server.clock.value = clock.value
+    path = f"/api/workspace/stations/{station['id']}/boxes"
+    with box_staff(admin, database_url, clock, "polling_officer", [station["id"]]) as (po, _):
+        created = po.post(path, json=prepared_box())
+        assert created.status_code == 201
+        with box_staff(admin, database_url, clock, "counting_officer", [station["id"]]) as (
+            _,
+            account,
+        ):
+            with boxes_editor(https_server, qt_app, account, station["id"]) as (_, editor):
+                if dirty_form == "milestone":
+                    editor.setMilestoneField("event_time", "2026-11-15 22:50")
+                    editor.setMilestoneField("reason", "保留事項草稿")
+                    draft = editor.property("state")["milestone_forms"]
+                    assert editor.loadBox(created.json()["id"])
+                    wait_for(qt_app, lambda: setup_idle(editor))
+                    selected = editor.property("state")
+                    assert selected["selected"]["id"] == created.json()["id"]
+                    assert selected["milestone_forms"] == draft and selected["dirty"] is True
+                    assert editor.loadBox(0)
+                    assert editor.property("state")["milestone_forms"] == draft
+                else:
+                    editor.setField("event_time", "2026-11-15 22:45")
+                    editor.setField("reason", "保留交收草稿")
+                    draft = editor.property("state")["forms"]
+                    assert editor.setKind("first_box_opening")
+                    switched = editor.property("state")
+                    assert switched["milestone_kind"] == "first_box_opening"
+                    assert switched["forms"] == draft and switched["dirty"] is True
+                assert not editor.reload()
+                assert editor.property("state")["error"] == "unsaved_box_changes"
+
+
 def test_dynamic_arrivals_exceed_four_boxes_and_local_receipts_need_no_departure(
     admin: TestClient, database_url: str, https_server: HttpsServer, qt_app: QCoreApplication
 ) -> None:

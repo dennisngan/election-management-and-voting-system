@@ -346,7 +346,7 @@ class BoxesController(QObject):
     def loadBox(self, box_id: int, discard: bool = False) -> bool:
         if not self._state["station_id"] or self._state["busy"] or box_id < 0:
             return False
-        if self._state["dirty"] and not discard:
+        if self._box_dirty and not discard:
             self._error("unsaved_box_changes")
             return False
         self._generation += 1
@@ -395,7 +395,7 @@ class BoxesController(QObject):
         if kind not in MILESTONES:
             self._error("box_validation")
             return False
-        if self._state["dirty"] and not discard:
+        if self._milestone_dirty and not discard:
             self._error("unsaved_box_changes")
             return False
         self._generation += 1

@@ -3,7 +3,7 @@
 import hashlib
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Annotated, Any, NoReturn
 from uuid import UUID
 
@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from election.server.lifecycle_models import ElectionSchedule
 from election.server.models import Account, AuditEvent
 from election.server.polling import as_utc, station_scope
+from election.server.reporting_periods import period_bounds as configured_period_bounds
+from election.server.reporting_periods import period_count as period_count
 from election.server.security import verify_password
 from election.server.turnout_models import TurnoutRecord, TurnoutRequest
 
@@ -60,21 +62,11 @@ def invalid() -> NoReturn:
     raise HTTPException(422, detail={"code": "turnout_validation"})
 
 
-def period_count(schedule: ElectionSchedule) -> int:
-    span = schedule.planned_closing_at - schedule.planned_opening_at
-    microseconds = (span.days * 86400 + span.seconds) * 1_000_000 + span.microseconds
-    interval = schedule.reporting_interval_minutes * 60 * 1_000_000
-    return (microseconds + interval - 1) // interval
-
-
 def period_bounds(schedule: ElectionSchedule, index: int) -> tuple[datetime, datetime]:
-    if index < 1 or index > period_count(schedule):
-        raise HTTPException(404, detail={"code": "turnout_period_not_found"})
-    step = timedelta(minutes=schedule.reporting_interval_minutes)
-    start = schedule.planned_opening_at + (index - 1) * step
-    # Add only the remaining duration at the last partial period, so even a
-    # closing date at datetime's upper bound never overflows during pagination.
-    return start, start + min(step, schedule.planned_closing_at - start)
+    try:
+        return configured_period_bounds(schedule, index)
+    except IndexError:
+        raise HTTPException(404, detail={"code": "turnout_period_not_found"}) from None
 
 
 def turnout_record_view(row: TurnoutRecord) -> dict[str, Any]:

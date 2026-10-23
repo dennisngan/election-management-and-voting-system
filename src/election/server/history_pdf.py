@@ -1,5 +1,6 @@
 """Shared landscape layout for station history statements."""
 
+import re
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -9,6 +10,7 @@ from reportlab.lib import colors  # type: ignore[import-untyped]
 from reportlab.lib.pagesizes import A4, landscape  # type: ignore[import-untyped]
 from reportlab.lib.styles import ParagraphStyle  # type: ignore[import-untyped]
 from reportlab.lib.units import mm  # type: ignore[import-untyped]
+from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
 from reportlab.platypus import (  # type: ignore[import-untyped]
     Paragraph,
     SimpleDocTemplate,
@@ -26,6 +28,7 @@ class HistoryTable:
     rows: list[list[str]]
     widths: tuple[float, ...]
     empty_message: str = ""
+    split_in_row: bool = True
 
 
 def history_pdf(
@@ -54,6 +57,7 @@ def history_pdf(
         body = ParagraphStyle(
             "HistoryBody", fontName=font_name, fontSize=8, leading=11, wordWrap="CJK"
         )
+        latin = ParagraphStyle("HistoryLatin", parent=body, wordWrap=None)
         title_style = ParagraphStyle(
             "HistoryTitle", parent=body, fontSize=17, leading=23, spaceAfter=12
         )
@@ -61,7 +65,21 @@ def history_pdf(
             "HistoryHeading", parent=body, fontSize=11, leading=15, spaceAfter=8
         )
 
-        def paragraph(value: str, style: Any = body) -> Any:
+        def paragraph(
+            value: str, style: Any = None, *, available_width: float | None = None
+        ) -> Any:
+            if style is None:
+                cjk = re.search(r"[\u2e80-\u9fff\uf900-\ufaff\uac00-\ud7af]", value)
+                style = body if cjk else latin
+            timestamp = re.fullmatch(
+                r"(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d{1,6})? HKT)", value
+            )
+            if (
+                timestamp
+                and available_width is not None
+                and pdfmetrics.stringWidth(value, font_name, body.fontSize) > available_width
+            ):
+                value = timestamp[1] + "\n" + timestamp[2]
             return Paragraph(escape(value).replace("\n", "<br/>"), style)
 
         paired = [
@@ -91,11 +109,17 @@ def history_pdf(
         story = [paragraph(title, title_style), context_table]
         for section in sections:
             table = Table(
-                [[paragraph(value) for value in row] for row in section.rows],
+                [
+                    [
+                        paragraph(value, available_width=table_width * section.widths[index] - 12)
+                        for index, value in enumerate(row)
+                    ]
+                    for row in section.rows
+                ],
                 colWidths=[table_width * fraction for fraction in section.widths],
                 repeatRows=1,
                 hAlign="LEFT",
-                splitInRow=1,
+                splitInRow=int(section.split_in_row),
             )
             table.setStyle(
                 TableStyle(

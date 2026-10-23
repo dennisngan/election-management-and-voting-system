@@ -136,14 +136,23 @@ def milestone_rows(db: Session, station_id: int) -> list[BoxMilestone]:
     )
 
 
-def box_head(box: BallotBox, events: list[BoxEvent]) -> dict[str, Any]:
+def box_head(db: Session, box: BallotBox, events: list[BoxEvent]) -> dict[str, Any]:
     assert events
+    origin = db.get(PollingStation, box.origin_station_id)
+    destination = db.get(PollingStation, box.destination_station_id)
+    assert origin is not None and destination is not None
     departure = next((row for row in reversed(events) if row.kind.startswith("departure")), None)
     receipt = next((row for row in reversed(events) if row.kind.startswith("receipt")), None)
     return {
         "id": box.id,
         "origin_station_id": box.origin_station_id,
         "destination_station_id": box.destination_station_id,
+        "origin": {"id": origin.id, "code": origin.code, "name": origin.name},
+        "destination": {
+            "id": destination.id,
+            "code": destination.code,
+            "name": destination.name,
+        },
         "mode": box.mode,
         "box_reference": box.box_reference,
         "seal_reference": box.seal_reference,
@@ -226,7 +235,9 @@ def box_snapshot(db: Session, actor: Account, station_id: int) -> dict[str, Any]
                 "destination_station_id": station.destination_station_id,
             },
         },
-        "items": [box_head(box, [row for row in events if row.box_id == box.id]) for box in boxes],
+        "items": [
+            box_head(db, box, [row for row in events if row.box_id == box.id]) for box in boxes
+        ],
         "milestones": [milestone_view(latest[kind]) for kind in MILESTONE_KINDS if kind in latest],
         "milestone_history": [milestone_view(row) for row in milestones],
         "counting_applicable": station.counting_mode == "local",
@@ -378,7 +389,7 @@ def box_router(
             )
             db.add(event)
             db.flush()
-            return box_head(box, [event])
+            return box_head(db, box, [event])
 
         return write(
             station_id,
@@ -446,7 +457,7 @@ def box_router(
             )
             db.add(event)
             db.flush()
-            return box_head(box, [*events, event])
+            return box_head(db, box, [*events, event])
 
         return write(
             station_id,
@@ -581,6 +592,6 @@ def box_router(
         station_scope(db, actor, station_id)
         box = box_at(db, station_id, box_id)
         events = box_events(db, [box.id])
-        return {"box": box_head(box, events), "items": [box_event_view(row) for row in events]}
+        return {"box": box_head(db, box, events), "items": [box_event_view(row) for row in events]}
 
     return router

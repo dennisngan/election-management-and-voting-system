@@ -87,6 +87,12 @@ def test_assigned_officer_prepares_a_frozen_destination_box_without_inventing_co
         row = response.json()
         assert row["origin_station_id"] == origin["id"]
         assert row["destination_station_id"] == destination["id"]
+        assert row["origin"] == {"id": origin["id"], "code": "N2", "name": origin["name"]}
+        assert row["destination"] == {
+            "id": destination["id"],
+            "code": "N1",
+            "name": destination["name"],
+        }
         assert row["mode"] == "send"
         assert row["box_reference"] == "票箱 0001"
         assert row["seal_reference"] == "封條 000099"

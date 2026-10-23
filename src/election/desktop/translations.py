@@ -1,5 +1,7 @@
 """Staff-facing interface labels for the three supported desktop languages."""
 
+from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
+
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
         "app_name": "選舉管理及投票系統",
@@ -286,10 +288,163 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "已有較新的事項版本。您檢視的版本及輸入已保留；請重新載入後核對。"
         ),
+        "turnout_validation": "請檢查投票人數、累計數字、報告時段、香港時間及原因。",
+        "turnout_period_not_found": "找不到此報告時段，請重新載入並核對選舉時間表。",
+        "turnout_record_not_found": "找不到所選的投票人數記錄或版本，請重新載入。",
+        "turnout_schedule_conflict": "報告所依據的時間表已變更，請重新載入並比較後再繼續。",
+        "turnout_state_conflict": "報告狀態已變更，請重新載入已儲存的版本並核對。",
+        "turnout_review_required": "請先審閱目前已儲存的投票人數及來源，再提交或確認。",
+        "turnout_previous_period_required": "請先完成所需的較早報告時段，再繼續此時段。",
+        "unsaved_turnout_changes": "投票人數表格有未儲存內容，請先儲存或確認捨棄。",
+        "turnout_saved": "投票人數草稿已儲存，尚未提交。",
+        "turnout_submitted": "此投票人數版本已提交，待主管確認。",
+        "turnout_approved": "主管已確認此投票人數版本。",
+        "turnout_amended": "已建立修訂草稿；原有版本及確認已保留，請核對後重新提交。",
+        "turnout_newer_revision": (
+            "已有較新的投票人數版本。您審閱的版本及未儲存內容已保留，請重新載入並比較。"
+        ),
+        "external_manual": "人工提供的外部數字",
+        "turnout_title": "正常模式投票人數",
+        "turnout_intro": (
+            "人工填寫外部提供的時段及累計投票人數，無須 EPR 連線、P(12) 快照或已確認的開站記錄。"
+        ),
+        "turnout_approved_coverage": "連續有效的主管確認範圍",
+        "turnout_coverage_hint": (
+            "只計入從首時段開始連續且仍有效的主管確認。缺漏、草稿、待確認或須重新覆核的時段，"
+            "不會當作零人加入；沒有有效確認的人數顯示為「—」。"
+        ),
+        "turnout_approved_total": "有效確認範圍的累計投票人數",
+        "turnout_approved_periods": "連續有效確認的時段數",
+        "turnout_covered_until": "有效確認至",
+        "turnout_baseline_hint": (
+            "首時段以零為起始累計基礎；較後時段須以前一時段仍有效的主管確認為基礎。"
+            "即使開站確認尚待處理，也可記錄已完結時段的明確零人報表。"
+        ),
+        "turnout_configured_schedule": "依選舉時間表設定的報告時段",
+        "turnout_total_periods": "已設定的時段總數",
+        "turnout_period": "報告時段",
+        "turnout_select_period": "選擇報告時段",
+        "turnout_visible_periods": "本頁時段數／全部時段數",
+        "turnout_previous_page": "上一頁報告時段",
+        "turnout_next_page": "下一頁報告時段",
+        "turnout_goto_period": "輸入報告時段編號（由 1 開始）",
+        "turnout_goto_action": "前往指定報告時段",
+        "turnout_reviewed_period": "審閱的時段及版本",
+        "turnout_historical": "歷史版本，只供檢視；繼續填寫前請重新載入目前版本。",
+        "turnout_live_state": "伺服器目前狀態（與審閱版本分開）",
+        "turnout_approval_valid": "此時段仍屬連續有效的主管確認範圍。",
+        "turnout_review_invalid": (
+            "原確認已保留，但其前一時段基礎已改變，現須重新覆核。請建立有原因的修訂草稿並重新提交。"
+        ),
+        "turnout_not_approved": "此時段目前未納入有效確認範圍。",
+        "turnout_supplied_hourly": "外部提供的本時段投票人數",
+        "turnout_supplied_cumulative": "外部提供的截至本時段末累計投票人數",
+        "turnout_optional_counts_hint": (
+            "可填本時段人數、累計人數，或同時填兩者。只用非負整數；輸入 0 表示明確零人，"
+            "留空表示尚未提供。主管確認時會核對相鄰累計及涵蓋時段。"
+        ),
+        "turnout_event_time": "外部報表的原始事件時間",
+        "turnout_time_hint": (
+            "香港時間：YYYY-MM-DD HH:mm。草稿可暫存未完整資料；提交須為已完結時段，"
+            "原始事件時間不得早於時段結束或晚於現在。"
+        ),
+        "turnout_source_context": "外部數字來源及涵蓋範圍",
+        "turnout_read_only": "此職務可檢視時段及歷史；只有獲指派的投票站職員可準備報表。",
+        "turnout_save": "儲存投票人數草稿",
+        "turnout_submit": "提交此版本供主管確認",
+        "turnout_amend": "建立有原因的修訂草稿",
+        "turnout_amendment_hint": (
+            "已提交或已確認的數字須以修訂草稿更正，並填寫原因。較早版本及確認會保留；"
+            "受影響的較後時段須重新覆核。"
+        ),
+        "turnout_approve": "主管確認此投票人數版本",
+        "turnout_approval_hint": (
+            "請核對目前審閱的時段、版本及來源，再輸入您目前登入主管帳戶的現有密碼。"
+            "確認只適用於此版本，並須具備有效的前一時段基礎。"
+        ),
+        "turnout_history": "時段修訂及確認歷史",
+        "turnout_no_history": "此時段尚無已儲存的版本。",
+        "turnout_view_revision": "檢視此版本",
+        "turnout_derived_hourly": "此版本確認時計算的本時段人數",
+        "turnout_derived_start": "此版本確認時採用的起始累計",
+        "turnout_derived_end": "此版本確認時計算的結束累計",
+        "turnout_basis_revision": "所依據的前一時段確認版本",
+        "turnout_basis_record": "記錄編號",
+        "turnout_first_baseline": "首時段起始累計基礎：0",
+        "turnout_report": "P(15) 時段及累計投票人數報表",
+        "turnout_report_hint": (
+            "請選擇審閱版本或本站目前報表；兩者均使用已儲存資料，不包含未儲存內容。"
+        ),
+        "turnout_report_scope": "選擇報表基準",
+        "turnout_report_selected": "目前審閱的時段版本",
+        "turnout_report_station": "本站目前 P(15) 總覽",
+        "turnout_report_selected_hint": "保留您審閱的確切版本，包括歷史數字、來源及原確認資料。",
+        "turnout_report_station_hint": "使用伺服器目前已儲存的全部時段及連續有效確認範圍。",
+        "turnout_report_missing": "此時段尚無已儲存版本；可改選本站目前總覽。",
+        "turnout_report_ready": "P(15) 投票人數報表預覽已準備好。",
+        "turnout_exported": "P(15) 投票人數報表已儲存至所選檔案。",
+        "turnout_export_failed": "未能儲存 P(15) 投票人數報表，請檢查位置及連線後重試。",
         "boxes": "票箱交收與點票事項",
+        "box_list": "已儲存的票箱記錄",
+        "box_new": "新增票箱",
+        "box_select": "選擇票箱記錄",
+        "box_none": "尚無已儲存的票箱記錄；這不代表現場沒有票箱。",
+        "box_read_only": "此處僅供檢視；交收及點票事項須由具相應票站權限的職員記錄。",
+        "box_newer_revision": (
+            "伺服器已有較新記錄。您審閱的版本及未儲存內容已保留，請重新載入並比較。"
+        ),
+        "box_details": "票箱資料",
+        "box_ref": "票箱識別資料",
+        "box_seal": "封條識別資料",
+        "box_origin": "來源投票站",
+        "box_destination": "接收點票站",
+        "box_status": "交收狀態",
+        "box_prepared": "已記錄準備完成",
+        "box_departed_status": "已記錄離站",
+        "box_received_status": "已記錄接收",
+        "box_prepared_time": "實際準備完成時間（香港時間）",
+        "box_departure_time": "實際離站時間（香港時間）",
+        "box_receipt_time": "實際接收時間（香港時間）",
+        "box_time_hint": "請輸入實際發生的香港時間，格式為 YYYY-MM-DD HH:mm；不可填寫未來時間。",
+        "box_create": "儲存票箱準備記錄",
+        "box_handover": "記錄交收",
+        "box_event_time": "實際事項時間（香港時間）",
+        "box_reason": "說明／修正原因",
+        "box_depart": "記錄離站",
+        "box_receive": "記錄接收",
+        "box_correct_departure": "修正離站記錄",
+        "box_correct_receipt": "修正接收記錄",
+        "box_history": "票箱交收歷史",
+        "box_no_history": "此票箱尚無已儲存的交收歷史。",
+        "box_entered_at": "伺服器記錄時間",
+        "box_actor": "記錄職員編號",
+        "box_event_prepared": "票箱準備完成",
+        "box_event_departure": "票箱離站",
+        "box_event_receipt": "接收票箱",
+        "box_event_departure_correction": "離站記錄修正",
+        "box_event_receipt_correction": "接收記錄修正",
+        "box_milestones": "點票工作事項",
+        "box_milestone_kind": "事項類別",
+        "box_conversion_complete": "投票站轉為點票站完成",
+        "box_first_box_opening": "首次開啟票箱",
+        "box_questionable_determination_start": "開始審定問題選票",
+        "box_milestone_box": "首次開啟的票箱",
+        "box_milestone_time": "實際事項時間（香港時間）",
+        "box_milestone_reason": "事項說明／修訂原因",
+        "box_save_milestone": "儲存點票事項",
+        "box_milestone_history": "點票事項修訂歷史",
+        "box_no_milestones": "尚無已儲存的點票事項。",
+        "box_count_completion": "點票完成時間",
+        "box_count_unrecorded": "尚未記錄；完成時間會由後續的點票完成流程產生。",
+        "box_milestones_not_applicable": "此投票站將票箱送往指定點票站，本地點票事項不適用。",
+        "box_report": "票箱交收與點票事項報表",
+        "box_report_hint": (
+            "報表使用產生當刻伺服器已儲存的整個票站記錄，不包含未儲存內容；"
+            "產生報表不會更改您目前審閱的記錄。"
+        ),
+        "box_milestone_correction_hint": "修訂已儲存的點票事項須填寫原因；原有版本會保留。",
         "box_validation": (
-            "請檢查票箱、封條、實際時間及相關事項。時間不能在未來，"
-            "並須符合已記錄的交收次序。"
+            "請檢查票箱、封條、實際時間及相關事項。時間不能在未來，並須符合已記錄的交收次序。"
         ),
         "box_departure_required": "尚未記錄票箱離站，不能確認接收送抵的票箱。",
         "box_receipt_required": "請先記錄接收此票箱，再記錄開箱時間。",
@@ -714,10 +869,163 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_newer_revision": (
             "已有较新的事项版本。您查看的版本及输入已保留；请重新载入后核对。"
         ),
+        "turnout_validation": "请检查投票人数、累计数字、报告时段、香港时间及原因。",
+        "turnout_period_not_found": "找不到此报告时段，请重新载入并核对选举时间表。",
+        "turnout_record_not_found": "找不到所选的投票人数记录或版本，请重新载入。",
+        "turnout_schedule_conflict": "报告所依据的时间表已更改，请重新载入并比较后再继续。",
+        "turnout_state_conflict": "报告状态已更改，请重新载入已保存的版本并核对。",
+        "turnout_review_required": "请先审阅当前已保存的投票人数及来源，再提交或确认。",
+        "turnout_previous_period_required": "请先完成所需的较早报告时段，再继续此时段。",
+        "unsaved_turnout_changes": "投票人数表格有未保存内容，请先保存或确认舍弃。",
+        "turnout_saved": "投票人数草稿已保存，尚未提交。",
+        "turnout_submitted": "此投票人数版本已提交，待主管确认。",
+        "turnout_approved": "主管已确认此投票人数版本。",
+        "turnout_amended": "已建立修订草稿；原有版本及确认已保留，请核对后重新提交。",
+        "turnout_newer_revision": (
+            "已有较新的投票人数版本。您审阅的版本及未保存内容已保留，请重新载入并比较。"
+        ),
+        "external_manual": "人工提供的外部数字",
+        "turnout_title": "正常模式投票人数",
+        "turnout_intro": (
+            "人工填写外部提供的时段及累计投票人数，无须 EPR 连接、P(12) 快照或已确认的开站记录。"
+        ),
+        "turnout_approved_coverage": "连续有效的主管确认范围",
+        "turnout_coverage_hint": (
+            "只计入从首时段开始连续且仍有效的主管确认。缺漏、草稿、待确认或须重新复核的时段，"
+            "不会当作零人加入；没有有效确认的人数显示为“—”。"
+        ),
+        "turnout_approved_total": "有效确认范围的累计投票人数",
+        "turnout_approved_periods": "连续有效确认的时段数",
+        "turnout_covered_until": "有效确认至",
+        "turnout_baseline_hint": (
+            "首时段以零为起始累计基础；较后时段须以前一时段仍有效的主管确认为基础。"
+            "即使开站确认尚待处理，也可记录已结束时段的明确零人报表。"
+        ),
+        "turnout_configured_schedule": "依选举时间表设定的报告时段",
+        "turnout_total_periods": "已设定的时段总数",
+        "turnout_period": "报告时段",
+        "turnout_select_period": "选择报告时段",
+        "turnout_visible_periods": "本页时段数／全部时段数",
+        "turnout_previous_page": "上一页报告时段",
+        "turnout_next_page": "下一页报告时段",
+        "turnout_goto_period": "输入报告时段编号（从 1 开始）",
+        "turnout_goto_action": "前往指定报告时段",
+        "turnout_reviewed_period": "审阅的时段及版本",
+        "turnout_historical": "历史版本，仅供查看；继续填写前请重新载入当前版本。",
+        "turnout_live_state": "服务器当前状态（与审阅版本分开）",
+        "turnout_approval_valid": "此时段仍属于连续有效的主管确认范围。",
+        "turnout_review_invalid": (
+            "原确认已保留，但其前一时段基础已更改，现须重新复核。请建立有原因的修订草稿并重新提交。"
+        ),
+        "turnout_not_approved": "此时段当前未纳入有效确认范围。",
+        "turnout_supplied_hourly": "外部提供的本时段投票人数",
+        "turnout_supplied_cumulative": "外部提供的截至本时段末累计投票人数",
+        "turnout_optional_counts_hint": (
+            "可填本时段人数、累计人数，或同时填两者。只用非负整数；输入 0 表示明确零人，"
+            "留空表示尚未提供。主管确认时会核对相邻累计及覆盖时段。"
+        ),
+        "turnout_event_time": "外部报表的原始事件时间",
+        "turnout_time_hint": (
+            "香港时间：YYYY-MM-DD HH:mm。草稿可暂存未完整资料；提交须为已结束时段，"
+            "原始事件时间不得早于时段结束或晚于当前时间。"
+        ),
+        "turnout_source_context": "外部数字来源及覆盖范围",
+        "turnout_read_only": "此职务可查看时段及历史；只有获指派的投票站职员可准备报表。",
+        "turnout_save": "保存投票人数草稿",
+        "turnout_submit": "提交此版本供主管确认",
+        "turnout_amend": "建立有原因的修订草稿",
+        "turnout_amendment_hint": (
+            "已提交或已确认的数字须以修订草稿更正，并填写原因。较早版本及确认会保留；"
+            "受影响的较后时段须重新复核。"
+        ),
+        "turnout_approve": "主管确认此投票人数版本",
+        "turnout_approval_hint": (
+            "请核对当前审阅的时段、版本及来源，再输入您当前登录主管账户的现有密码。"
+            "确认只适用于此版本，并须具备有效的前一时段基础。"
+        ),
+        "turnout_history": "时段修订及确认历史",
+        "turnout_no_history": "此时段尚无已保存的版本。",
+        "turnout_view_revision": "查看此版本",
+        "turnout_derived_hourly": "此版本确认时计算的本时段人数",
+        "turnout_derived_start": "此版本确认时采用的起始累计",
+        "turnout_derived_end": "此版本确认时计算的结束累计",
+        "turnout_basis_revision": "所依据的前一时段确认版本",
+        "turnout_basis_record": "记录编号",
+        "turnout_first_baseline": "首时段起始累计基础：0",
+        "turnout_report": "P(15) 时段及累计投票人数报表",
+        "turnout_report_hint": (
+            "请选择审阅版本或本站当前报表；两者均使用已保存数据，不包含未保存内容。"
+        ),
+        "turnout_report_scope": "选择报表基准",
+        "turnout_report_selected": "当前审阅的时段版本",
+        "turnout_report_station": "本站当前 P(15) 总览",
+        "turnout_report_selected_hint": "保留您审阅的确切版本，包括历史数字、来源及原确认数据。",
+        "turnout_report_station_hint": "使用服务器当前已保存的全部时段及连续有效确认范围。",
+        "turnout_report_missing": "此时段尚无已保存版本；可改选本站当前总览。",
+        "turnout_report_ready": "P(15) 投票人数报表预览已准备好。",
+        "turnout_exported": "P(15) 投票人数报表已保存至所选文件。",
+        "turnout_export_failed": "未能保存 P(15) 投票人数报表，请检查位置及连接后重试。",
         "boxes": "票箱交收与点票事项",
+        "box_list": "已保存的票箱记录",
+        "box_new": "新增票箱",
+        "box_select": "选择票箱记录",
+        "box_none": "尚无已保存的票箱记录；这不代表现场没有票箱。",
+        "box_read_only": "此处仅供查看；交收及点票事项须由具相应票站权限的职员记录。",
+        "box_newer_revision": (
+            "服务器已有较新记录。您审阅的版本及未保存内容已保留，请重新载入并比较。"
+        ),
+        "box_details": "票箱资料",
+        "box_ref": "票箱识别资料",
+        "box_seal": "封条识别资料",
+        "box_origin": "来源投票站",
+        "box_destination": "接收点票站",
+        "box_status": "交收状态",
+        "box_prepared": "已记录准备完成",
+        "box_departed_status": "已记录离站",
+        "box_received_status": "已记录接收",
+        "box_prepared_time": "实际准备完成时间（香港时间）",
+        "box_departure_time": "实际离站时间（香港时间）",
+        "box_receipt_time": "实际接收时间（香港时间）",
+        "box_time_hint": "请输入实际发生的香港时间，格式为 YYYY-MM-DD HH:mm；不可填写未来时间。",
+        "box_create": "保存票箱准备记录",
+        "box_handover": "记录交收",
+        "box_event_time": "实际事项时间（香港时间）",
+        "box_reason": "说明／修正原因",
+        "box_depart": "记录离站",
+        "box_receive": "记录接收",
+        "box_correct_departure": "修正离站记录",
+        "box_correct_receipt": "修正接收记录",
+        "box_history": "票箱交收历史",
+        "box_no_history": "此票箱尚无已保存的交收历史。",
+        "box_entered_at": "服务器记录时间",
+        "box_actor": "记录职员编号",
+        "box_event_prepared": "票箱准备完成",
+        "box_event_departure": "票箱离站",
+        "box_event_receipt": "接收票箱",
+        "box_event_departure_correction": "离站记录修正",
+        "box_event_receipt_correction": "接收记录修正",
+        "box_milestones": "点票工作事项",
+        "box_milestone_kind": "事项类别",
+        "box_conversion_complete": "投票站转为点票站完成",
+        "box_first_box_opening": "首次开启票箱",
+        "box_questionable_determination_start": "开始审定问题选票",
+        "box_milestone_box": "首次开启的票箱",
+        "box_milestone_time": "实际事项时间（香港时间）",
+        "box_milestone_reason": "事项说明／修订原因",
+        "box_save_milestone": "保存点票事项",
+        "box_milestone_history": "点票事项修订历史",
+        "box_no_milestones": "尚无已保存的点票事项。",
+        "box_count_completion": "点票完成时间",
+        "box_count_unrecorded": "尚未记录；完成时间会由后续的点票完成流程产生。",
+        "box_milestones_not_applicable": "此投票站将票箱送往指定点票站，本地点票事项不适用。",
+        "box_report": "票箱交收与点票事项报表",
+        "box_report_hint": (
+            "报表使用生成当刻服务器已保存的整个票站记录，不包含未保存内容；"
+            "生成报表不会更改您当前审阅的记录。"
+        ),
+        "box_milestone_correction_hint": "修订已保存的点票事项须填写原因；原有版本会保留。",
         "box_validation": (
-            "请检查票箱、封条、实际时间及相关事项。时间不能在未来，"
-            "并须符合已记录的交收次序。"
+            "请检查票箱、封条、实际时间及相关事项。时间不能在未来，并须符合已记录的交收次序。"
         ),
         "box_departure_required": "尚未记录票箱离站，不能确认接收送抵的票箱。",
         "box_receipt_required": "请先记录接收此票箱，再记录开箱时间。",
@@ -1205,7 +1513,216 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "A newer event revision is available. Your reviewed version and input "
             "are retained; reload and compare before continuing."
         ),
+        "turnout_validation": (
+            "Check the turnout quantities, cumulative figures, report period, HKT time and reason."
+        ),
+        "turnout_period_not_found": (
+            "This report period was not found. Reload and check the schedule."
+        ),
+        "turnout_record_not_found": (
+            "The selected turnout record or revision was not found. Reload."
+        ),
+        "turnout_schedule_conflict": (
+            "The report's schedule has changed. Reload and compare before continuing."
+        ),
+        "turnout_state_conflict": (
+            "The report status has changed. Reload and review the saved revision."
+        ),
+        "turnout_review_required": (
+            "Review the current saved turnout figures and their source before "
+            "submitting or approving."
+        ),
+        "turnout_previous_period_required": "Complete the required earlier report periods first.",
+        "unsaved_turnout_changes": (
+            "The turnout form has unsaved input. Save it or explicitly discard it."
+        ),
+        "turnout_saved": "Turnout draft saved; it has not been submitted.",
+        "turnout_submitted": "This turnout revision was submitted for Supervisor approval.",
+        "turnout_approved": "The Supervisor approved this turnout revision.",
+        "turnout_amended": (
+            "Amendment draft created. Earlier revisions and approvals are retained; "
+            "review and submit the new draft."
+        ),
+        "turnout_newer_revision": (
+            "A newer turnout revision is available. Your reviewed version and unsaved input "
+            "are retained. Reload and compare before continuing."
+        ),
+        "external_manual": "Manually supplied external figures",
+        "turnout_title": "Normal-mode turnout",
+        "turnout_intro": (
+            "Enter externally supplied period and cumulative turnout. An EPR connection, "
+            "P(12) snapshot or approved opening record is not required."
+        ),
+        "turnout_approved_coverage": "Continuous valid approved coverage",
+        "turnout_coverage_hint": (
+            "Only consecutive periods with still-valid Supervisor approvals are included, "
+            "starting from the first period. Missing, draft, pending or invalidated periods "
+            "are not added as zero. Turnout without valid approved coverage is shown as —."
+        ),
+        "turnout_approved_total": "Cumulative turnout within valid approved coverage",
+        "turnout_approved_periods": "Consecutive valid approved periods",
+        "turnout_covered_until": "Approved coverage ends at",
+        "turnout_baseline_hint": (
+            "The first period starts from a zero cumulative baseline. Each later approval "
+            "uses the preceding period's still-valid approval. Explicit zero reports for "
+            "completed periods remain possible while opening approval is pending."
+        ),
+        "turnout_configured_schedule": "Reporting periods from the election schedule",
+        "turnout_total_periods": "Configured period count",
+        "turnout_period": "Reporting period",
+        "turnout_select_period": "Select a reporting period",
+        "turnout_visible_periods": "Periods on this page / all periods",
+        "turnout_previous_page": "Previous page of periods",
+        "turnout_next_page": "Next page of periods",
+        "turnout_goto_period": "Reporting period number, starting at 1",
+        "turnout_goto_action": "Go to the specified period",
+        "turnout_reviewed_period": "Reviewed period and revision",
+        "turnout_historical": (
+            "Historical revision, read-only. Reload the current revision to continue entry."
+        ),
+        "turnout_live_state": "Current server status, separate from the reviewed revision",
+        "turnout_approval_valid": "This period remains within continuous valid approved coverage.",
+        "turnout_review_invalid": (
+            "The earlier approval is retained, but its preceding-period basis has changed. "
+            "Create a reasoned amendment and submit it for renewed review."
+        ),
+        "turnout_not_approved": "This period is not currently within valid approved coverage.",
+        "turnout_supplied_hourly": "Externally supplied turnout for this period",
+        "turnout_supplied_cumulative": "Externally supplied cumulative turnout at period end",
+        "turnout_optional_counts_hint": (
+            "Enter period turnout, cumulative turnout, or both. Use nonnegative integers. "
+            "Enter 0 for an explicit zero; leave blank when no figure was supplied. "
+            "Supervisor approval checks adjacent cumulative figures and interval coverage."
+        ),
+        "turnout_event_time": "Original event time of the external report",
+        "turnout_time_hint": (
+            "HKT: YYYY-MM-DD HH:mm. Drafts may be incomplete. Submission requires a completed "
+            "period and an original event time no earlier than period end and no later than now."
+        ),
+        "turnout_source_context": "External source and coverage context",
+        "turnout_read_only": (
+            "This role can view periods and history. "
+            "Only an assigned Polling Officer prepares reports."
+        ),
+        "turnout_save": "Save turnout draft",
+        "turnout_submit": "Submit this revision for Supervisor approval",
+        "turnout_amend": "Create a reasoned amendment draft",
+        "turnout_amendment_hint": (
+            "Correct submitted or approved figures through an amendment draft with a reason. "
+            "Earlier revisions and approvals are retained; "
+            "affected later periods need renewed review."
+        ),
+        "turnout_approve": "Approve this turnout revision",
+        "turnout_approval_hint": (
+            "Check the reviewed period, revision and source, then re-enter the existing password "
+            "of your signed-in Supervisor account. Approval applies to this exact revision and "
+            "requires a valid preceding-period basis."
+        ),
+        "turnout_history": "Period revision and approval history",
+        "turnout_no_history": "No revision has been saved for this period.",
+        "turnout_view_revision": "View this revision",
+        "turnout_derived_hourly": "Period turnout derived at this revision's approval",
+        "turnout_derived_start": "Starting cumulative basis used at approval",
+        "turnout_derived_end": "Ending cumulative turnout derived at approval",
+        "turnout_basis_revision": "Preceding approved revision used as the basis",
+        "turnout_basis_record": "Record ID",
+        "turnout_first_baseline": "First-period starting cumulative baseline: 0",
+        "turnout_report": "P(15) period and cumulative turnout report",
+        "turnout_report_hint": (
+            "Choose the reviewed revision or the current station report. Both use saved "
+            "records and exclude unsaved input."
+        ),
+        "turnout_report_scope": "Choose the report basis",
+        "turnout_report_selected": "Currently reviewed period revision",
+        "turnout_report_station": "Current station P(15) overview",
+        "turnout_report_selected_hint": (
+            "Keep the exact revision you reviewed, including its historical figures, "
+            "source and original approval details."
+        ),
+        "turnout_report_station_hint": (
+            "Use all currently saved server periods and the continuous valid approval coverage."
+        ),
+        "turnout_report_missing": (
+            "This period has no saved revision. Choose the current station overview instead."
+        ),
+        "turnout_report_ready": "The P(15) turnout report preview is ready.",
+        "turnout_exported": "The P(15) turnout report was saved to the selected file.",
+        "turnout_export_failed": (
+            "Could not save the P(15) turnout report. "
+            "Check the location and connection, then retry."
+        ),
         "boxes": "Box handover and milestones",
+        "box_list": "Saved box records",
+        "box_new": "New box",
+        "box_select": "Select a box record",
+        "box_none": "No box records have been saved. This does not mean no boxes are present.",
+        "box_read_only": (
+            "Read-only view. Staff with the corresponding station permission record "
+            "handovers and counting milestones."
+        ),
+        "box_newer_revision": (
+            "Newer server records are available. Your reviewed records and unsaved input "
+            "are retained. Reload and compare before continuing."
+        ),
+        "box_details": "Box details",
+        "box_ref": "Box reference",
+        "box_seal": "Seal reference",
+        "box_origin": "Origin polling station",
+        "box_destination": "Receiving counting station",
+        "box_status": "Handover status",
+        "box_prepared": "Preparation recorded",
+        "box_departed_status": "Departure recorded",
+        "box_received_status": "Receipt recorded",
+        "box_prepared_time": "Actual preparation time (Hong Kong time)",
+        "box_departure_time": "Actual departure time (Hong Kong time)",
+        "box_receipt_time": "Actual receipt time (Hong Kong time)",
+        "box_time_hint": (
+            "Enter the actual Hong Kong time as YYYY-MM-DD HH:mm. Future times are not allowed."
+        ),
+        "box_create": "Save box preparation",
+        "box_handover": "Record handover",
+        "box_event_time": "Actual event time (Hong Kong time)",
+        "box_reason": "Details / correction reason",
+        "box_depart": "Record departure",
+        "box_receive": "Record receipt",
+        "box_correct_departure": "Correct departure",
+        "box_correct_receipt": "Correct receipt",
+        "box_history": "Box handover history",
+        "box_no_history": "No handover history has been saved for this box.",
+        "box_entered_at": "Server entry time",
+        "box_actor": "Recorded by account ID",
+        "box_event_prepared": "Box prepared",
+        "box_event_departure": "Box departed",
+        "box_event_receipt": "Box received",
+        "box_event_departure_correction": "Departure correction",
+        "box_event_receipt_correction": "Receipt correction",
+        "box_milestones": "Counting milestones",
+        "box_milestone_kind": "Milestone type",
+        "box_conversion_complete": "Conversion to counting station complete",
+        "box_first_box_opening": "First box opening",
+        "box_questionable_determination_start": "Questionable-ballot determination started",
+        "box_milestone_box": "First box opened",
+        "box_milestone_time": "Actual milestone time (Hong Kong time)",
+        "box_milestone_reason": "Milestone details / amendment reason",
+        "box_save_milestone": "Save counting milestone",
+        "box_milestone_history": "Counting milestone revision history",
+        "box_no_milestones": "No counting milestones have been saved.",
+        "box_count_completion": "Count completion time",
+        "box_count_unrecorded": (
+            "Not recorded; the later count-completion workflow will produce this time."
+        ),
+        "box_milestones_not_applicable": (
+            "This polling station sends boxes to its designated counting station. "
+            "Local counting milestones do not apply."
+        ),
+        "box_report": "Box handover and counting timeline report",
+        "box_report_hint": (
+            "The report uses the whole station's saved server records at generation time. "
+            "Unsaved input is excluded. Generating it does not change your reviewed records."
+        ),
+        "box_milestone_correction_hint": (
+            "Amending a saved milestone requires a reason. Earlier revisions are retained."
+        ),
         "box_validation": (
             "Check the box, seal, actual time and event. Times cannot be in the future "
             "or conflict with the recorded handover sequence."
@@ -1408,3 +1925,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
 }
+
+for language, complaint_labels in COMPLAINT_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(complaint_labels)

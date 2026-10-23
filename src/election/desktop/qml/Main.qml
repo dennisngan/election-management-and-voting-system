@@ -277,6 +277,26 @@ ApplicationWindow {
                     }
                 }
                 Button {
+                    id: turnoutNavigation
+                    objectName: "turnoutNavigation"
+                    text: window.t("turnout"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "turnout"
+                    Material.background: window.currentPage === "turnout" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: turnoutNavigation.text; textFormat: Text.PlainText; font: turnoutNavigation.font
+                        color: window.ink; wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "turnout"
+                        controller.workspace.open()
+                        controller.turnout.open()
+                    }
+                }
+                Button {
                     id: queueNavigation
                     objectName: "queueNavigation"
                     text: window.t("queue"); Layout.fillWidth: true; flat: true
@@ -299,6 +319,26 @@ ApplicationWindow {
                         controller.workspace.open()
                         var context = controller.workspace.state.selected
                         controller.queue.open((context.station || ({})).id || 0, window.state.account.role)
+                    }
+                }
+                Button {
+                    id: boxesNavigation
+                    objectName: "boxesNavigation"
+                    text: window.t("boxes"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "boxes"
+                    Material.background: window.currentPage === "boxes" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: boxesNavigation.text; textFormat: Text.PlainText; font: boxesNavigation.font
+                        color: window.ink; wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "boxes"
+                        controller.workspace.open()
+                        controller.boxes.open()
                     }
                 }
                 Button { text: window.t("counting"); Layout.fillWidth: true; flat: true; enabled: false }
@@ -528,7 +568,7 @@ ApplicationWindow {
                     onReveal: control => window.revealField(control)
                 }
                 ColumnLayout {
-                    visible: window.state.phase === "workspace" && (window.currentPage === "polling" || window.currentPage === "stock" || window.currentPage === "queue") && !window.administrator
+                    visible: window.state.phase === "workspace" && (window.currentPage === "polling" || window.currentPage === "stock" || window.currentPage === "turnout" || window.currentPage === "queue" || window.currentPage === "boxes") && !window.administrator
                     Layout.fillWidth: true
                     Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
                     spacing: 24
@@ -553,10 +593,26 @@ ApplicationWindow {
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)
                     }
+                    TurnoutPage {
+                        visible: window.currentPage === "turnout"
+                        Layout.fillWidth: true
+                        turnout: controller.turnout
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
                     QueuePage {
                         visible: window.currentPage === "queue"
                         Layout.fillWidth: true
                         queue: controller.queue
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    BoxesPage {
+                        visible: window.currentPage === "boxes"
+                        Layout.fillWidth: true
+                        boxes: controller.boxes
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)

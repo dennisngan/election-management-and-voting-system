@@ -15,6 +15,9 @@ from sqlalchemy.orm import Session
 
 from election.server.box_reports import box_reports_router
 from election.server.boxes import box_router
+from election.server.complaint_categories import complaint_categories_router
+from election.server.complaint_periods import complaint_periods_router
+from election.server.complaints import complaints_router
 from election.server.config import Settings
 from election.server.configuration import configuration_router
 from election.server.db import make_engine
@@ -29,6 +32,7 @@ from election.server.stations import stations_router
 from election.server.stock import stock_router
 from election.server.stock_reports import stock_reports_router
 from election.server.turnout import turnout_router
+from election.server.turnout_reports import turnout_reports_router
 
 
 def utc_now() -> datetime:
@@ -121,6 +125,11 @@ def create_app(
         return account
 
     app.include_router(configuration_router(database, administrator, timestamp))
+    app.include_router(
+        complaint_categories_router(database, administrator, ready_account, timestamp)
+    )
+    app.include_router(complaints_router(database, ready_account, timestamp))
+    app.include_router(complaint_periods_router(database, ready_account, timestamp))
     app.include_router(stations_router(database, administrator, timestamp))
     app.include_router(lifecycle_router(database, administrator, ready_account, timestamp))
     app.include_router(staff_router(database, administrator, timestamp))
@@ -130,6 +139,7 @@ def create_app(
     app.include_router(queue_reports_router(database, ready_account, timestamp))
     app.include_router(box_reports_router(database, ready_account, timestamp))
     app.include_router(box_router(database, ready_account, timestamp))
+    app.include_router(turnout_reports_router(database, ready_account, timestamp))
     app.include_router(turnout_router(database, ready_account, timestamp))
     app.include_router(stock_router(database, ready_account, timestamp))
     app.include_router(stock_reports_router(database, ready_account, timestamp))
