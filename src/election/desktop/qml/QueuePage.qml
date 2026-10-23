@@ -225,7 +225,11 @@ ColumnLayout {
                 clip: true
                 selectByMouse: true
                 enabled: !page.editorState.busy
-                padding: 12
+                leftPadding: 12
+                rightPadding: 12
+                topPadding: 12
+                bottomPadding: 12
+                topInset: 0
                 Accessible.name: page.t("queue_reason")
                 Keys.priority: Keys.BeforeItem
                 Keys.onTabPressed: event => { page.moveFocus(reasonField, true); event.accepted = true }
@@ -371,6 +375,11 @@ ColumnLayout {
                 textFormat: TextEdit.PlainText
                 wrapMode: TextEdit.WrapAnywhere
                 clip: true
+                leftPadding: 12
+                rightPadding: 12
+                topPadding: 12
+                bottomPadding: 12
+                topInset: 0
                 Accessible.name: page.t("queue_report")
                 Keys.priority: Keys.BeforeItem
                 Keys.onTabPressed: event => { page.moveFocus(reportText, true); event.accepted = true }

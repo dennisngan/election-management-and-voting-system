@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
+from tests.qml_workspace_support import run_workspace_qml
 from tests.queue_support import (
     READY_PASSWORD,
     QueueClock,
@@ -182,3 +183,79 @@ finally:
         timeout=35,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_multiline_queue_note_and_readonly_preview_stay_inside_material_borders(
+    admin: TestClient, database_url: str, https_server: HttpsServer, locale: str
+) -> None:
+    station_id = active_queue_stations(admin)[0]["station"]["id"]
+    account = queue_account(admin, [station_id])
+    clock = QueueClock()
+    clock.value += timedelta(minutes=10)
+    https_server.clock.value = clock.value
+    with queue_client(database_url, account, clock) as api:
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": locale,
+            },
+            """
+            def inside_border(name):
+                field = control(name)
+                field.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+                wait(lambda: field.property('activeFocus'))
+                background = field.property('background')
+                for position in (0, len(field.property('text'))):
+                    field.setProperty('cursorPosition', position)
+                    frame()
+                    cursor = field.property('cursorRectangle')
+                    inside = field.mapToItem(background, QPointF(cursor.x(), cursor.y()))
+                    assert inside.y() >= 8, name + ' crosses its visible top border'
+                    assert inside.y() + cursor.height() <= background.height() - 8
+                    assert inside.x() >= 8, name + ' crosses its visible left border'
+                    assert inside.x() + cursor.width() <= background.width() - 8
+
+            click('queueNavigation')
+            queue = controller.property('queue')
+            wait(lambda: not queue.property('state')['busy'])
+            frame()
+            choose('queueBand', 2)
+            enter('queueEventTime', '2026-11-15 08:10')
+            enter('queueReason', '觀察說明第一行\\n觀察說明第二行')
+            inside_border('queueReason')
+            QTest.keyClick(window, Qt.Key.Key_Tab)
+            wait(lambda: control('queueSave').property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_Backtab)
+            wait(lambda: control('queueReason').property('activeFocus'))
+            inside_border('queueReason')
+            assert control('queueReason').property('text') == '觀察說明第一行\\n觀察說明第二行'
+            click('queueSave')
+            wait(lambda: not queue.property('state')['busy'])
+            saved = queue.property('state')
+            assert saved['error'] == '' and saved['revision'] == 1
+            assert saved['current']['reason'] == '觀察說明第一行\\n觀察說明第二行'
+            frame()
+            click('queuePreview')
+            wait(lambda: not queue.property('state')['busy']
+                and bool(queue.property('state')['report_text']))
+            assert queue.property('state')['report']['locale'] == setup['locale']
+            preview = control('queueReportPreview')
+            assert preview.property('readOnly') is True
+            inside_border('queueReportPreview')
+            saved_preview = preview.property('text')
+            assert '觀察說明第一行' in saved_preview and '觀察說明第二行' in saved_preview
+            QTest.keyClick(window, Qt.Key.Key_9)
+            assert preview.property('text') == saved_preview
+            """,
+        )
+        response = api.get(f"/api/workspace/stations/{station_id}/queue")
+        assert response.status_code == 200
+        snapshot = response.json()
+        assert snapshot["revision"] == 1 and len(snapshot["items"]) == 1
+        assert snapshot["current"]["reason"] == "觀察說明第一行\n觀察說明第二行"
+        assert snapshot["current"]["band"] == "60_90"
+        assert snapshot["current"]["event_at"] == "2026-11-15T00:10:00Z"
