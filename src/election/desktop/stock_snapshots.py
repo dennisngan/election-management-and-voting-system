@@ -147,60 +147,186 @@ class StockSnapshotsController(QObject):
 
         self._request(self._path(), method, payload, done, failed)
 
+    @staticmethod
+    def _identity(value: Any) -> bool:
+        return bool(
+            isinstance(value, dict)
+            and type(value.get("id")) is int
+            and value["id"] > 0
+            and isinstance(value.get("code"), str)
+            and isinstance(value.get("name"), str)
+        )
+
+    @staticmethod
+    def _quantities(value: dict[str, Any], measured: bool) -> bool:
+        return all(
+            type(value[key]) is int and value[key] >= 0
+            if measured or key not in ("ordinary_remaining_quantity", "ordinary_issued_quantity")
+            else value[key] is None
+            for key in QUANTITIES
+        )
+
+    @staticmethod
+    def _ranges(value: Any) -> bool:
+        if not isinstance(value, list):
+            return False
+        for row in value:
+            if not (
+                isinstance(row, dict)
+                and isinstance(row.get("series"), str)
+                and row["series"].strip()
+                and len(row["series"]) <= 64
+                and isinstance(row.get("serial_from"), str)
+                and isinstance(row.get("serial_to"), str)
+                and type(row.get("quantity")) is int
+                and row["quantity"] > 0
+                and serial(row["serial_from"]) <= serial(row["serial_to"])
+            ):
+                return False
+        return True
+
     def _snapshot(self, value: Any) -> bool:
         if not isinstance(value, dict):
             return False
         try:
-            return bool(
+            if not (
                 type(value["id"]) is int
                 and value["id"] > 0
                 and type(value["revision"]) is int
                 and value["revision"] > 0
+                and type(value["station_id"]) is int
                 and value["station_id"] == self._state["station_id"]
+                and value["status"] == "recorded"
                 and value["provenance"] == "stock_derived"
+                and type(value["actor_id"]) is int
+                and value["actor_id"] > 0
+                and isinstance(value["reason"], str)
+                and len(value["reason"]) <= 1000
                 and type(value["complete"]) is bool
                 and isinstance(value["counters"], list)
-                and all(
-                    type(value[key]) is int and value[key] >= 0 or value[key] is None
-                    for key in QUANTITIES
-                )
-                and datetime.fromisoformat(value["event_at"]).utcoffset() is not None
-                and datetime.fromisoformat(value["entered_at"]).utcoffset() is not None
-            )
-        except KeyError, TypeError, ValueError:
+                and self._quantities(value, value["complete"])
+            ):
+                return False
+            for name in ("event_at", "entered_at"):
+                parsed = datetime.fromisoformat(value[name])
+                if parsed.utcoffset() is None:
+                    return False
+                parsed.astimezone(HKT)
+            identities = []
+            for row in value["counters"]:
+                if not (
+                    isinstance(row, dict)
+                    and self._identity(row.get("counter"))
+                    and type(row["reported"]) is bool
+                    and self._quantities(row, row["reported"])
+                    and self._ranges(row["issued_ranges"])
+                    and (
+                        self._ranges(row["ranges"])
+                        if row["reported"]
+                        else row["ranges"] is None and row["issued_ranges"] == []
+                    )
+                ):
+                    return False
+                identities.append(row["counter"]["id"])
+            if len(identities) != len(set(identities)) or value["complete"] != bool(
+                identities and all(row["reported"] for row in value["counters"])
+            ):
+                return False
+            for name, key in (
+                ("receipt_basis", "receipt_id"),
+                ("allocation_basis", "allocation_id"),
+                ("return_basis", "return_id"),
+            ):
+                if not isinstance(value[name], list) or not all(
+                    isinstance(row, dict)
+                    and type(row.get(key)) is int
+                    and row[key] > 0
+                    and type(row.get("revision")) is int
+                    and row["revision"] > 0
+                    for row in value[name]
+                ):
+                    return False
+            return True
+        except KeyError, TypeError, ValueError, OverflowError:
             return False
 
+    def _matches_command(self, data: dict[str, Any], payload: dict[str, Any]) -> bool:
+        if not self._snapshot(data) or data["revision"] != 1:
+            return False
+        required = {row["id"] for row in self._state["counters"]}
+        identities = {row["counter"]["id"] for row in data["counters"]}
+        reported = {row["counter"]["id"]: row for row in data["counters"] if row["reported"]}
+        if not required <= identities or set(reported) != {
+            row["counter_id"] for row in payload["counters"]
+        }:
+            return False
+        for command in payload["counters"]:
+            actual = [
+                {key: row[key] for key in ("series", "serial_from", "serial_to")}
+                for row in reported[command["counter_id"]]["ranges"]
+            ]
+            if actual != command["ranges"]:
+                return False
+        return bool(
+            datetime.fromisoformat(data["event_at"]) == datetime.fromisoformat(payload["event_at"])
+            and data["reason"] == ""
+        )
+
     def _loaded(self, data: dict[str, Any]) -> None:
+        required = (
+            "scope",
+            "counters",
+            "items",
+            "latest",
+            "snapshot_state",
+            "latest_basis_current",
+            "current_ordinary_issued_quantity",
+        )
+        if not all(key in data for key in required):
+            self._error("request_failed")
+            return
         scope, counters, items, latest = (
-            data.get("scope"),
-            data.get("counters"),
-            data.get("items"),
-            data.get("latest"),
+            data["scope"],
+            data["counters"],
+            data["items"],
+            data["latest"],
         )
         if not (
             isinstance(scope, dict)
-            and scope.get("station", {}).get("id") == self._state["station_id"]
+            and isinstance(scope.get("station"), dict)
+            and scope["station"].get("id") == self._state["station_id"]
+            and isinstance(scope.get("election"), dict)
+            and scope["election"].get("status") in ("draft", "active", "finalized")
             and isinstance(counters, list)
-            and all(
-                isinstance(row, dict)
-                and type(row.get("id")) is int
-                and row["id"] > 0
-                and isinstance(row.get("code"), str)
-                and isinstance(row.get("name"), str)
-                for row in counters
-            )
+            and all(self._identity(row) for row in counters)
+            and len({row["id"] for row in counters}) == len(counters)
             and isinstance(items, list)
             and all(self._snapshot(row) for row in items)
-            and (latest is None or self._snapshot(latest))
-            and data.get("snapshot_state") in ("missing", "complete", "incomplete")
+            and (latest is None if not items else self._snapshot(latest) and latest == items[-1])
             and (
-                data.get("latest_basis_current") is None
-                or type(data["latest_basis_current"]) is bool
+                type(data["latest_basis_current"]) is bool
+                if latest is not None
+                else data["latest_basis_current"] is None
             )
             and (
-                data.get("current_ordinary_issued_quantity") is None
+                data["current_ordinary_issued_quantity"] is None
                 or type(data["current_ordinary_issued_quantity"]) is int
+                and data["current_ordinary_issued_quantity"] >= 0
             )
+        ):
+            self._error("request_failed")
+            return
+        expected_state = (
+            "missing" if latest is None else "complete" if latest["complete"] else "incomplete"
+        )
+        expected_issued = (
+            latest["ordinary_issued_quantity"]
+            if latest is not None and data["latest_basis_current"]
+            else None
+        )
+        if (
+            data["snapshot_state"] != expected_state
+            or data["current_ordinary_issued_quantity"] != expected_issued
         ):
             self._error("request_failed")
             return
@@ -363,16 +489,11 @@ class StockSnapshotsController(QObject):
         self._state.update(refreshing=False, error="", notice="")
 
         def saved(data: dict[str, Any]) -> None:
-            if (
-                not self._snapshot(data)
-                or data["revision"] != 1
-                or datetime.fromisoformat(data["event_at"])
-                != datetime.fromisoformat(payload["event_at"])
-            ):
+            if not self._matches_command(data, payload):
                 self._error("request_failed")
                 return
-            self._pending = None
             self._accept(data)
+            self._pending = None
             self._state["notice"] = "stock_snapshot_saved"
             self.refresh()
 
