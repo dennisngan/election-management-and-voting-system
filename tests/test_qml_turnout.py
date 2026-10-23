@@ -226,3 +226,88 @@ def test_history_control_opens_exact_read_only_revision_and_reload_returns_to_cu
                 == (setup['role'] != 'polling_officer'))
             """,
         )
+
+
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_multiline_source_reason_and_readonly_preview_stay_inside_material_borders(
+    admin: TestClient, database_url: str, https_server: HttpsServer, locale: str
+) -> None:
+    scope, clock = turnout_scope(admin), TurnoutClock()
+    station_id, path = scope["stations"][0]["id"], scope["path"]
+    https_server.clock.value = clock.value
+    with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
+        submit_period(
+            api,
+            path,
+            1,
+            supplied_hourly=0,
+            event_at="2026-11-15T09:30:00+08:00",
+            source_context="原始外部報表",
+        )
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": locale,
+            },
+            """
+            def inside_border(name):
+                field = control(name)
+                field.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+                wait(lambda: field.property('activeFocus'))
+                background = field.property('background')
+                for position in (0, len(field.property('text'))):
+                    field.setProperty('cursorPosition', position)
+                    frame()
+                    cursor = field.property('cursorRectangle')
+                    inside = field.mapToItem(background, QPointF(cursor.x(), cursor.y()))
+                    assert inside.y() >= 8, name + ' crosses its visible top border'
+                    assert inside.y() + cursor.height() <= background.height() - 8
+                    assert inside.x() >= 8, name + ' crosses its visible left border'
+                    assert inside.x() + cursor.width() <= background.width() - 8
+
+            click('turnoutNavigation')
+            turnout = controller.property('turnout')
+            wait(lambda: not turnout.property('state')['busy']
+                and turnout.property('state')['selected'].get('status') == 'submitted')
+            frame()
+            enter('turnoutSource', '來源第一行\\n來源第二行')
+            inside_border('turnoutSource')
+            QTest.keyClick(window, Qt.Key.Key_Tab)
+            wait(lambda: control('turnoutAmendmentReason').property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_Backtab)
+            wait(lambda: control('turnoutSource').property('activeFocus'))
+            inside_border('turnoutSource')
+            enter('turnoutAmendmentReason', '修訂原因第一行\\n修訂原因第二行')
+            inside_border('turnoutAmendmentReason')
+            QTest.keyClick(window, Qt.Key.Key_Tab)
+            wait(lambda: control('turnoutAmend').property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_Backtab)
+            wait(lambda: control('turnoutAmendmentReason').property('activeFocus'))
+            inside_border('turnoutAmendmentReason')
+            assert control('turnoutAmendmentReason').property('text') == (
+                '修訂原因第一行\\n修訂原因第二行')
+            click('turnoutAmend')
+            wait(lambda: not turnout.property('state')['busy'])
+            assert turnout.property('state')['error'] == ''
+            assert turnout.property('state')['selected']['revision'] == 2
+            frame()
+            click('turnoutPreview')
+            wait(lambda: not turnout.property('state')['busy'])
+            assert turnout.property('state')['error'] == ''
+            assert turnout.property('state')['report']['revision'] == 2
+            preview = control('turnoutReportPreview')
+            assert preview.property('readOnly') is True
+            inside_border('turnoutReportPreview')
+            saved_preview = preview.property('text')
+            QTest.keyClick(window, Qt.Key.Key_9)
+            assert preview.property('text') == saved_preview
+            """,
+        )
+        current = api.get(f"{path}/1")
+        assert current.status_code == 200
+        assert current.json()["revision"] == 2
+        assert current.json()["source_context"] == "來源第一行\n來源第二行"
+        assert current.json()["amendment_reason"] == "修訂原因第一行\n修訂原因第二行"

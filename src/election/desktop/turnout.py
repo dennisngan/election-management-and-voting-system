@@ -479,11 +479,16 @@ class TurnoutController(QObject):
                     if values[name] > MAX_TOTAL:
                         raise ValueError("Quantity exceeds signed64")
             text = form["event_time"].strip()
-            values["event_at"] = (
-                datetime.strptime(text, TIME_FORMAT).replace(tzinfo=HKT).isoformat()
-                if text
-                else None
-            )
+            original = self._state["selected"].get("event_at")
+            if original and text == self.formatTime(original).removesuffix(" HKT"):
+                # The minute form must not round a precise original on unrelated edits.
+                values["event_at"] = original
+            else:
+                values["event_at"] = (
+                    datetime.strptime(text, TIME_FORMAT).replace(tzinfo=HKT).isoformat()
+                    if text
+                    else None
+                )
             if len(form["source_context"]) > 2000:
                 raise ValueError("Source context is too long")
             values["source_context"] = form["source_context"]

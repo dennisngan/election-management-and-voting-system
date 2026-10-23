@@ -27,6 +27,7 @@ from tests.turnout_support import (
     approve_period,
     arrange_finalized_turnout_election,
     submit_period,
+    turnout_command,
     turnout_draft,
     turnout_scope,
     turnout_staff,
@@ -717,3 +718,68 @@ def test_delayed_turnout_page_cannot_replace_a_newly_selected_station(
             assert final["current"]["record"]["supplied_hourly_display"] == "20"
             assert final["history"][0]["supplied_hourly_display"] == "20"
             assert final["error"] == ""
+
+
+@pytest.mark.parametrize("status", ["draft", "submitted"])
+def test_content_edits_keep_precise_original_time_until_the_officer_changes_its_minute(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    status: str,
+) -> None:
+    scope, clock = turnout_scope(admin), TurnoutClock()
+    station_id, path = scope["stations"][0]["id"], scope["path"]
+    https_server.clock.value = clock.value
+    original_time = "2026-11-15T01:30:17.123456Z"
+    with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
+        created = api.put(
+            path + "/1",
+            json=turnout_draft(
+                supplied_hourly=10,
+                event_at=original_time,
+                source_context="外部報表保留秒及微秒",
+            ),
+        )
+        assert created.status_code == 200
+        if status == "submitted":
+            submitted = api.post(path + "/1/submit", json=turnout_command(1))
+            assert submitted.status_code == 200
+        with turnout_editor(https_server, qt_app, account, station_id) as (_, editor):
+            assert editor.property("state")["forms"]["event_time"] == "2026-11-15 09:30"
+            editor.setField("source_context", "只更正外部來源說明，原始時間不變")
+            if status == "submitted":
+                editor.setField("amendment_reason", "核對外部報表來源")
+                editor.amend()
+            else:
+                editor.save()
+            wait_for(qt_app, lambda: setup_idle(editor))
+            saved = editor.property("state")
+            assert saved["error"] == ""
+            assert saved["selected"]["revision"] == 2
+            assert saved["selected"]["event_at"] == original_time
+            current = api.get(path + "/1")
+            assert current.status_code == 200
+            assert current.json()["event_at"] == original_time
+            history = api.get(path + "/1/history")
+            assert history.status_code == 200
+            assert [row["event_at"] for row in history.json()["items"]] == [
+                original_time, original_time
+            ]
+            if status == "submitted":
+                assert saved["selected"]["amendment_reason"] == "核對外部報表來源"
+
+            editor.setField("event_time", "2026-11-15 09:31")
+            editor.save()
+            wait_for(qt_app, lambda: setup_idle(editor))
+            assert editor.property("state")["error"] == ""
+            assert editor.property("state")["selected"]["revision"] == 3
+            current = api.get(path + "/1")
+            assert current.status_code == 200
+            assert current.json()["event_at"] == "2026-11-15T01:31:00Z"
+            history = api.get(path + "/1/history")
+            assert history.status_code == 200
+            assert [row["revision"] for row in history.json()["items"]] == [1, 2, 3]
+            assert [row["event_at"] for row in history.json()["items"]] == [
+                original_time, original_time, "2026-11-15T01:31:00Z"
+            ]
