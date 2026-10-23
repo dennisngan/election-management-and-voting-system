@@ -2,6 +2,11 @@
 
 STOCK_SNAPSHOT_TRANSLATIONS = {
     "tc": {
+        "snapshot_report": "P(12) 所選結餘版本報表",
+        "snapshot_report_hint": (
+            "預覽及匯出保留所選已儲存版本的範圍、數量與基礎，包括歷史版本"
+            "。未儲存的內容不會納入；報表使用目前所選語言。"
+        ),
         "snapshot_records": (
             "已儲存的結餘觀察"
         ),
@@ -63,6 +68,11 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_issued": "庫存推算已發出選票",
     },
     "sc": {
+        "snapshot_report": "P(12) 所选结余版本报表",
+        "snapshot_report_hint": (
+            "预览及导出保留所选已保存版本的范围、数量与依据，包括历史版本"
+            "。未保存的内容不会纳入；报表使用当前所选语言。"
+        ),
         "snapshot_records": (
             "已保存的结余观察"
         ),
@@ -124,6 +134,15 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_issued": "库存推算已发出选票",
     },
     "en": {
+        "snapshot_report": "P(12) selected balance revision statement",
+        "snapshot_report_hint": (
+            "Preview and export retain the "
+            "selected saved ranges, figures"
+            " and basis, including historic"
+            "al revisions. Unsaved input is"
+            " excluded. Reports use the sel"
+            "ected interface language."
+        ),
         "snapshot_records": (
             "Saved balance observations"
         ),

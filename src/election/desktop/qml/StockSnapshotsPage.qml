@@ -2,6 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
+import QtCore
 import QtQuick.Layouts
 
 ColumnLayout {
@@ -23,6 +25,8 @@ ColumnLayout {
     readonly property bool working: editorState.busy || editorState.refreshing
     property string pendingAction: "new"
     property int pendingId: 0
+    property string pendingFormat: "pdf"
+    property string pendingLocale: "tc"
     signal reveal(var control)
     spacing: 20
 
@@ -50,6 +54,32 @@ ColumnLayout {
         if (next) next.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason)
     }
 
+    function exportReport(format) {
+        if (!selected.id || working) return
+        pendingFormat = format
+        pendingLocale = locale
+        exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
+        exportDialog.defaultSuffix = format
+        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/p12-snapshot-"
+            + selected.id + "-r" + selected.revision + "-" + pendingLocale + "." + format
+        exportDialog.open()
+    }
+    function languageName(code) {
+        return code === "sc" ? "简体中文" : code === "en" ? "English" : "繁體中文"
+    }
+    component Action: FormButton {
+        id: action
+        Layout.fillWidth: true
+        implicitHeight: Math.max(48, actionText.implicitHeight + 24)
+        contentItem: Text {
+            id: actionText
+            text: action.text; font: action.font
+            textFormat: Text.PlainText; wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            color: action.enabled ? (action.highlighted ? "white" : "#1967d2") : "#8a96a8"
+        }
+        onReveal: control => page.reveal(control)
+    }
     component Heading: Label {
         color: "#25344b"
         font.pixelSize: 20
@@ -455,6 +485,77 @@ ColumnLayout {
             }
         }
     }
+    FormPanel {
+        visible: !!page.editorState.station_id
+        implicitHeight: reportLayout.implicitHeight + 40
+        ColumnLayout {
+            id: reportLayout
+            anchors.fill: parent; anchors.margins: 20
+            spacing: 14
+            Heading { text: page.t("snapshot_report") }
+            FormCaption { text: page.t("snapshot_report_hint") }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: page.width > 740 ? 3 : 1
+                Action {
+                    id: previewButton
+                    objectName: "snapshotPreview"
+                    text: page.t("stock_preview")
+                    enabled: !!page.selected.id && !page.working
+                    onClicked: page.snapshots.preview(page.locale)
+                }
+                Action {
+                    objectName: "snapshotExportPdf"
+                    text: page.t("stock_export_pdf")
+                    enabled: !!page.selected.id && !page.working
+                    highlighted: false
+                    onClicked: page.exportReport("pdf")
+                }
+                Action {
+                    objectName: "snapshotExportCsv"
+                    text: page.t("stock_export_csv")
+                    enabled: !!page.selected.id && !page.working
+                    highlighted: false
+                    onClicked: page.exportReport("csv")
+                }
+            }
+            FormCaption {
+                visible: !!page.editorState.report_text
+                text: page.t("stock_preview_language") + " · "
+                    + page.languageName((page.editorState.report || ({})).locale || page.locale)
+            }
+            TextArea {
+                id: reportText
+                objectName: "snapshotReportPreview"
+                visible: !!page.editorState.report_text
+                Layout.fillWidth: true
+                implicitHeight: Math.max(120, contentHeight + topPadding + bottomPadding)
+                text: page.editorState.report_text || ""
+                readOnly: true
+                selectByMouse: true
+                textFormat: TextEdit.PlainText
+                wrapMode: TextEdit.WrapAnywhere
+                topPadding: 12; bottomPadding: 12; leftPadding: 12; rightPadding: 12
+                topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
+                background: Rectangle { color: "#f7f9fd"; radius: 8; border.color: "#c4cedc" }
+                Accessible.name: page.t("snapshot_report")
+                Keys.priority: Keys.BeforeItem
+                Keys.onTabPressed: event => { page.moveFocus(reportText, true); event.accepted = true }
+                Keys.onBacktabPressed: event => { page.moveFocus(reportText, false); event.accepted = true }
+                Keys.onEscapePressed: event => {
+                    previewButton.forceActiveFocus(Qt.OtherFocusReason); event.accepted = true
+                }
+                onActiveFocusChanged: if (activeFocus)
+                    Qt.callLater(function() { if (reportText.activeFocus) page.reveal(reportText) })
+            }
+            FormCaption {
+                objectName: "snapshotExportPath"
+                visible: !!page.editorState.export_path
+                text: page.t("stock_export_location") + "\n" + (page.editorState.export_path || "")
+                wrapMode: Text.WrapAnywhere
+            }
+        }
+    }
     ConfirmationDialog {
         id: discardDialog
         objectName: "snapshotDiscardDialog"
@@ -463,5 +564,13 @@ ColumnLayout {
         acceptLabel: page.t("discard_changes")
         rejectLabel: page.t("keep_editing")
         onConfirmed: page.switchRecord(page.pendingAction, page.pendingId, true)
+    }
+    FileDialog {
+        id: exportDialog
+        objectName: "snapshotExportDialog"
+        title: page.t(page.pendingFormat === "pdf" ? "stock_export_pdf" : "stock_export_csv")
+        fileMode: FileDialog.SaveFile
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        onAccepted: page.snapshots.download(page.pendingFormat, selectedFile.toString(), page.pendingLocale)
     }
 }

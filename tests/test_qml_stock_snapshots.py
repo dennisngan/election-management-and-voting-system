@@ -128,11 +128,8 @@ def test_missing_counter_is_incomplete_but_an_explicit_zero_is_a_complete_new_ob
     assert rows[1]["counters"][0]["ranges"] == []
 
 
-@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
-def test_officer_amends_and_reviews_precise_saved_snapshot_revisions_in_material(
-    snapshot_qml_setup: dict,
-    locale: str,
-) -> None:
+@pytest.fixture
+def saved_snapshot_qml_setup(snapshot_qml_setup: dict) -> dict:
     from uuid import uuid4
 
     setup = snapshot_qml_setup
@@ -153,6 +150,16 @@ def test_officer_amends_and_reviews_precise_saved_snapshot_revisions_in_material
     )
     assert created.status_code == 201
     original = created.json()
+    return {**setup, "snapshot": original}
+
+
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_officer_amends_and_reviews_precise_saved_snapshot_revisions_in_material(
+    saved_snapshot_qml_setup: dict,
+    locale: str,
+) -> None:
+    setup = saved_snapshot_qml_setup
+    original = setup["snapshot"]
     run_workspace_qml(
         {**setup["qml"], "locale": locale},
         """
@@ -202,3 +209,65 @@ def test_officer_amends_and_reviews_precise_saved_snapshot_revisions_in_material
     assert revisions[1]["event_at"] == original["event_at"]
     assert revisions[1]["reason"] == "紙本核對第一行：第四號已發出。\n第二行：保留原始版本。"
     assert revisions[1]["ordinary_issued_quantity"] == 4
+
+
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_historical_p12_preview_in_material_keeps_its_saved_revision(
+    saved_snapshot_qml_setup: dict,
+    locale: str,
+) -> None:
+    from uuid import uuid4
+
+    setup = saved_snapshot_qml_setup
+    original = setup["snapshot"]
+    corrected = setup["api"].put(
+        setup["base"] + f"/stock-snapshots/{original['id']}",
+        json={
+            "request_id": str(uuid4()),
+            "revision": 1,
+            "event_at": original["event_at"],
+            "reason": "Paper balance correction",
+            "counters": [
+                {
+                    "counter_id": setup["qml"]["counter_id"],
+                    "ranges": [
+                        {"series": "普通系列 A", "serial_from": "000005", "serial_to": "000006"}
+                    ],
+                }
+            ],
+        },
+    )
+    assert corrected.status_code == 200
+    run_workspace_qml(
+        {**setup["qml"], "locale": locale},
+        """
+        click('stockSnapshotsNavigation')
+        editor = controller.property('stockSnapshots')
+        def idle():
+            return not any(editor.property('state')[key] for key in ('busy', 'refreshing'))
+        wait(idle)
+        choose('snapshotPicker', 0)
+        wait(idle)
+        click('snapshotHistoryRevision1')
+        wait(idle)
+        click('snapshotPreview')
+        wait(idle)
+        assert editor.property('state')['error'] == ''
+        report = editor.property('state')['report']
+        assert report['revision'] == 1 and report['revision_state'] == 'historical'
+        assert report['locale'] == setup['locale']
+        assert report['items'][0]['ordinary_issued_quantity'] == 3
+        assert report['items'][0]['counters'][0]['ranges'][0]['serial_from'] == '000004'
+        preview = control('snapshotReportPreview')
+        before = preview.property('text')
+        assert before.startswith(report['title']) and '000004' in before
+        assert preview.property('readOnly') is True
+        assert_multiline_inside_border('snapshotReportPreview')
+        QTest.keyClick(window, Qt.Key.Key_9)
+        assert preview.property('text') == before
+        assert control('snapshotExportPdf').property('enabled') is True
+        assert control('snapshotExportCsv').property('enabled') is True
+        assert editor.property('state')['selected']['revision'] == 1
+        assert control('snapshotCurrentIssued').property('text') == '4'
+        """,
+    )
