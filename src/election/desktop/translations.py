@@ -1,5 +1,6 @@
 """Staff-facing interface labels for the three supported desktop languages."""
 
+from election.desktop.complaint_period_translations import COMPLAINT_PERIOD_TRANSLATIONS
 from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
@@ -1928,3 +1929,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
 for language, complaint_labels in COMPLAINT_TRANSLATIONS.items():
     TRANSLATIONS[language].update(complaint_labels)
+
+for language, period_labels in COMPLAINT_PERIOD_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(period_labels)

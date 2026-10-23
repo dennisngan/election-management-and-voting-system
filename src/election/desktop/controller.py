@@ -15,6 +15,7 @@ from PySide6.QtNetwork import (
 
 from election.desktop.boxes import BoxesController
 from election.desktop.complaint_categories import ComplaintCategoriesController
+from election.desktop.complaint_periods import ComplaintPeriodsController
 from election.desktop.complaints import ComplaintCasesController
 from election.desktop.configuration import ConfigurationController
 from election.desktop.lifecycle import LifecycleController
@@ -73,6 +74,9 @@ class DesktopController(QObject):
             self._authorized_request, self, download=self._authorized_download
         )
         self._complaints = ComplaintCasesController(self._authorized_request, self)
+        self._complaint_periods = ComplaintPeriodsController(
+            self._authorized_request, self, download=self._authorized_download
+        )
         self._workspace = WorkspaceController(
             self._authorized_request,
             self,
@@ -89,6 +93,8 @@ class DesktopController(QObject):
                 or self._turnout.property("state")["busy"]
                 or self._complaints.property("state")["dirty"]
                 or self._complaints.property("state")["busy"]
+                or self._complaint_periods.property("state")["dirty"]
+                or self._complaint_periods.property("state")["busy"]
             ),
         )
         self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -97,6 +103,7 @@ class DesktopController(QObject):
         self._boxes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._turnout.stateChanged.connect(self._workspace.stateChanged.emit)
         self._complaints.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._complaint_periods.stateChanged.connect(self._workspace.stateChanged.emit)
         self._workspace.contextChanged.connect(self._workspace_changed)
         self._generation = 0
         self._refreshing = False
@@ -172,6 +179,10 @@ class DesktopController(QObject):
     def complaints(self) -> ComplaintCasesController:
         return self._complaints
 
+    @Property(QObject, constant=True)
+    def complaintPeriods(self) -> ComplaintPeriodsController:
+        return self._complaint_periods
+
     def _workspace_changed(self) -> None:
         context = self._workspace.property("state")["selected"]
         self._polling.set_context(context)
@@ -180,6 +191,7 @@ class DesktopController(QObject):
         self._boxes.set_context(context)
         self._turnout.set_context(context)
         self._complaints.set_context(context)
+        self._complaint_periods.set_context(context)
         self._state["election"] = context.get("election") or self._state["active_election"]
         self._state["constituency"] = context.get("constituency")
         self._state["station"] = context.get("station")
@@ -526,6 +538,7 @@ class DesktopController(QObject):
             self._boxes.refresh()
             self._turnout.refresh()
             self._complaints.refresh()
+            self._complaint_periods.refresh()
             self._refresh_active_election()
             self.stateChanged.emit()
 
@@ -557,6 +570,7 @@ class DesktopController(QObject):
         self._boxes.reset()
         self._turnout.reset()
         self._complaints.reset()
+        self._complaint_periods.reset()
         self.eraseSecrets.emit()
 
     @Slot()

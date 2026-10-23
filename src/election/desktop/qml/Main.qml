@@ -27,6 +27,8 @@ ApplicationWindow {
     readonly property color line: "#e1e7f0"
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
+    readonly property bool stationPage: ["polling", "stock", "turnout", "complaints",
+        "complaintPeriods", "queue", "boxes"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
     onCurrentPageChanged: Qt.callLater(function() { if (scroll.contentItem) scroll.contentItem.contentY = 0 })
@@ -234,6 +236,31 @@ ApplicationWindow {
                     onClicked: { window.currentPage = "schedule"; controller.lifecycle.open() }
                 }
                 Button {
+                    id: categoriesNavigation
+                    objectName: "complaintCategoriesNavigation"
+                    text: window.t("complaint_categories")
+                    Layout.fillWidth: true
+                    implicitHeight: Math.max(48, categoriesNavigationText.implicitHeight + 24)
+                    visible: window.administrator
+                    highlighted: window.currentPage === "complaintCategories"
+                    flat: true
+                    Material.roundedScale: Material.FullScale
+                    contentItem: Text {
+                        id: categoriesNavigationText
+                        text: categoriesNavigation.text
+                        textFormat: Text.PlainText
+                        font: categoriesNavigation.font
+                        color: "#25344b"
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "complaintCategories"
+                        controller.complaintCategories.open()
+                    }
+                }
+                Button {
                     text: window.t("staff_accounts"); Layout.fillWidth: true
                     visible: window.administrator
                     highlighted: window.currentPage === "staff"; flat: true
@@ -294,6 +321,54 @@ ApplicationWindow {
                         window.currentPage = "turnout"
                         controller.workspace.open()
                         controller.turnout.open()
+                    }
+                }
+                Button {
+                    id: complaintsNavigation
+                    objectName: "complaintsNavigation"
+                    text: window.t("complaint_cases"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "complaints"
+                    Material.background: window.currentPage === "complaints" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: complaintsNavigation.text
+                        textFormat: Text.PlainText
+                        font: complaintsNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "complaints"
+                        controller.workspace.open()
+                        controller.complaints.open()
+                    }
+                }
+                Button {
+                    id: complaintPeriodsNavigation
+                    objectName: "complaintPeriodsNavigation"
+                    text: window.t("complaint_periods"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "complaintPeriods"
+                    Material.background: window.currentPage === "complaintPeriods" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: complaintPeriodsNavigation.text
+                        textFormat: Text.PlainText
+                        font: complaintPeriodsNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "complaintPeriods"
+                        controller.workspace.open()
+                        controller.complaintPeriods.open()
                     }
                 }
                 Button {
@@ -559,6 +634,16 @@ ApplicationWindow {
                     words: window.words
                     onReveal: control => window.revealField(control)
                 }
+                ComplaintCategoriesPage {
+                    visible: window.state.phase === "workspace"
+                        && window.currentPage === "complaintCategories" && window.administrator
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
+                    catalog: controller.complaintCategories
+                    words: window.words
+                    locale: window.state.locale
+                    onReveal: control => window.revealField(control)
+                }
                 LifecyclePage {
                     visible: window.state.phase === "workspace" && window.currentPage === "schedule" && window.administrator
                     Layout.fillWidth: true
@@ -568,7 +653,7 @@ ApplicationWindow {
                     onReveal: control => window.revealField(control)
                 }
                 ColumnLayout {
-                    visible: window.state.phase === "workspace" && (window.currentPage === "polling" || window.currentPage === "stock" || window.currentPage === "turnout" || window.currentPage === "queue" || window.currentPage === "boxes") && !window.administrator
+                    visible: window.state.phase === "workspace" && window.stationPage && !window.administrator
                     Layout.fillWidth: true
                     Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
                     spacing: 24
@@ -597,6 +682,22 @@ ApplicationWindow {
                         visible: window.currentPage === "turnout"
                         Layout.fillWidth: true
                         turnout: controller.turnout
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    ComplaintsPage {
+                        visible: window.currentPage === "complaints"
+                        Layout.fillWidth: true
+                        complaints: controller.complaints
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    ComplaintPeriodsPage {
+                        visible: window.currentPage === "complaintPeriods"
+                        Layout.fillWidth: true
+                        periods: controller.complaintPeriods
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)

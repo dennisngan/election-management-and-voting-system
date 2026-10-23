@@ -359,7 +359,12 @@ class ComplaintCasesController(QObject):
         return True
 
     def _history(
-        self, case_id: int, revision: int | None = None, *, saved: dict[str, Any] | None = None
+        self,
+        case_id: int,
+        revision: int | None = None,
+        *,
+        saved: dict[str, Any] | None = None,
+        notice: str = "",
     ) -> None:
         def loaded(data: dict[str, Any]) -> None:
             items = data.get("items")
@@ -402,9 +407,7 @@ class ComplaintCasesController(QObject):
             self._state["items"] = [heads[key] for key in sorted(heads)]
             self._accept(chosen, items, historical=chosen["revision"] != items[-1]["revision"])
             if saved is not None:
-                self._state["notice"] = (
-                    "complaint_amended" if saved["amendment_reason"] else "complaint_saved"
-                )
+                self._state["notice"] = notice
 
         self._send(self._path(f"/{case_id}/history"), "GET", None, loaded)
 
@@ -530,9 +533,6 @@ class ComplaintCasesController(QObject):
         if bool(selected) != (action != "create"):
             self._error("complaint_validation")
             return
-        if action == "edit" and self._state["requires_amendment"]:
-            self._error("complaint_amendment_required")
-            return
         if action == "amend" and not self._state["forms"]["reason"].strip():
             self._error("complaint_amendment_reason_required")
             return
@@ -555,6 +555,10 @@ class ComplaintCasesController(QObject):
             },
             sort_keys=True,
         )
+        retry = self._pending is not None and self._pending[0] == signature
+        if action == "edit" and self._state["requires_amendment"] and not retry:
+            self._error("complaint_amendment_required")
+            return
         if self._pending is None or self._pending[0] != signature:
             self._pending = signature, str(uuid4())
         payload["request_id"] = self._pending[1]
@@ -565,7 +569,12 @@ class ComplaintCasesController(QObject):
             if not self._case(data) or (selected and data["id"] != selected["id"]):
                 self._error("request_failed")
                 return
-            self._history(data["id"], data["revision"], saved=data)
+            self._history(
+                data["id"],
+                data["revision"],
+                saved=data,
+                notice="complaint_amended" if action == "amend" else "complaint_saved",
+            )
 
         self._send(self._path(suffix), "PUT" if action == "edit" else "POST", payload, saved)
 

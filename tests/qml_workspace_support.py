@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QEvent, QMetaObject, QPointF, Qt, QUrl
 from PySide6.QtGui import QGuiApplication, QKeyEvent
-from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQml import QQmlApplicationEngine, QQmlProperty
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QSignalSpy, QTest
@@ -93,7 +93,10 @@ def choose(name, index):
     for position in range(index):
         QTest.keyClick(window, Qt.Key.Key_Down)
     QTest.keyClick(window, Qt.Key.Key_Return)
-    application.processEvents()
+    popup_visible = QQmlProperty(item, 'popup.visible')
+    assert popup_visible.isValid(), 'Selection control has no observable popup state'
+    wait(lambda: not popup_visible.read())
+    frame()
 
 try:
     controller.signIn(setup['server'], setup['username'], setup['password'])

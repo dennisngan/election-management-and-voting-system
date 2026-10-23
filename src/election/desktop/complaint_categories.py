@@ -119,11 +119,23 @@ class ComplaintCategoriesController(QObject):
             )
         )
 
-    def _list(self, data: dict[str, Any]) -> bool:
+    def _list(self, data: dict[str, Any], *, saved: dict[str, Any] | None = None) -> bool:
         rows = data.get("items")
         if not isinstance(rows, list) or not all(self._valid_row(row) for row in rows):
             self._error("request_failed")
             return False
+        if saved is not None:
+            latest = next((row for row in rows if row["id"] == saved["id"]), None)
+            known_ids = {row["id"] for row in self._state["items"]}
+            # Categories are retained, including disabled entries. An incomplete
+            # readback must not replace the catalogue or acknowledge the command.
+            if (
+                not known_ids.issubset({row["id"] for row in rows})
+                or latest is None
+                or latest["revision"] < saved["revision"]
+            ):
+                self._error("request_failed")
+                return False
         self._state["items"] = rows
         selected = self._state["selected"]
         latest = next((row for row in rows if row["id"] == selected.get("id")), None)
@@ -312,14 +324,9 @@ class ComplaintCategoriesController(QObject):
                 return
 
             def reviewed(snapshot: dict[str, Any]) -> None:
-                if not self._list(snapshot):
+                if not self._list(snapshot, saved=data):
                     return
-                latest = next(
-                    (row for row in self._state["items"] if row["id"] == data["id"]), None
-                )
-                if latest is None or latest["revision"] < data["revision"]:
-                    self._error("request_failed")
-                    return
+                latest = next(row for row in self._state["items"] if row["id"] == data["id"])
                 self._accept(data)
                 self._state.update(
                     newer_revision=latest != data, notice="complaint_category_saved", error=""

@@ -17,6 +17,7 @@ from election.server.box_reports import box_reports_router
 from election.server.boxes import box_router
 from election.server.complaint_categories import complaint_categories_router
 from election.server.complaint_periods import complaint_periods_router
+from election.server.complaint_reports import complaint_reports_router
 from election.server.complaints import complaints_router
 from election.server.config import Settings
 from election.server.configuration import configuration_router
@@ -129,6 +130,7 @@ def create_app(
         complaint_categories_router(database, administrator, ready_account, timestamp)
     )
     app.include_router(complaints_router(database, ready_account, timestamp))
+    app.include_router(complaint_reports_router(database, ready_account, timestamp))
     app.include_router(complaint_periods_router(database, ready_account, timestamp))
     app.include_router(stations_router(database, administrator, timestamp))
     app.include_router(lifecycle_router(database, administrator, ready_account, timestamp))
