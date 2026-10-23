@@ -177,3 +177,176 @@ def test_counting_officer_receives_sixth_arrival_and_records_milestones_through_
             assert all(row["status"] == "received" for row in saved["items"])
             assert saved["milestones"][1]["box_id"] == box_id
             assert saved["count_completion"] is None
+
+
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_multiline_departure_note_and_readonly_preview_stay_inside_material_borders(
+    admin: TestClient, database_url: str, https_server: HttpsServer, locale: str
+) -> None:
+    station, clock = box_stations(admin)["N2"], BoxClock()
+    https_server.clock.value = clock.value
+    note = "送箱紀錄第一行：已核對封條及票箱編號。\n第二行：合成運送流程，準備交收。"
+    path = f"/api/workspace/stations/{station['id']}/boxes"
+    with box_staff(admin, database_url, clock, "polling_officer", [station["id"]]) as (
+        api,
+        account,
+    ):
+        prepared = api.post(path, json=prepared_box(box_reference="多行說明票箱 0001"))
+        assert prepared.status_code == 201
+        box_id = prepared.json()["id"]
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station["id"],
+                "box_id": box_id,
+                "locale": locale,
+                "note": note,
+            },
+            """
+            click('boxesNavigation')
+            boxes = controller.property('boxes')
+            wait(lambda: not boxes.property('state')['busy'])
+            frame()
+            choose('boxPicker', 0)
+            wait(lambda: not boxes.property('state')['busy']
+                and boxes.property('state')['selected'].get('id') == setup['box_id'])
+            frame()
+            enter('boxEventTime', '2026-11-15 22:45')
+            enter('boxEventReason', setup['note'])
+            QTest.keyClick(window, Qt.Key.Key_Tab)
+            wait(lambda: control('boxDepart').property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_Backtab)
+            wait(lambda: control('boxEventReason').property('activeFocus'))
+            assert control('boxEventReason').property('text') == setup['note']
+            assert_multiline_inside_border('boxEventReason')
+            click('boxDepart')
+            wait(lambda: not boxes.property('state')['busy'])
+            saved = boxes.property('state')
+            assert saved['error'] == ''
+            assert saved['selected']['revision'] == 2
+            assert saved['selected']['status'] == 'departed'
+            assert saved['selected']['departure']['reason'] == setup['note']
+            frame()
+            click('boxPreview')
+            wait(lambda: not boxes.property('state')['busy']
+                and bool(boxes.property('state')['report_text']))
+            assert boxes.property('state')['report']['locale'] == setup['locale']
+            preview = control('boxReportPreview')
+            assert preview.property('readOnly') is True
+            assert_multiline_inside_border('boxReportPreview')
+            saved_preview = preview.property('text')
+            assert all(line in saved_preview for line in setup['note'].splitlines())
+            QTest.keyClick(window, Qt.Key.Key_9)
+            assert preview.property('text') == saved_preview
+            """,
+        )
+        response = api.get(path)
+        assert response.status_code == 200
+        assert len(response.json()["items"]) == 1
+        saved = response.json()["items"][0]
+        assert saved["id"] == box_id and saved["revision"] == 2
+        assert saved["status"] == "departed"
+        assert saved["departure"]["reason"] == note
+        assert saved["departure"]["event_at"] == "2026-11-15T14:45:00Z"
+        assert saved["departure"]["actor_id"] == account["id"]
+        history = api.get(f"{path}/{box_id}/history")
+        assert history.status_code == 200
+        assert [row["kind"] for row in history.json()["items"]] == ["prepared", "departure"]
+        assert history.json()["items"][-1]["reason"] == note
+
+
+@pytest.mark.parametrize("locale", ["tc", "sc", "en"])
+def test_multiline_conversion_note_and_readonly_preview_stay_inside_material_borders(
+    admin: TestClient, database_url: str, https_server: HttpsServer, locale: str
+) -> None:
+    stations, clock = box_stations(admin), BoxClock()
+    origin, destination = stations["N2"], stations["N1"]
+    https_server.clock.value = clock.value
+    note = "轉換完成第一行：票箱及封條已核對。\n第二行：合成點票站準備完成。"
+    source = f"/api/workspace/stations/{origin['id']}/boxes"
+    target = f"/api/workspace/stations/{destination['id']}/boxes"
+    with box_staff(admin, database_url, clock, "polling_officer", [origin["id"]]) as (sender, _):
+        prepared = sender.post(source, json=prepared_box(box_reference="多行轉換票箱 0001"))
+        assert prepared.status_code == 201
+        box_id = prepared.json()["id"]
+        departed = sender.post(
+            f"{source}/{box_id}/departure",
+            json=event_command(1, "2026-11-15T22:45:00+08:00"),
+        )
+        assert departed.status_code == 201
+        with box_staff(admin, database_url, clock, "counting_officer", [destination["id"]]) as (
+            receiver,
+            account,
+        ):
+            received = receiver.post(
+                f"{target}/{box_id}/receipt",
+                json=event_command(2, "2026-11-15T22:50:00+08:00"),
+            )
+            assert received.status_code == 201
+            run_workspace_qml(
+                {
+                    "server": https_server.url,
+                    "username": account["username"],
+                    "password": READY_PASSWORD,
+                    "station_id": destination["id"],
+                    "box_id": box_id,
+                    "locale": locale,
+                    "note": note,
+                },
+                """
+                click('boxesNavigation')
+                boxes = controller.property('boxes')
+                wait(lambda: not boxes.property('state')['busy'])
+                frame()
+                choose('boxPicker', 0)
+                wait(lambda: not boxes.property('state')['busy']
+                    and boxes.property('state')['selected'].get('id') == setup['box_id'])
+                assert boxes.property('state')['selected']['status'] == 'received'
+                assert boxes.property('state')['milestone_kind'] == 'conversion_complete'
+                frame()
+                enter('boxMilestoneTime', '2026-11-15 23:00')
+                enter('boxMilestoneReason', setup['note'])
+                QTest.keyClick(window, Qt.Key.Key_Tab)
+                wait(lambda: control('boxSaveMilestone').property('activeFocus'))
+                QTest.keyClick(window, Qt.Key.Key_Backtab)
+                wait(lambda: control('boxMilestoneReason').property('activeFocus'))
+                assert control('boxMilestoneReason').property('text') == setup['note']
+                assert_multiline_inside_border('boxMilestoneReason')
+                click('boxSaveMilestone')
+                wait(lambda: not boxes.property('state')['busy'])
+                saved = boxes.property('state')
+                assert saved['error'] == ''
+                assert saved['selected_milestone']['kind'] == 'conversion_complete'
+                assert saved['selected_milestone']['revision'] == 1
+                assert saved['selected_milestone']['reason'] == setup['note']
+                assert len(saved['milestone_history']) == 1
+                assert saved['count_completion'] is None
+                frame()
+                click('boxPreview')
+                wait(lambda: not boxes.property('state')['busy']
+                    and bool(boxes.property('state')['report_text']))
+                assert boxes.property('state')['report']['locale'] == setup['locale']
+                preview = control('boxReportPreview')
+                assert preview.property('readOnly') is True
+                assert_multiline_inside_border('boxReportPreview')
+                saved_preview = preview.property('text')
+                assert all(line in saved_preview for line in setup['note'].splitlines())
+                QTest.keyClick(window, Qt.Key.Key_9)
+                assert preview.property('text') == saved_preview
+                """,
+            )
+            response = receiver.get(target)
+            assert response.status_code == 200
+            saved = response.json()
+            assert len(saved["items"]) == 1 and saved["items"][0]["status"] == "received"
+            assert len(saved["milestones"]) == len(saved["milestone_history"]) == 1
+            milestone = saved["milestones"][0]
+            assert milestone["kind"] == "conversion_complete" and milestone["revision"] == 1
+            assert milestone["box_id"] is None
+            assert milestone["event_at"] == "2026-11-15T15:00:00Z"
+            assert milestone["entered_at"] == "2026-11-15T16:00:00Z"
+            assert milestone["actor_id"] == account["id"] and milestone["reason"] == note
+            assert saved["milestone_history"] == [milestone]
+            assert saved["count_completion"] is None
