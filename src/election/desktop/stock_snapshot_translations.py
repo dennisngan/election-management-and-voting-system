@@ -2,6 +2,10 @@
 
 STOCK_SNAPSHOT_TRANSLATIONS = {
     "tc": {
+        "snapshot_new": "新增結餘觀察",
+        "unsaved_stock_snapshot_changes": (
+            '結餘表格有未儲存內容。捨棄後才會新增觀察。'
+        ),
         "snapshot_title": "P(12) 櫃台結餘與發票",
         "snapshot_intro": (
             "按同一原始時間記錄每個櫃台的普通選票結餘，保留該次接收、派發"
@@ -35,6 +39,10 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_issued": "庫存推算已發出選票",
     },
     "sc": {
+        "snapshot_new": "新增结余观察",
+        "unsaved_stock_snapshot_changes": (
+            '结余表格有未保存内容。舍弃后才会新增观察。'
+        ),
         "snapshot_title": "P(12) 柜台结余与发票",
         "snapshot_intro": (
             "按同一原始时间记录每个柜台的普通选票结余，保留该次接收、派发"
@@ -68,6 +76,12 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_issued": "库存推算已发出选票",
     },
     "en": {
+        "snapshot_new": "New balance observation",
+        "unsaved_stock_snapshot_changes": (
+            'The balance form has unsaved input.'
+            ' Discard it before starting a new o'
+            'bservation.'
+        ),
         "snapshot_title": "P(12) Counter balances",
         "snapshot_intro": (
             "Observe ordinary stock at ever"

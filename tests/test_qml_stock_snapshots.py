@@ -66,3 +66,61 @@ def test_officer_saves_a_complete_snapshot_using_actual_material_controls(
         assert saved.json()["latest"]["ordinary_issued_quantity"] == 3
         assert saved.json()["latest"]["ordinary_remaining_quantity"] == 3
         assert all(row["record"] is None for row in api.get(scope["path"]).json()["items"])
+
+
+def test_missing_counter_is_incomplete_but_an_explicit_zero_is_a_complete_new_observation(
+    admin: TestClient, database_url: str, https_server: HttpsServer
+) -> None:
+    scope, clock = turnout_scope(admin), TurnoutClock()
+    https_server.clock.value = clock.value
+    station_id = scope["stations"][0]["id"]
+    base = f"/api/workspace/stations/{station_id}"
+    with turnout_staff(admin, database_url, clock, [station_id]) as (api, account):
+        counter, _ = arrange_counter_stock(api, base)
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "counter_id": counter["id"],
+                "locale": "en",
+            },
+            """
+            click('stockSnapshotsNavigation')
+            editor = controller.property('stockSnapshots')
+            def idle():
+                return not any(editor.property('state')[key] for key in ('busy', 'refreshing'))
+            wait(idle)
+            enter('snapshotEventTime', '2026-11-15 09:30')
+            click('snapshotSave')
+            wait(idle)
+            assert editor.property('state')['error'] == ''
+            assert editor.property('state')['selected']['complete'] is False
+            assert control('snapshotState').property('text') == (
+                controller.texts['snapshot_incomplete'])
+            assert control('snapshotCurrentIssued').property('text') == '—'
+            assert control('snapshotRemainingTotal').property('text') == '—'
+            click('snapshotNew')
+            wait(idle)
+            enter('snapshotEventTime', '2026-11-15 09:45')
+            suffix = str(setup['counter_id'])
+            click('snapshotReported' + suffix)
+            assert control('snapshotExplicitZero' + suffix).property('visible') is True
+            click('snapshotSave')
+            wait(idle)
+            assert editor.property('state')['error'] == ''
+            assert editor.property('state')['selected']['complete'] is True
+            assert control('snapshotState').property('text') == (
+                controller.texts['snapshot_complete'])
+            assert control('snapshotCurrentIssued').property('text') == '6'
+            assert control('snapshotRemainingTotal').property('text') == '0'
+            """,
+        )
+        records = api.get(base + '/stock-snapshots')
+        assert records.status_code == 200
+        rows = records.json()['items']
+        assert len(rows) == 2
+        assert rows[0]['complete'] is False and rows[0]['ordinary_issued_quantity'] is None
+        assert rows[1]['complete'] is True and rows[1]['ordinary_issued_quantity'] == 6
+        assert rows[1]['counters'][0]['ranges'] == []

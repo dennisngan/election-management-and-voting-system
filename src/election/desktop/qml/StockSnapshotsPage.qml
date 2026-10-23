@@ -112,7 +112,22 @@ ColumnLayout {
             id: formLayout
             anchors.fill: parent; anchors.margins: 20
             spacing: 16
-            Heading { text: page.t("snapshot_observation") }
+            RowLayout {
+                Layout.fillWidth: true
+                Heading { text: page.t("snapshot_observation") }
+                FormButton {
+                    objectName: "snapshotNew"
+                    visible: page.canCreate
+                    text: page.t("snapshot_new")
+                    highlighted: false
+                    working: page.working
+                    onClicked: {
+                        if (!page.snapshots.newSnapshot(false) && page.editorState.dirty)
+                            discardDialog.open()
+                    }
+                    onReveal: control => page.reveal(control)
+                }
+            }
             FormCaption { text: page.t("snapshot_event_time") }
             FormField {
                 objectName: "snapshotEventTime"
@@ -150,6 +165,7 @@ ColumnLayout {
                             onActiveFocusChanged: if (activeFocus) Qt.callLater(function() { page.reveal(reported) })
                         }
                         FormCaption {
+                            objectName: "snapshotExplicitZero" + counterCard.counter.id
                             visible: counterCard.row.reported && counterCard.row.ranges.length === 0
                             text: page.t("snapshot_explicit_zero")
                         }
@@ -271,5 +287,14 @@ ColumnLayout {
             }
             Detail { caption: page.t("snapshot_issued"); value: page.editorState.totals.ordinary_issued_display }
         }
+    }
+    ConfirmationDialog {
+        id: discardDialog
+        objectName: "snapshotDiscardDialog"
+        title: page.t("discard_changes")
+        message: page.t("unsaved_stock_snapshot_changes")
+        acceptLabel: page.t("discard_changes")
+        rejectLabel: page.t("keep_editing")
+        onConfirmed: page.snapshots.newSnapshot(true)
     }
 }
