@@ -6,7 +6,13 @@ from PySide6.QtCore import QCoreApplication, QEvent
 
 from election.desktop.controller import DesktopController
 from tests.configuration_desktop_support import ready_setup, save_form, setup_idle
-from tests.desktop_support import TLS_DIRECTORY, HttpsServer, state_of, wait_for
+from tests.desktop_support import (
+    TLS_DIRECTORY,
+    HttpsServer,
+    state_of,
+    wait_for,
+    wait_for_editor_idle,
+)
 
 
 def test_officer_selects_only_assigned_station_context_and_sign_out_clears_it(
@@ -32,7 +38,7 @@ def test_officer_selects_only_assigned_station_context_and_sign_out_clears_it(
     staff = desktop.property("staff")
     assert staff is not None
     staff.open()
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     username = "workspace_officer_" + uuid4().hex[:12]
     temporary_password = "Workspace-Initial-Password-42!"
     personal_password = "Workspace-Personal-Password-84!"
@@ -43,7 +49,7 @@ def test_officer_selects_only_assigned_station_context_and_sign_out_clears_it(
     for station in stations[:2]:
         staff.setStationAssigned(station["id"], True)
     staff.save(temporary_password, temporary_password)
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     assert staff.property("state")["error"] == ""
     assert staff.property("state")["selected"]["station_ids"] == [
         station["id"] for station in stations[:2]

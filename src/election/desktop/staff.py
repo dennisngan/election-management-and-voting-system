@@ -29,6 +29,7 @@ class StaffController(QObject):
         super().__init__(parent)
         self._request = request
         self._available = False
+        self._opened = False
         self._account_id = 0
         self._generation = 0
         self._state: dict[str, Any] = {}
@@ -41,6 +42,7 @@ class StaffController(QObject):
     def reset(self) -> None:
         self._generation += 1
         self._available = False
+        self._opened = False
         self._account_id = 0
         self._state = {
             "accounts": [],
@@ -93,11 +95,17 @@ class StaffController(QObject):
 
     @Slot()
     def open(self) -> None:
+        self._opened = True
         self.refresh()
 
     @Slot()
     def refresh(self) -> None:
-        if not self._available or self._state["busy"] or self._state["refreshing"]:
+        if (
+            not self._opened
+            or not self._available
+            or self._state["busy"]
+            or self._state["refreshing"]
+        ):
             return
         requests = [
             ("/api/accounts", "accounts"),

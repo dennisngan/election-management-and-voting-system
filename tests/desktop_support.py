@@ -69,6 +69,24 @@ def wait_for(app: QCoreApplication, predicate: Callable[[], bool], timeout: floa
         time.sleep(0.01)
 
 
+def wait_for_editor_idle(app: QCoreApplication, editor: Any, timeout: float = 5) -> None:
+    """Observe full-idle completion even if a later refresh starts in the same event batch."""
+    completed = False
+
+    def observe() -> None:
+        nonlocal completed
+        state = editor.property("state")
+        if not state["busy"] and not state.get("refreshing", False):
+            completed = True
+
+    editor.stateChanged.connect(observe)
+    try:
+        observe()
+        wait_for(app, lambda: completed, timeout)
+    finally:
+        editor.stateChanged.disconnect(observe)
+
+
 def state_of(controller: DesktopController) -> dict[str, Any]:
     """Qt Property descriptors lack a precise instance-return type in the PySide stubs."""
     return cast("dict[str, Any]", controller.property("state"))

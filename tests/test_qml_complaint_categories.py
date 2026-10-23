@@ -75,6 +75,25 @@ def test_admin_creates_category_through_translated_material_controls(
         """
         click('complaintCategoriesNavigation')
         catalog = controller.property('complaintCategories')
+        def category_failure():
+            state = catalog.property('state')
+            selected = state['selected']
+            return {
+                **{
+                    key: state[key] for key in (
+                        'error', 'notice', 'election_id', 'dirty', 'busy', 'refreshing'
+                    )
+                },
+                'selected': {
+                    key: selected.get(key) for key in ('id', 'revision', 'is_other', 'enabled')
+                },
+                'form': {
+                    key: state['form'].get(key) for key in (
+                        'code', 'label_tc', 'label_sc', 'label_en',
+                        'description_required', 'enabled'
+                    )
+                },
+            }
         wait(lambda: not catalog.property('state')['refreshing'])
         frame()
         elections = catalog.property('state')['elections']
@@ -116,7 +135,7 @@ def test_admin_creates_category_through_translated_material_controls(
         click('complaintCategoryDescriptionRequired')
         click('complaintCategorySave')
         wait(lambda: not catalog.property('state')['busy'])
-        assert catalog.property('state')['error'] == ''
+        assert catalog.property('state')['error'] == '', category_failure()
         assert catalog.property('state')['selected']['revision'] == 1
         assert catalog.property('state')['selected']['description_required'] is True
         assert catalog.property('state')['selected']['verified_source'] is False

@@ -6,11 +6,18 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer
 
 from election.desktop.controller import DesktopController
-from tests.configuration_desktop_support import ready_setup, save_form, setup_idle
-from tests.desktop_support import TLS_DIRECTORY, HttpsServer, state_of, texts_of, wait_for
+from tests.configuration_desktop_support import ready_setup, save_form
+from tests.desktop_support import (
+    TLS_DIRECTORY,
+    HttpsServer,
+    state_of,
+    texts_of,
+    wait_for,
+    wait_for_editor_idle,
+)
 
 
 @pytest.fixture
@@ -24,7 +31,7 @@ def ready_staff(
     staff = desktop.property("staff")
     assert staff is not None
     staff.open()
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     assert staff.property("state")["error"] == ""
     return staff
 
@@ -47,6 +54,45 @@ def create_officer(staff: Any, qt_app: QCoreApplication) -> tuple[dict, str]:
     return selected, password
 
 
+def test_full_staff_idle_milestone_is_observed_before_an_immediate_second_refresh(
+    qt_app: QCoreApplication, ready_staff: Any,
+) -> None:
+    staff = ready_staff
+    initial = staff.property("state")
+    expected = {"accounts": len(initial["accounts"]), "stations": len(initial["station_options"])}
+    completed: list[dict[str, int]] = []
+    snapshots: list[dict[str, bool | int]] = []
+
+    def completed_refresh() -> None:
+        state = staff.property("state")
+        snapshots.append({
+            "busy": state["busy"], "refreshing": state["refreshing"],
+            "completed": len(completed),
+        })
+        if not state["busy"] and not state["refreshing"]:
+            completed.append({
+                "accounts": len(state["accounts"]), "stations": len(state["station_options"]),
+            })
+            if len(completed) == 1:
+                staff.refresh()
+
+    # Register the second-refresh driver on the next event turn, after the
+    # completion waiter has had an opportunity to subscribe to public signals.
+    QTimer.singleShot(0, lambda: staff.stateChanged.connect(completed_refresh))
+    staff.refresh()
+    try:
+        wait_for_editor_idle(qt_app, staff)
+        assert len(completed) == 1
+        assert completed[0] == expected
+    finally:
+        print(
+            "Staff idle milestone proof:",
+            json.dumps({"completed": completed, "states": snapshots}),
+        )
+        staff.stateChanged.disconnect(completed_refresh)
+        wait_for_editor_idle(qt_app, staff)
+
+
 def test_desktop_creates_assigned_officer_and_edit_revokes_their_first_login_session(
     desktop: DesktopController,
     https_server: HttpsServer,
@@ -64,7 +110,7 @@ def test_desktop_creates_assigned_officer_and_edit_revokes_their_first_login_ses
     staff = desktop.property("staff")
     assert staff is not None
     staff.open()
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     state = staff.property("state")
     assert state["error"] == ""
     assert any(row["username"] == account["username"] for row in state["accounts"])
@@ -82,7 +128,7 @@ def test_desktop_creates_assigned_officer_and_edit_revokes_their_first_login_ses
     staff.setStationAssigned(station["id"], True)
     assert staff.property("state")["dirty"] is True
     staff.save(temporary_password, temporary_password)
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     saved = staff.property("state")
     assert saved["error"] == ""
     assert saved["dirty"] is False
@@ -103,7 +149,7 @@ def test_desktop_creates_assigned_officer_and_edit_revokes_their_first_login_ses
         assert state_of(officer)["account"]["must_change_password"] is True
 
         assert staff.loadAccount(created["id"], False)
-        wait_for(qt_app, lambda: setup_idle(staff))
+        wait_for_editor_idle(qt_app, staff)
         loaded = staff.property("state")
         assert loaded["selected"] == created
         assert loaded["form"] == {
@@ -116,7 +162,7 @@ def test_desktop_creates_assigned_officer_and_edit_revokes_their_first_login_ses
         staff.setField("display_name", "陳美華點票職員")
         staff.setField("role", "counting_officer")
         staff.save("", "")
-        wait_for(qt_app, lambda: setup_idle(staff))
+        wait_for_editor_idle(qt_app, staff)
         edited = staff.property("state")
         assert edited["error"] == ""
         assert edited["dirty"] is False
@@ -213,7 +259,7 @@ def test_invalid_staff_creation_is_localized_without_submitting_or_losing_form_f
         assert confirmation not in json.dumps(state)
     assert len(erasures) == 6
     staff.refresh()
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     assert https_server.request_count("POST", "/api/accounts") == before
 
 
@@ -233,7 +279,7 @@ def test_refresh_preserves_dirty_staff_fields_and_load_requires_explicit_discard
     assert staff.property("state")["refreshing"] is True
     staff.setField("display_name", "重新整理期間仍可輸入")
     form = staff.property("state")["form"]
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     state = staff.property("state")
     assert state["form"] == form
     assert state["selected"] == {}
@@ -241,7 +287,7 @@ def test_refresh_preserves_dirty_staff_fields_and_load_requires_explicit_discard
     assert staff.loadAccount(own_id, False) is False
     assert staff.property("state") == state
     assert staff.loadAccount(own_id, True) is True
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     loaded = staff.property("state")
     assert loaded["selected"]["id"] == own_id
     assert loaded["form"]["display_name"] == state_of(desktop)["account"]["display_name"]
@@ -269,7 +315,7 @@ def test_password_reset_reloads_a_changed_revision_then_revokes_the_officer_sess
         assert state_of(officer)["account"]["must_change_password"] is False
         before = staff.property("state")
         staff.resetPassword(reset_password, reset_password)
-        wait_for(qt_app, lambda: setup_idle(staff))
+        wait_for_editor_idle(qt_app, staff)
         stale = staff.property("state")
         assert stale["error"] == "revision_conflict"
         assert stale["selected"] == before["selected"]
@@ -281,11 +327,11 @@ def test_password_reset_reloads_a_changed_revision_then_revokes_the_officer_sess
         assert state_of(officer)["phase"] == "workspace"
 
         assert staff.loadAccount(created["id"], False)
-        wait_for(qt_app, lambda: setup_idle(staff))
+        wait_for_editor_idle(qt_app, staff)
         assert staff.property("state")["selected"]["revision"] == 2
         assert staff.property("state")["selected"]["must_change_password"] is False
         staff.resetPassword(reset_password, reset_password)
-        wait_for(qt_app, lambda: setup_idle(staff))
+        wait_for_editor_idle(qt_app, staff)
         reset = staff.property("state")
         assert reset["error"] == ""
         assert reset["notice"] == "password_reset_success"
@@ -337,14 +383,14 @@ def test_second_administrator_edit_conflict_preserves_the_local_staff_form(
     assert updated.status_code == 200
     assert updated.json()["revision"] == 2
     staff.save("", "")
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     conflict = staff.property("state")
     assert conflict["error"] == "revision_conflict"
     assert conflict["selected"] == created
     assert conflict["form"] == local_form
     assert conflict["dirty"] is True
     staff.refresh()
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     refreshed = staff.property("state")
     assert refreshed["form"] == local_form
     assert refreshed["selected"] == created
@@ -352,7 +398,7 @@ def test_second_administrator_edit_conflict_preserves_the_local_staff_form(
     assert any(row == updated.json() for row in refreshed["accounts"])
     assert staff.loadAccount(created["id"], False) is False
     assert staff.loadAccount(created["id"], True) is True
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     loaded = staff.property("state")
     assert loaded["selected"] == updated.json()
     assert loaded["form"]["display_name"] == "另一管理員已儲存名稱"
@@ -368,7 +414,7 @@ def test_editing_own_administrator_account_signs_out_and_clears_all_staff_state(
     staff = ready_staff
     own_id = state_of(desktop)["account"]["id"]
     assert staff.loadAccount(own_id, False)
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     staff.setField("display_name", "管理員已更新姓名")
     staff.save("", "")
     wait_for(qt_app, lambda: state_of(desktop)["phase"] == "signed_out")
