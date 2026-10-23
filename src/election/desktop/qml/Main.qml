@@ -27,7 +27,7 @@ ApplicationWindow {
     readonly property color line: "#e1e7f0"
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
-    readonly property bool stationPage: ["polling", "stock", "allocations", "turnout", "complaints",
+    readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "counterReturns", "turnout", "complaints",
         "complaintPeriods", "queue", "boxes"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
@@ -325,6 +325,51 @@ ApplicationWindow {
                         window.currentPage = "allocations"
                         controller.workspace.open()
                         controller.allocations.open()
+                    }
+                }
+                Button {
+                    id: stockSnapshotsNavigation
+                    objectName: "stockSnapshotsNavigation"
+                    text: window.t("snapshot_title"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "stockSnapshots"
+                    Material.background: window.currentPage === "stockSnapshots" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: stockSnapshotsNavigation.text
+                        textFormat: Text.PlainText
+                        font: stockSnapshotsNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "stockSnapshots"
+                        controller.workspace.open()
+                        controller.stockSnapshots.open()
+                    }
+                }
+                Button {
+                    id: counterReturnsNavigation
+                    objectName: "counterReturnsNavigation"
+                    text: window.t("counter_return_title"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "counterReturns"
+                    Material.background: window.currentPage === "counterReturns" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: counterReturnsNavigation.text
+                        textFormat: Text.PlainText; font: counterReturnsNavigation.font
+                        color: window.ink; wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "counterReturns"
+                        controller.workspace.open()
+                        controller.counterReturns.open()
                     }
                 }
                 Button {
@@ -706,6 +751,22 @@ ApplicationWindow {
                         visible: window.currentPage === "allocations"
                         Layout.fillWidth: true
                         allocations: controller.allocations
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    StockSnapshotsPage {
+                        visible: window.currentPage === "stockSnapshots"
+                        Layout.fillWidth: true
+                        snapshots: controller.stockSnapshots
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    CounterReturnsPage {
+                        visible: window.currentPage === "counterReturns"
+                        Layout.fillWidth: true
+                        returnsController: controller.counterReturns
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)

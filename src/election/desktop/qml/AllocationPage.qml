@@ -135,6 +135,7 @@ ColumnLayout {
     }
 
     FormNotice {
+        objectName: "allocationFeedback"
         words: page.words
         error: page.editorState.error
         notice: page.editorState.notice

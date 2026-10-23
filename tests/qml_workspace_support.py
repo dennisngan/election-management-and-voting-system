@@ -90,6 +90,21 @@ def click(name):
     QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
     application.processEvents()
 
+def click_confirmation(dialog, label):
+    wait(lambda: dialog.property('opened') and dialog.property('activeFocus'))
+    pending = list(dialog.property('footer').childItems())
+    buttons = []
+    while pending:
+        item = pending.pop()
+        if item.inherits('QQuickAbstractButton') and item.property('text') == label:
+            buttons.append(item)
+        pending.extend(item.childItems())
+    assert len(buttons) == 1, 'The confirmation button is missing or ambiguous'
+    button = buttons[0]
+    center = button.mapToScene(QPointF(button.width()/2, button.height()/2)).toPoint()
+    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
+    wait(lambda: not dialog.property('visible'))
+
 def enter(name, text):
     item = focus(name)
     assert QMetaObject.invokeMethod(item, 'selectAll'), 'Text control cannot select its contents'

@@ -17,10 +17,15 @@ from election.server.models import Account, AuditEvent
 from election.server.station_models import IssuanceCounter
 from election.server.stock import stock_scope, stock_write
 from election.server.stock_inventory import (
+    allocation_fragments,
     availability,
     current_allocations,
+    current_returns,
+    preserve_issued_observations,
+    preserve_returned_stock,
     receipt_basis,
     received_ranges,
+    subtract_intervals,
 )
 from election.server.stock_serials import serial_number
 
@@ -127,14 +132,36 @@ def allocation_router(
             raise HTTPException(404, detail={"code": "counter_not_found"})
         first, last = serial_number(data.serial_from), serial_number(data.serial_to)
         basis = receipt_basis(received_ranges(db, station_id, lock=True), data.series, first, last)
-        for owned in current_allocations(db, station_id, lock=True):
-            if (
-                owned.allocation_id != exclude_id
-                and owned.series == data.series
-                and owned.serial_from_value <= last
-                and owned.serial_to_value >= first
-            ):
-                raise HTTPException(409, detail={"code": "allocation_overlap"})
+        allocations = current_allocations(db, station_id, lock=True)
+        returns = current_returns(db, station_id, lock=True)
+        returned_parts: list[tuple[int, int]] = []
+        future_return_parts: list[tuple[int, int]] = []
+        event_at = data.event_at.astimezone(UTC).replace(tzinfo=None)
+        for returned in returns:
+            if returned.series != data.series:
+                continue
+            for part in returned.allocation_basis:
+                part_first = serial_number(str(part["serial_from"]))
+                part_last = serial_number(str(part["serial_to"]))
+                if int(part["allocation_id"]) == exclude_id:
+                    returned_parts.append((part_first, part_last))
+                elif returned.event_at > event_at:
+                    future_return_parts.append((part_first, part_last))
+        proposed = subtract_intervals(first, last, returned_parts)
+        if any(
+            part_first <= end and part_last >= start
+            for part_first, part_last in future_return_parts
+            for start, end in proposed
+        ):
+            raise HTTPException(409, detail={"code": "allocation_before_return"})
+        for fragment in allocation_fragments(allocations, returns):
+            owned = fragment.allocation
+            if owned.allocation_id != exclude_id and owned.series == data.series:
+                if any(
+                    fragment.serial_from_value <= end and fragment.serial_to_value >= start
+                    for start, end in proposed
+                ):
+                    raise HTTPException(409, detail={"code": "allocation_overlap"})
         return counter, basis
 
     def persist(
@@ -172,6 +199,18 @@ def allocation_router(
             reason=reason,
             receipt_basis=basis,
         )
+        if isinstance(data, AllocationCorrection):
+            proposed_allocations = [
+                item
+                for item in current_allocations(db, head.station_id, lock=True)
+                if item.allocation_id != head.id
+            ] + [row]
+            preserve_issued_observations(
+                db,
+                head.station_id,
+                proposed_allocations,
+                current_returns(db, head.station_id, lock=True),
+            )
         db.add(row)
         db.add(
             AuditEvent(
@@ -206,7 +245,10 @@ def allocation_router(
             "scope": scope,
             "items": [allocation_view(row, scope) for row in rows],
             "counters": [{"id": row.id, "code": row.code, "name": row.name} for row in counters],
-            "availability": availability(received_ranges(db, station_id), rows),
+            "availability": availability(
+                received_ranges(db, station_id),
+                allocation_fragments(rows, current_returns(db, station_id)),
+            ),
         }
 
     @router.post("", status_code=201)
@@ -289,6 +331,16 @@ def allocation_router(
             if head.revision != data.revision:
                 raise HTTPException(409, detail={"code": "revision_conflict"})
             counter, basis = validate_stock(db, station_id, data, exclude_id=head.id)
+            preserve_returned_stock(
+                db,
+                station_id,
+                head.id,
+                counter.id,
+                data.series,
+                serial_number(data.serial_from),
+                serial_number(data.serial_to),
+                data.event_at.astimezone(UTC).replace(tzinfo=None),
+            )
             head.revision += 1
             now = timestamp()
             return persist(db, actor, scope, data, head, digest, counter, basis, now)

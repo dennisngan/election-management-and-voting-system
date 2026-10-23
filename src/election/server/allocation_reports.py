@@ -13,7 +13,13 @@ from election.server.allocation_report_format import csv_report, pdf_report, pre
 from election.server.allocations import allocation_view
 from election.server.models import Account
 from election.server.stock import stock_scope
-from election.server.stock_inventory import availability, current_allocations, received_ranges
+from election.server.stock_inventory import (
+    allocation_fragments,
+    availability,
+    current_allocations,
+    current_returns,
+    received_ranges,
+)
 from election.server.stock_reports import LABELS as STOCK_LABELS
 from election.server.stock_reports import ReportLocale
 
@@ -130,7 +136,8 @@ def allocation_reports_router(
                 raise HTTPException(422, detail={"code": "allocation_required"})
             rows = current_allocations(db, station_id)
             balances: list[dict[str, Any]] | None = availability(
-                received_ranges(db, station_id), rows
+                received_ranges(db, station_id),
+                allocation_fragments(rows, current_returns(db, station_id)),
             )
             report_scope, revision_state = "station_current", "current"
         else:
