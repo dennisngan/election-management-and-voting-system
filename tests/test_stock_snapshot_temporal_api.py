@@ -358,3 +358,101 @@ def test_returned_allocation_cannot_mask_released_issued_stock_in_a_later_lineag
         assert after == before
         assert after["snapshots"]["latest_basis_current"] is True
         assert after["snapshots"]["current_ordinary_issued_quantity"] == 5
+
+
+def test_backdated_duplicate_return_cannot_release_the_same_allocation_range_twice(
+    admin: TestClient, database_url: str,
+) -> None:
+    scope, clock = turnout_scope(admin), TurnoutClock()
+    station_id = scope["stations"][0]["id"]
+    base = f"/api/workspace/stations/{station_id}"
+    with turnout_staff(admin, database_url, clock, [station_id]) as (officer, _):
+        receipt = officer.post(base + "/stock", json=stock_payload())
+        assert receipt.status_code == 201
+        options = officer.get(base + "/allocations")
+        assert options.status_code == 200
+        counter_id = next(row["id"] for row in options.json()["counters"] if row["code"] == "C1")
+        allocated = officer.post(
+            base + "/allocations",
+            json={
+                "request_id": str(uuid4()),
+                "counter_id": counter_id,
+                "series": "普通系列 A",
+                "serial_from": "000001",
+                "serial_to": "000006",
+                "event_at": "2026-11-15T09:00:00+08:00",
+            },
+        )
+        assert allocated.status_code == 201
+        allocation = allocated.json()
+        returns_path = base + "/stock-returns"
+        command = {
+            "request_id": str(uuid4()),
+            "counter_id": counter_id,
+            "series": "普通系列 A",
+            "serial_from": "000004",
+            "serial_to": "000006",
+            "event_at": "2026-11-15T10:00:00+08:00",
+        }
+        returned = officer.post(returns_path, json=command)
+        assert returned.status_code == 201
+        original_return = returned.json()
+        assert original_return["quantity"] == 3
+        assert original_return["allocation_basis"] == [
+            {
+                "allocation_id": allocation["id"], "revision": 1,
+                "serial_from": "000004", "serial_to": "000006", "quantity": 3,
+            }
+        ]
+        resources = {
+            "returns": returns_path,
+            "return": returns_path + f"/{original_return['id']}",
+            "return_history": returns_path + f"/{original_return['id']}/history",
+            "allocations": base + "/allocations",
+            "allocation": base + f"/allocations/{allocation['id']}",
+            "allocation_history": base + f"/allocations/{allocation['id']}/history",
+            "p14": base + "/allocations/statement?locale=en",
+        }
+
+        def read_public_state() -> dict:
+            state = {}
+            for name, path in resources.items():
+                response = officer.get(path)
+                assert response.status_code == 200
+                state[name] = response.json()
+            return state
+
+        before = read_public_state()
+        assert before["returns"]["items"] == [original_return]
+        assert before["return"] == original_return
+        assert before["return_history"]["items"] == [original_return]
+        assert before["allocation"] == allocation
+        assert before["allocation_history"]["items"] == [allocation]
+        for collection in (before["allocations"], before["p14"]):
+            (balance,) = collection["availability"]
+            assert balance["ordinary_received_quantity"] == 8
+            assert balance["allocated_quantity"] == 3
+            assert balance["available_quantity"] == 5
+            assert [
+                (row["serial_from"], row["serial_to"], row["quantity"])
+                for row in balance["ranges"]
+            ] == [("000004", "000008", 5)]
+
+        rejected = officer.post(
+            returns_path,
+            json={
+                **command,
+                "request_id": str(uuid4()),
+                "event_at": "2026-11-15T09:30:00+08:00",
+            },
+        )
+        after = read_public_state()
+        assert rejected.status_code == 409, {
+            "actual_status": rejected.status_code,
+            "actual_body": rejected.json(),
+            "return_count": len(after["returns"]["items"]),
+            "returned_quantities": [row["quantity"] for row in after["returns"]["items"]],
+            "p14_allocated_quantity": after["p14"]["availability"][0]["allocated_quantity"],
+            "p14_available_quantity": after["p14"]["availability"][0]["available_quantity"],
+        }
+        assert after == before

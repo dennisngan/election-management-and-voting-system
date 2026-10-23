@@ -395,6 +395,18 @@ def validate_return_ownership(
     allocations: Sequence[StockAllocationRevision], returns: Sequence[CounterStockReturnRevision]
 ) -> None:
     """A return correction must preserve both current ownership and later allocation claims."""
+    returned_portions: dict[int, list[tuple[int, int]]] = {}
+    for returned in returns:
+        for part in returned.allocation_basis:
+            returned_portions.setdefault(int(part["allocation_id"]), []).append(
+                (serial_number(str(part["serial_from"])), serial_number(str(part["serial_to"])))
+            )
+    for portions in returned_portions.values():
+        previous = -1
+        for first, last in sorted(portions):
+            if first <= previous:
+                raise HTTPException(409, detail={"code": "stock_returns_conflict"})
+            previous = last
     previous_end: dict[str, int] = {}
     for fragment in sorted(
         allocation_fragments(allocations, returns),
