@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from election.server.app import create_app
 from tests.box_support import BoxClock, box_staff
 from tests.tally_support import tally_setup
 from tests.test_counting_scopes_api import (
@@ -43,9 +44,11 @@ def test_concurrent_initial_round_creation_is_single_effect(
         barrier = Barrier(2)
 
         def create() -> tuple[int, dict[str, Any]]:
-            barrier.wait(timeout=10)
-            response = client.post(path, json=payload)
-            return response.status_code, response.json()
+            with TestClient(create_app(database_url, now=setup["clock"])) as peer:
+                peer.headers.update(client.headers)
+                barrier.wait(timeout=5)
+                response = peer.post(path, json=payload)
+                return response.status_code, response.json()
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda _: create(), range(2)))
@@ -69,7 +72,7 @@ def test_concurrent_initial_rounds_with_distinct_requests_reject_the_loser(
             barrier = Barrier(2)
 
             def create(index: int) -> tuple[int, dict[str, Any]]:
-                barrier.wait(timeout=10)
+                barrier.wait(timeout=5)
                 response = clients[index].post(path, json=payloads[index])
                 return response.status_code, response.json()
 
@@ -113,7 +116,7 @@ def test_simultaneous_edits_of_same_revision_have_one_winner(
             barrier = Barrier(2)
 
             def amend(index: int) -> tuple[int, dict[str, Any]]:
-                barrier.wait(timeout=10)
+                barrier.wait(timeout=5)
                 response = clients[index].put(f"{path}/{round_id}", json=payloads[index])
                 return response.status_code, response.json()
 
