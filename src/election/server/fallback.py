@@ -20,6 +20,7 @@ from election.server.stock import stock_write
 from election.server.stock_serials import MAX_STOCK_QUANTITY
 from election.server.stock_time import StockEventTime
 from election.server.turnout_basis import (
+    FallbackSelection,
     active_fallback_at,
     locked_schedule,
     recovery_reconciliation,
@@ -232,9 +233,11 @@ def fallback_router(
                     "activation_id": data.activation_id,
                     "activation_revision": data.activation_revision,
                     "reconciliation": recovery_reconciliation(
-                        db, station_id, schedule, data.activation_id, data.activation_revision,
-                        event_at, data.stock_snapshot_id, data.stock_snapshot_revision,
-                        data.cumulative_quantity, exclude_record_id=head.id if head else None,
+                        db, station_id, schedule,
+                        FallbackSelection(data.activation_id, data.activation_revision,
+                                          data.stock_snapshot_id, data.stock_snapshot_revision),
+                        event_at, data.cumulative_quantity,
+                        exclude_record_id=head.id if head else None,
                     ),
                 })
             if head is None:
@@ -276,9 +279,10 @@ def fallback_router(
             if head.kind == "recovery":
                 assert head.activation_id is not None
                 comparison = recovery_reconciliation(
-                    db, station_id, schedule, head.activation_id, row.data["activation_revision"],
-                    row.event_at, row.stock_snapshot_id, row.stock_snapshot_revision,
-                    row.data["cumulative_quantity"], exclude_record_id=head.id,
+                    db, station_id, schedule,
+                    FallbackSelection(head.activation_id, row.data["activation_revision"],
+                                      row.stock_snapshot_id, row.stock_snapshot_revision),
+                    row.event_at, row.data["cumulative_quantity"], exclude_record_id=head.id,
                 )
                 if comparison != row.data["reconciliation"]:
                     raise HTTPException(409, detail={"code": "fallback_review_required"})

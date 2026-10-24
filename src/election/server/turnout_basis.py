@@ -127,16 +127,21 @@ def mode_basis_required(
     )
 
 
-def fallback_period_basis(
-    db: Session, station_id: int, schedule: ElectionSchedule, period_index: int,
-    selection: FallbackSelection, predecessor: TurnoutRecord | None,
-    *, exclude_record_id: int | None = None, coverage_end_at: datetime | None = None,
-) -> tuple[str, dict[str, Any]]:
-    start_at, end_at = period_bounds(schedule, period_index)
-    if coverage_end_at is not None:
-        if not start_at < coverage_end_at <= end_at:
-            raise HTTPException(409, detail={"code": "fallback_source_conflict"})
-        end_at = coverage_end_at
+
+@dataclass(frozen=True)
+class _ConfirmedStockBasis:
+    head: FallbackRecord
+    activation: FallbackRevision
+    original: dict[str, Any]
+    endpoint: dict[str, Any]
+    ordinary_delta: int
+    cumulative: int
+
+
+def _confirmed_stock_basis(
+    db: Session, station_id: int, schedule: ElectionSchedule, end_at: datetime,
+    selection: FallbackSelection, *, exclude_record_id: int | None = None,
+) -> _ConfirmedStockBasis:
     active = active_fallback_at(db, station_id, end_at, exclude_record_id=exclude_record_id)
     if active is None or active[0].id != selection.activation_id:
         raise HTTPException(409, detail={"code": "fallback_source_conflict"})
@@ -160,11 +165,32 @@ def fallback_period_basis(
     ordinary_delta = endpoint["ordinary_issued_quantity"] - original["ordinary_issued_quantity"]
     if ordinary_delta < 0:
         raise HTTPException(409, detail={"code": "fallback_stock_regression"})
+    cumulative = activation.data["cumulative_quantity"] + ordinary_delta
+    if cumulative > MAX_STOCK_QUANTITY:
+        raise HTTPException(422, detail={"code": "turnout_validation"})
+    return _ConfirmedStockBasis(head, activation, original, endpoint, ordinary_delta, cumulative)
+
+
+def fallback_period_basis(
+    db: Session, station_id: int, schedule: ElectionSchedule, period_index: int,
+    selection: FallbackSelection, predecessor: TurnoutRecord | None,
+    *, exclude_record_id: int | None = None, coverage_end_at: datetime | None = None,
+) -> tuple[str, dict[str, Any]]:
+    start_at, end_at = period_bounds(schedule, period_index)
+    if coverage_end_at is not None:
+        if not start_at < coverage_end_at <= end_at:
+            raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+        end_at = coverage_end_at
+    source = _confirmed_stock_basis(
+        db, station_id, schedule, end_at, selection, exclude_record_id=exclude_record_id,
+    )
+    head, activation = source.head, source.activation
+    original, endpoint = source.original, source.endpoint
+    ordinary_delta, cumulative = source.ordinary_delta, source.cumulative
     baseline = predecessor.derived_cumulative_end if predecessor else 0
     assert baseline is not None
     confirmed = activation.data["cumulative_quantity"]
-    cumulative = confirmed + ordinary_delta
-    if cumulative < baseline or cumulative > MAX_STOCK_QUANTITY:
+    if cumulative < baseline:
         raise HTTPException(422, detail={"code": "turnout_validation"})
     coverage = []
     if activation.event_at > start_at:
@@ -205,36 +231,15 @@ def fallback_period_basis(
 
 
 def recovery_reconciliation(
-    db: Session, station_id: int, schedule: ElectionSchedule, activation_id: int,
-    activation_revision: int, event_at: datetime, snapshot_id: int, snapshot_revision: int,
-    recovered: int, *, exclude_record_id: int | None = None,
+    db: Session, station_id: int, schedule: ElectionSchedule, selection: FallbackSelection,
+    event_at: datetime, recovered: int, *, exclude_record_id: int | None = None,
 ) -> dict[str, Any]:
-    active = active_fallback_at(db, station_id, event_at, exclude_record_id=exclude_record_id)
-    if active is None or active[0].id != activation_id:
-        raise HTTPException(409, detail={"code": "fallback_source_conflict"})
-    head, activation = active
-    if (
-        head.revision != activation_revision or head.approved_revision != activation_revision
-        or activation.revision != activation_revision
-        or activation.schedule_revision != schedule.revision
-    ):
-        raise HTTPException(409, detail={"code": "fallback_review_required"})
-    original = stock_snapshot_basis(
-        db, station_id, activation.stock_snapshot_id,
-        activation.stock_snapshot_revision, activation.event_at,
+    source = _confirmed_stock_basis(
+        db, station_id, schedule, event_at, selection, exclude_record_id=exclude_record_id,
     )
-    if original != activation.data["stock_snapshot"]:
-        raise HTTPException(409, detail={"code": "fallback_review_required"})
-    endpoint = stock_snapshot_basis(db, station_id, snapshot_id, snapshot_revision, event_at)
-    delta = endpoint["ordinary_issued_quantity"] - original["ordinary_issued_quantity"]
-    if delta < 0:
-        raise HTTPException(409, detail={"code": "fallback_stock_regression"})
-    cumulative = activation.data["cumulative_quantity"] + delta
-    if cumulative > MAX_STOCK_QUANTITY:
-        raise HTTPException(422, detail={"code": "turnout_validation"})
     return {
-        "stock_derived_cumulative_quantity": cumulative,
-        "recovered_cumulative_quantity": recovered, "difference": recovered - cumulative,
+        "stock_derived_cumulative_quantity": source.cumulative,
+        "recovered_cumulative_quantity": recovered, "difference": recovered - source.cumulative,
     }
 
 
@@ -257,9 +262,10 @@ def recovery_period_basis(
         raise HTTPException(409, detail={"code": "fallback_review_required"})
     assert head.activation_id is not None
     reconciliation = recovery_reconciliation(
-        db, station_id, schedule, head.activation_id, recovery.data["activation_revision"],
-        recovery.event_at, recovery.stock_snapshot_id, recovery.stock_snapshot_revision,
-        recovery.data["cumulative_quantity"], exclude_record_id=head.id,
+        db, station_id, schedule,
+        FallbackSelection(head.activation_id, recovery.data["activation_revision"],
+                          recovery.stock_snapshot_id, recovery.stock_snapshot_revision),
+        recovery.event_at, recovery.data["cumulative_quantity"], exclude_record_id=head.id,
     )
     if reconciliation != recovery.data["reconciliation"]:
         raise HTTPException(409, detail={"code": "fallback_review_required"})
