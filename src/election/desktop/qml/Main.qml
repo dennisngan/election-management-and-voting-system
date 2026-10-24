@@ -27,7 +27,7 @@ ApplicationWindow {
     readonly property color line: "#e1e7f0"
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
-    readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "specialPapers", "counterReturns", "turnout", "complaints",
+    readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "specialPapers", "counterReturns", "turnout", "fallback", "complaints",
         "complaintPeriods", "queue", "boxes"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
@@ -425,6 +425,27 @@ ApplicationWindow {
                     }
                 }
                 Button {
+                    id: fallbackNavigation
+                    objectName: "fallbackNavigation"
+                    text: window.t("fallback_title"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "fallback"
+                    Material.background: window.currentPage === "fallback" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: fallbackNavigation.text; textFormat: Text.PlainText
+                        font: fallbackNavigation.font; color: window.ink
+                        wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "fallback"
+                        controller.workspace.open()
+                        controller.fallback.open()
+                    }
+                }
+                Button {
                     id: complaintsNavigation
                     objectName: "complaintsNavigation"
                     text: window.t("complaint_cases"); Layout.fillWidth: true; flat: true
@@ -817,6 +838,13 @@ ApplicationWindow {
                         turnout: controller.turnout
                         words: window.words
                         locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    FallbackPage {
+                        visible: window.currentPage === "fallback"
+                        Layout.fillWidth: true
+                        fallback: controller.fallback
+                        words: window.words
                         onReveal: control => window.revealField(control)
                     }
                     ComplaintsPage {
