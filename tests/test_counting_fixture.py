@@ -1,5 +1,7 @@
 """Real-MySQL smoke coverage for the Ticket 17 public setup fixture."""
 
+import hashlib
+import json
 from collections.abc import Iterator
 
 import pytest
@@ -61,6 +63,25 @@ def test_counting_setup_has_received_boxes_and_current_approved_source_accountin
             assert readback.status_code == 200, readback.text
             assert readback.json()["record"] == source["record"]
             assert readback.json()["record"]["source_current"] is True
+            source_fingerprint = hashlib.sha256(
+                json.dumps(
+                    source["record"]["summary"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            readback_fingerprint = hashlib.sha256(
+                json.dumps(
+                    readback.json()["record"]["summary"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            assert readback_fingerprint == source_fingerprint
+
+        assert setup["paths"]["n1_counting_scopes"] == (
+            f"/api/workspace/stations/{setup['stations']['N1']['id']}/counting-scopes"
+        )
 
         receiver_profile = setup["clients"]["receiveronly"].get("/api/auth/me")
         assert receiver_profile.status_code == 200, receiver_profile.text

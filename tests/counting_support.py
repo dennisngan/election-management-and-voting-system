@@ -250,7 +250,9 @@ def counting_setup(admin: TestClient, database_url: str) -> Iterator[dict]:
                 "n2_boxes": transfer_source,
                 "n1_accounting": source_accounting["N1"]["path"],
                 "n2_accounting": source_accounting["N2"]["path"],
-                "n1_counting_scopes": local_path + "/counting-scopes",
+                "n1_counting_scopes": (
+                    f"/api/workspace/stations/{stations['N1']['id']}/counting-scopes"
+                ),
             },
             "clock": clock,
         }
