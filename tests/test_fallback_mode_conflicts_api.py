@@ -81,3 +81,46 @@ def test_confirmed_activation_rejects_overlapping_draft_and_new_activation(
         assert untouched_draft.status_code == 200 and untouched_draft.json() == second
         draft_history = officer.get(second_path + "/history")
         assert draft_history.status_code == 200 and draft_history.json() == {"items": [second]}
+
+
+def test_backdated_activation_cannot_overlap_a_later_confirmed_activation(
+    admin: TestClient, database_url: str,
+) -> None:
+    with fallback_setup(admin, database_url) as setup:
+        officer, path = setup["officer"], setup["path"]
+        earlier = officer.post(setup["base"] + "/stock-snapshots", json={
+            "request_id": str(uuid4()), "event_at": "2026-11-15T11:10:00+08:00",
+            "counters": [{"counter_id": setup["counter_id"], "ranges": [{
+                "series": "普通系列 A", "serial_from": "000106", "serial_to": "000200",
+            }]}],
+        })
+        assert earlier.status_code == 201 and earlier.json()["ordinary_issued_quantity"] == 105
+        # This earlier draft exists before the later event is confirmed.
+        command = {
+            **setup["command"], "request_id": str(uuid4()),
+            "event_at": "2026-11-15T11:10:00+08:00", "cumulative_quantity": 105,
+            "stock_snapshot_id": earlier.json()["id"],
+        }
+        drafted = officer.post(path, json=command)
+        assert drafted.status_code == 201
+        first = officer.post(path, json=setup["command"])
+        assert first.status_code == 201
+        target = path + f"/{first.json()['id']}"
+        assert officer.post(target + "/submit", json=turnout_command(1)).status_code == 200
+        approved = setup["supervisor"].post(
+            target + "/approve", json=turnout_command(1, password=READY_PASSWORD),
+        )
+        assert approved.status_code == 200
+        denied = officer.post(path + f"/{drafted.json()['id']}/submit", json=turnout_command(1))
+        # A confirmed future event must constrain an older pending source too.
+        assert denied.status_code == 409
+        assert denied.json()["detail"]["code"] == "fallback_source_conflict"
+        duplicate = officer.post(path, json={**command, "request_id": str(uuid4())})
+        assert duplicate.status_code == 409
+        assert duplicate.json()["detail"]["code"] == "fallback_source_conflict"
+        assert officer.get(target).json() == approved.json()
+        collection = officer.get(path)
+        assert collection.status_code == 200
+        assert collection.json()["mode"] == "fallback"
+        assert collection.json()["active_activation_id"] == first.json()["id"]
+        assert sum(row["status"] == "approved" for row in collection.json()["items"]) == 1

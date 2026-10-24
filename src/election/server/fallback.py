@@ -22,6 +22,7 @@ from election.server.stock_time import StockEventTime
 from election.server.turnout_basis import (
     FallbackSelection,
     active_fallback_at,
+    confirmed_mode_events,
     locked_schedule,
     recovery_reconciliation,
     stock_snapshot_basis,
@@ -108,6 +109,28 @@ def fallback_rows(db: Session, station_id: int) -> list[tuple[FallbackRecord, Fa
         query.with_for_update().execution_options(populate_existing=True),
     )]
 
+
+
+def validate_mode_timeline(
+    db: Session, station_id: int, kind: str, event_at: datetime,
+    activation_id: int | None, record_id: int | None,
+) -> None:
+    events = confirmed_mode_events(
+        db, station_id, datetime.max, exclude_record_id=record_id,
+    )
+    candidate_id = record_id if record_id is not None else 2**63 - 1
+    timeline = [(row.event_at, head.id, head.kind, head.activation_id) for head, row in events]
+    timeline.append((event_at, candidate_id, kind, activation_id))
+    active_id = None
+    for _, identity, event_kind, parent_id in sorted(timeline):
+        if event_kind == "activation":
+            if active_id is not None:
+                raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+            active_id = identity
+        else:
+            if active_id is None or parent_id != active_id:
+                raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+            active_id = None
 
 def fallback_router(
     database: Callable[[], Generator[Session]],
@@ -216,10 +239,9 @@ def fallback_router(
                     raise HTTPException(409, detail={"code": "fallback_state_conflict"})
                 if head.kind != data.kind or head.activation_id != data.activation_id:
                     raise HTTPException(409, detail={"code": "fallback_source_conflict"})
-            if data.kind == "activation" and active_fallback_at(
-                db, station_id, event_at, exclude_record_id=head.id if head else None,
-            ):
-                raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+            validate_mode_timeline(
+                db, station_id, data.kind, event_at, data.activation_id, head.id if head else None,
+            )
             source = stock_snapshot_basis(
                 db, station_id, data.stock_snapshot_id, data.stock_snapshot_revision, event_at,
             )
@@ -264,10 +286,9 @@ def fallback_router(
             if head.revision != data.expected_revision:
                 raise HTTPException(409, detail={"code": "revision_conflict"})
             row = revision(db, head, head.revision)
-            if head.kind == "activation" and active_fallback_at(
-                db, station_id, row.event_at, exclude_record_id=head.id,
-            ):
-                raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+            validate_mode_timeline(
+                db, station_id, head.kind, row.event_at, head.activation_id, head.id,
+            )
             expected = "submitted" if action == "approve" else "draft"
             if row.status != expected:
                 raise HTTPException(409, detail={"code": "fallback_state_conflict"})
