@@ -101,6 +101,7 @@ class SpecialPapersController(QObject):
             "basis": {},
             "basis_options": [],
             "receipts": [],
+            "source_changed": False,
             "series_reports": [],
             "totals": _totals({}),
             "error": "",
@@ -297,8 +298,11 @@ class SpecialPapersController(QObject):
         if not valid:
             self._error("request_failed")
             return
+        if not self._state["selected"] and self._state["dirty"]:
+            if rows != self._state["receipts"]:
+                self._state["source_changed"] = True
         self._state["receipts"] = deepcopy(rows)
-        if not self._state["selected"]:
+        if not self._state["selected"] and not self._state["dirty"]:
             self._series_for_time()
         self._send(
             "GET",
@@ -414,6 +418,7 @@ class SpecialPapersController(QObject):
                 "event_at": value["stock_snapshot_event_at"],
             },
             totals=_totals(value),
+            source_changed=False,
             dirty=False,
             editing=False,
             history_verified=False,
@@ -507,6 +512,7 @@ class SpecialPapersController(QObject):
             basis={},
             series_reports=[],
             totals=_totals({}),
+            source_changed=False,
             history=[],
             dirty=False,
             historical=False,

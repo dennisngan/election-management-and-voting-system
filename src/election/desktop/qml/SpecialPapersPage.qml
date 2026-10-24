@@ -127,6 +127,11 @@ ColumnLayout {
         visible: page.editorState.latest_basis_current === false
         text: page.t("special_basis_stale"); color: "#9a5b00"
     }
+    FormCaption {
+        objectName: "specialSourcesChanged"
+        visible: page.editorState.source_changed
+        text: page.t("special_sources_changed"); color: "#9a5b00"
+    }
     FormNotice {
         words: page.words; autoReveal: false
         notice: page.editorState.newer_revision ? "special_paper_newer_revision" : ""

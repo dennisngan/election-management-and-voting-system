@@ -2,6 +2,10 @@
 
 SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "special_sources_changed": (
+            "接收庫存已在您編輯期間改變。已保留您的數量及所選基礎。"
+            "請核對來源變更；如需載入目前系列，請選擇新增觀察並明確捨棄此草稿。"
+        ),
         "special_title": "補發、重複及未用選票核算",
         "special_intro": (
             "按每個已接收的選票系列記錄累計數量。補發選票與已收回並註銷的損壞原票配對，"
@@ -62,12 +66,11 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
             "請按完全相符的名稱填報所有已接收選票系列，每個系列只填一次。"
         ),
         "special_paper_issuance_regression": (
-            "此變更會令已儲存核算所需的普通發票基礎不足。"
-            "請核對 P(12) 結餘及已儲存的特殊選票觀察後再修訂。"
+            "補發或重複選票的累計發出數量與其他已儲存觀察不一致。"
+            "請按原始時間核對較早、同時及較後的觀察；累計發出數量不可隨時間倒退。"
         ),
         "special_paper_stock_conflict": (
-            "此變更與已儲存特殊選票觀察所核算的庫存有衝突。"
-            "請核對相關接收記錄、儲備及觀察版本。"
+            "此變更與已儲存特殊選票觀察所核算的庫存有衝突。請核對相關接收記錄、儲備及觀察版本。"
         ),
         "special_paper_not_found": "找不到所選特殊選票觀察或修訂版本，請重新整理後再選擇。",
         "stock_snapshot_incomplete": (
@@ -93,6 +96,10 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         "special_estimated_box_papers_quantity": "庫存推算票箱選票數量",
     },
     "sc": {
+        "special_sources_changed": (
+            "接收库存已在您编辑期间改变。已保留您的数量及所选依据。"
+            "请核对来源变更；如需载入当前系列，请选择新增观察并明确舍弃此草稿。"
+        ),
         "special_title": "补发、重复及未用选票核算",
         "special_intro": (
             "按每个已接收的选票系列记录累计数量。补发选票与已收回并注销的损坏原票配对，"
@@ -153,12 +160,11 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
             "请按完全匹配的名称填报所有已接收选票系列，每个系列只填一次。"
         ),
         "special_paper_issuance_regression": (
-            "此变更会令已保存核算所需的普通发票依据不足。"
-            "请核对 P(12) 结余及已保存的特殊选票观察后再修订。"
+            "补发或重复选票的累计发出数量与其他已保存观察不一致。"
+            "请按原始时间核对较早、同时及较后的观察；累计发出数量不可随时间倒退。"
         ),
         "special_paper_stock_conflict": (
-            "此变更与已保存特殊选票观察所核算的库存有冲突。"
-            "请核对相关接收记录、储备及观察版本。"
+            "此变更与已保存特殊选票观察所核算的库存有冲突。请核对相关接收记录、储备及观察版本。"
         ),
         "special_paper_not_found": "找不到所选特殊选票观察或修订版本，请刷新后再选择。",
         "stock_snapshot_incomplete": (
@@ -184,6 +190,11 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         "special_estimated_box_papers_quantity": "库存推算票箱选票数量",
     },
     "en": {
+        "special_sources_changed": (
+            "Received stock changed while you were editing. Your counts and selected basis "
+            "are retained. Compare the source changes; to reload current series, choose New "
+            "observation and explicitly discard this draft."
+        ),
         "special_title": "Special ballot stock accounting",
         "special_intro": (
             "Record cumulative special-paper quantities for each received ballot series. "
@@ -258,8 +269,9 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
             "Report every received ballot series once, using its exact name."
         ),
         "special_paper_issuance_regression": (
-            "This change would reduce ordinary issuance below the basis required by saved "
-            "special-paper accounting. Check P(12) balances and saved observations before amending."
+            "Cumulative replacement or tendered issues conflict with another saved observation. "
+            "Compare the original times and counts in earlier, same-time and later observations; "
+            "cumulative issues cannot decrease over time."
         ),
         "special_paper_stock_conflict": (
             "This change conflicts with stock already accounted for in saved special-paper "
