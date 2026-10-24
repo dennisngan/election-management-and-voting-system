@@ -13,6 +13,7 @@ from PySide6.QtNetwork import (
     QSslConfiguration,
 )
 
+from election.desktop.accounting import AccountingController
 from election.desktop.allocations import AllocationController
 from election.desktop.boxes import BoxesController
 from election.desktop.complaint_categories import ComplaintCategoriesController
@@ -85,6 +86,9 @@ class DesktopController(QObject):
         self._boxes = BoxesController(
             self._authorized_request, self, download=self._authorized_download
         )
+        self._accounting = AccountingController(
+            self._authorized_request, self, download=self._authorized_download
+        )
         self._fallback = FallbackController(self._authorized_request, self)
         self._turnout = TurnoutController(
             self._authorized_request, self, download=self._authorized_download
@@ -97,7 +101,9 @@ class DesktopController(QObject):
             self._authorized_request,
             self,
             selection_guard=lambda: bool(
-                self._polling.property("state")["dirty"]
+                self._accounting.property("state")["dirty"]
+                or self._accounting.property("state")["busy"]
+                or self._polling.property("state")["dirty"]
                 or self._polling.property("state")["busy"]
                 or self._stock.property("state")["dirty"]
                 or self._stock.property("state")["busy"]
@@ -123,6 +129,7 @@ class DesktopController(QObject):
                 or self._complaint_periods.property("state")["busy"]
             ),
         )
+        self._accounting.stateChanged.connect(self._workspace.stateChanged.emit)
         self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
         self._stock.stateChanged.connect(self._workspace.stateChanged.emit)
         self._allocations.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -234,8 +241,13 @@ class DesktopController(QObject):
     def complaintPeriods(self) -> ComplaintPeriodsController:
         return self._complaint_periods
 
+    @Property(QObject, constant=True)
+    def accounting(self) -> AccountingController:
+        return self._accounting
+
     def _workspace_changed(self) -> None:
         context = self._workspace.property("state")["selected"]
+        self._accounting.set_context(context)
         self._polling.set_context(context)
         self._stock.set_context(context)
         self._allocations.set_context(context)
@@ -604,6 +616,7 @@ class DesktopController(QObject):
             self._staff.refresh()
             self._complaint_categories.refresh()
             self._workspace.refresh()
+            self._accounting.refresh()
             self._polling.refresh()
             self._stock.refresh()
             self._allocations.refresh()
@@ -641,6 +654,7 @@ class DesktopController(QObject):
         self._staff.reset()
         self._complaint_categories.reset()
         self._workspace.reset()
+        self._accounting.reset()
         self._polling.reset()
         self._stock.reset()
         self._allocations.reset()

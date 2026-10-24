@@ -1,5 +1,6 @@
 """Staff-facing interface labels for the three supported desktop languages."""
 
+from election.desktop.accounting_translations import ACCOUNTING_TRANSLATIONS
 from election.desktop.allocation_translations import ALLOCATION_TRANSLATIONS
 from election.desktop.complaint_period_translations import COMPLAINT_PERIOD_TRANSLATIONS
 from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
@@ -1956,3 +1957,6 @@ for language, fallback_labels in FALLBACK_TRANSLATIONS.items():
 
 for language, fallback_turnout_labels in FALLBACK_TURNOUT_TRANSLATIONS.items():
     TRANSLATIONS[language].update(fallback_turnout_labels)
+
+for language, accounting_labels in ACCOUNTING_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(accounting_labels)
