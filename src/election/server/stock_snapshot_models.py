@@ -5,9 +5,39 @@ from typing import Any
 
 from sqlalchemy import JSON, CheckConstraint, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.mysql import DATETIME
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
 
 from election.server.db import Base
+
+
+def _quantity_json(value: Any, *, encode: bool, key: str = "") -> Any:
+    if isinstance(value, dict):
+        return {name: _quantity_json(item, encode=encode, key=name) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_quantity_json(item, encode=encode) for item in value]
+    if key == "quantity" or key.endswith("_quantity"):
+        if encode and type(value) is int:
+            return str(value)
+        if not encode and isinstance(value, str) and value.isascii() and value.isdecimal():
+            return int(value)
+    # Legacy numeric integers stay exact. A previously rounded float cannot be
+    # reconstructed, so never turn it into an invented integer.
+    return value
+
+
+class SnapshotQuantityJSON(TypeDecorator[dict[str, Any]]):
+    """Store exact quantities as decimal strings without changing public DTO types."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
+        return _quantity_json(value, encode=True)
+
+    def process_result_value(self, value: Any, dialect: Dialect) -> Any:
+        return _quantity_json(value, encode=False)
 
 
 class StockSnapshot(Base):
@@ -44,4 +74,4 @@ class StockSnapshotRevision(Base):
         ForeignKey("accounts.id", name="fk_stock_snapshot_revisions_actor_id")
     )
     reason: Mapped[str] = mapped_column(String(1000))
-    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    data: Mapped[dict[str, Any]] = mapped_column(SnapshotQuantityJSON)

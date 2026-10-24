@@ -23,6 +23,21 @@ QUANTITIES = (
 )
 
 
+def _qt_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Copy the Qt view without overflowing QVariant's signed 64-bit integers."""
+
+    def copied(value: Any) -> Any:
+        if type(value) is int and not -(2**63) <= value < 2**63:
+            return str(value)
+        if isinstance(value, dict):
+            return {key: copied(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [copied(item) for item in value]
+        return deepcopy(value)
+
+    return {key: copied(value) for key, value in state.items()}
+
+
 def display_totals(snapshot: dict[str, Any]) -> dict[str, str]:
     return {
         key.removesuffix("_quantity") + "_display": "—"
@@ -63,7 +78,7 @@ class StockSnapshotsController(QObject):
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return deepcopy(self._state)
+        return _qt_state(self._state)
 
     def reset(self) -> None:
         self._generation += 1
