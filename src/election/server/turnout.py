@@ -63,8 +63,6 @@ class TurnoutDraft(TurnoutCommand):
             if (any(value is None for value in recovery)
                     or any(value is not None for value in sources)):
                 raise ValueError("Select the confirmed recovery revision")
-            if self.supplied_hourly is not None or self.supplied_cumulative is not None:
-                raise ValueError("Recovery uses the confirmed external cumulative total")
         elif any(value is not None for value in recovery):
             raise ValueError("Recovery identifiers require recovery mode")
         if self.mode == "fallback":
@@ -398,6 +396,7 @@ def turnout_router(
                     provenance, source_basis = recovery_period_basis(
                         db, station_id, schedule, index, data.fallback_recovery_id,
                         data.fallback_recovery_revision, predecessor,
+                        data.supplied_hourly, data.supplied_cumulative,
                     )
                 else:
                     assert data.fallback_activation_id is not None
@@ -481,7 +480,7 @@ def turnout_router(
                 assert baseline is not None
                 hourly = (
                     row.source_basis.get(
-                        "recovered_cumulative_quantity",
+                        "selected_cumulative_quantity",
                         row.source_basis["stock_derived_cumulative_quantity"],
                     ) - baseline
                     if row.source_basis is not None else row.supplied_hourly
