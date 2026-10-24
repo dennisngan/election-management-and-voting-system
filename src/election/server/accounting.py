@@ -19,7 +19,7 @@ from election.server.polling import as_utc
 from election.server.security import verify_password
 from election.server.special_paper_inventory import current_special_papers
 from election.server.special_papers import special_paper_basis_current, special_paper_view
-from election.server.stock_inventory import current_allocations, current_returns
+from election.server.stock_inventory import current_allocations, current_returns, received_ranges
 from election.server.stock_snapshot_models import StockSnapshot, StockSnapshotRevision
 from election.server.stock_snapshots import snapshot_view
 from election.server.turnout import approved_prefix, current_records, turnout_record_view
@@ -122,23 +122,30 @@ def source_data(
         .limit(1)
         .with_for_update()
     )
-    # A later cumulative observation requires a new matching special-paper basis.
-    # Movement between P(12) and the special observation also needs a new P(12).
+    # A current preparation must cover all recorded stock activity, including
+    # movement after the selected observation. Locking reads also avoid approval
+    # validating receipt heads from authentication's older MySQL RR snapshot.
     allocations = [
         {"allocation_id": row.allocation_id, "revision": row.revision}
         for row in current_allocations(db, station_id, lock=True)
-        if row.event_at <= special.event_at
     ]
     returns = [
         {"return_id": row.return_id, "revision": row.revision}
         for row in current_returns(db, station_id, lock=True)
-        if row.event_at <= special.event_at
     ]
+    receipts = {
+        (line.receipt_id, line.receipt_revision)
+        for line in received_ranges(db, station_id, lock=True)
+    }
+    expected_receipts = {
+        (source["receipt_id"], source["revision"]) for source in special.data["receipt_basis"]
+    }
     if (
         latest_stock is None
         or latest_stock.id != stock.id
         or allocations != stock.data["allocation_basis"]
         or returns != stock.data["return_basis"]
+        or receipts != expected_receipts
     ):
         raise HTTPException(409, detail={"code": "accounting_source_stale"})
     observed = special.data
@@ -240,6 +247,26 @@ def sources_current(db: Session, row: AccountingRecord, election_id: int) -> boo
     return current == row.data
 
 
+def eligible_special_source(
+    db: Session,
+    station_id: int,
+    election_id: int,
+    special_id: int,
+    revision: int,
+) -> bool:
+    selection = AccountingDraft(
+        request_id=UUID(int=0),
+        expected_revision=0,
+        special_paper_id=special_id,
+        special_paper_revision=revision,
+    )
+    try:
+        source_data(db, station_id, election_id, selection)
+    except HTTPException:
+        return False
+    return True
+
+
 def record_view(db: Session, row: AccountingRecord) -> dict[str, Any]:
     from election.server.configuration_models import Constituency
     from election.server.station_models import PollingStation
@@ -303,7 +330,13 @@ def accounting_router(
         special_options = [
             {
                 **special_paper_view(row, station_id),
-                "source_current": special_paper_basis_current(db, station_id, row),
+                "source_current": eligible_special_source(
+                    db,
+                    station_id,
+                    scope["election"]["id"],
+                    row.snapshot_id,
+                    row.revision,
+                ),
             }
             for row in current_special_papers(db, station_id, lock=True)
         ]
