@@ -308,7 +308,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_approved": "主管已確認此投票人數版本。",
         "turnout_amended": "已建立修訂草稿；原有版本及確認已保留，請核對後重新提交。",
         "turnout_newer_revision": (
-            "已有較新的投票人數版本。您審閱的版本及未儲存內容已保留，請重新載入並比較。"
+            "伺服器資料或確認狀態已有變更。您審閱的版本及未儲存內容已保留，請重新載入並比較。"
         ),
         "external_manual": "人工提供的外部數字",
         "turnout_title": "正常模式投票人數",
@@ -341,7 +341,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_live_state": "伺服器目前狀態（與審閱版本分開）",
         "turnout_approval_valid": "此時段仍屬連續有效的主管確認範圍。",
         "turnout_review_invalid": (
-            "原確認已保留，但其前一時段基礎已改變，現須重新覆核。請建立有原因的修訂草稿並重新提交。"
+            "原確認已保留，但其來源或前一時段基礎已變更，現須重新覆核。請建立有原因的修訂草稿並重新提交。"
         ),
         "turnout_not_approved": "此時段目前未納入有效確認範圍。",
         "turnout_supplied_hourly": "外部提供的本時段投票人數",
@@ -889,7 +889,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_approved": "主管已确认此投票人数版本。",
         "turnout_amended": "已建立修订草稿；原有版本及确认已保留，请核对后重新提交。",
         "turnout_newer_revision": (
-            "已有较新的投票人数版本。您审阅的版本及未保存内容已保留，请重新载入并比较。"
+            "服务器资料或确认状态已有变更。您审阅的版本及未保存内容已保留，请重新载入并比较。"
         ),
         "external_manual": "人工提供的外部数字",
         "turnout_title": "正常模式投票人数",
@@ -922,7 +922,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_live_state": "服务器当前状态（与审阅版本分开）",
         "turnout_approval_valid": "此时段仍属于连续有效的主管确认范围。",
         "turnout_review_invalid": (
-            "原确认已保留，但其前一时段基础已更改，现须重新复核。请建立有原因的修订草稿并重新提交。"
+            "原确认已保留，但其来源或前一时段基础已变更，现须重新复核。请建立有原因的修订草稿并重新提交。"
         ),
         "turnout_not_approved": "此时段当前未纳入有效确认范围。",
         "turnout_supplied_hourly": "外部提供的本时段投票人数",
@@ -1551,7 +1551,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "review and submit the new draft."
         ),
         "turnout_newer_revision": (
-            "A newer turnout revision is available. Your reviewed version and unsaved input "
+            "Server data or approval status has changed. Your reviewed version and unsaved input "
             "are retained. Reload and compare before continuing."
         ),
         "external_manual": "Manually supplied external figures",
@@ -1590,8 +1590,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_live_state": "Current server status, separate from the reviewed revision",
         "turnout_approval_valid": "This period remains within continuous valid approved coverage.",
         "turnout_review_invalid": (
-            "The earlier approval is retained, but its preceding-period basis has changed. "
-            "Create a reasoned amendment and submit it for renewed review."
+            "The earlier approval is retained, but its source or preceding-period basis has "
+            "changed. Create a reasoned amendment and submit it for renewed review."
         ),
         "turnout_not_approved": "This period is not currently within valid approved coverage.",
         "turnout_supplied_hourly": "Externally supplied turnout for this period",
