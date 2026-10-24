@@ -16,10 +16,14 @@ received-stock pools, retained corrections and translated receipt statements. In
 also implement normal turnout, complaint cases/statistics, queue observations and box handover.
 Ticket 08 adds ordinary-stock allocations to issuance counters, shared ownership guards and
 P(14) current/historical statements. Ticket 09 adds remaining-stock snapshots, unissued counter
-returns and selected P(12) stock-derived issuance statements. **13 of 27 tickets are complete:
-01–09, 11, 13, 14 and 15.** [Ticket 09 closure](docs/evidence/ticket-09/README.md) records the
-latest completed frozen `36562f5` full suite: **1,006 passed, 23 warnings, zero failures in
-1982.24 seconds**, exit 0, with actual Computer and corrected PDF/CSV evidence.
+returns and selected P(12) stock-derived issuance statements. Ticket 10 adds replacement, tendered
+and retrieved-unused paper accounting with frozen revisions and three-language statements.
+**14 of 27 tickets are complete: 01–11, 13, 14 and 15.**
+[Ticket 10 closure](docs/evidence/ticket-10/README.md) records the latest frozen `94eb11f` full suite:
+**1,042 passed, 25 warnings, zero failures in 2200.48 seconds**, exit 0, with 78 retained Computer
+capture pairs, nine native exports and 15 complete PDF pages. Known runtime diagnostics and earlier
+failed-run/provenance limits remain visible. [Ticket 09 closure](docs/evidence/ticket-09/README.md)
+retains its earlier 1,006-pass checkpoint and corrected PDF/CSV evidence.
 [Ticket 15 closure](docs/evidence/ticket-15/README.md) retains its earlier frozen
 `b8cd10b` full suite: **884 passed, 21 warnings, zero failures in 1378.11 seconds**, exit 0.
 Its root-operated native evidence has 60 PNG/AX pairs, nine actual exports, thirteen native
