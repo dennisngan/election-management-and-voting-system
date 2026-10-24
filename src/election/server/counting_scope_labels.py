@@ -7,6 +7,7 @@ from election.server.stock_reports import ReportLocale
 _SCOPE: dict[ReportLocale, dict[str, str]] = {
     "tc": {
         "title": "點票範圍及已接收票箱來源",
+        "scope_submitted_status": "已提交",
         "reference": "點票範圍識別資料",
         "scope_id": "點票範圍記錄編號",
         "revision_id": "點票範圍版本記錄編號",
@@ -54,6 +55,7 @@ _SCOPE: dict[ReportLocale, dict[str, str]] = {
     },
     "sc": {
         "title": "点票范围及已接收票箱来源",
+        "scope_submitted_status": "已提交",
         "reference": "点票范围识别资料",
         "scope_id": "点票范围记录编号",
         "revision_id": "点票范围版本记录编号",
@@ -101,6 +103,7 @@ _SCOPE: dict[ReportLocale, dict[str, str]] = {
     },
     "en": {
         "title": "Counting scope and received-box provenance",
+        "scope_submitted_status": "Submitted",
         "reference": "Counting scope reference",
         "scope_id": "Counting scope ID",
         "revision_id": "Scope revision record ID",

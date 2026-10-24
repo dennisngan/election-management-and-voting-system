@@ -18,7 +18,7 @@ from tests.test_counting_scopes_api import database_url as database_url
 
 
 @pytest.mark.parametrize(
-    ("locale", "title", "partial", "missing", "stock_estimate", "observed"),
+    ("locale", "title", "partial", "missing", "stock_estimate", "observed", "status_row"),
     [
         (
             "en",
@@ -28,6 +28,7 @@ from tests.test_counting_scopes_api import database_url as database_url
             "Not recorded",
             "Estimated box papers from stock",
             "Actual observed counted papers",
+            ["Record status", "Submitted"],
         ),
         (
             "tc",
@@ -36,6 +37,7 @@ from tests.test_counting_scopes_api import database_url as database_url
             "尚未記錄",
             "庫存推算票箱選票數量",
             "票箱實際點算數量",
+            ["記錄狀態", "已提交"],
         ),
         (
             "sc",
@@ -44,6 +46,7 @@ from tests.test_counting_scopes_api import database_url as database_url
             "尚未记录",
             "库存推算票箱选票数量",
             "票箱实际点算数量",
+            ["记录状态", "已提交"],
         ),
     ],
 )
@@ -56,6 +59,7 @@ def test_receiver_exports_submitted_scope_without_general_source_station_access(
     missing: str,
     stock_estimate: str,
     observed: str,
+    status_row: list[str],
 ) -> None:
     with counting_setup(admin, database_url) as setup:
         receiver = setup["clients"]["receiveronly"]
@@ -102,7 +106,7 @@ def test_receiver_exports_submitted_scope_without_general_source_station_access(
         assert report["revision"] == 1 and report["locale"] == locale
         assert report["record"] == submitted.json()
         assert report["preview_lines"][0] == title
-        assert report["metadata"]
+        assert status_row in report["metadata"]
         assert all(len(row) == 2 for row in report["metadata"])
         assert report["tables"]
         assert all(table["title"] and table["rows"] for table in report["tables"])
@@ -130,6 +134,7 @@ def test_receiver_exports_submitted_scope_without_general_source_station_access(
         assert csv_response.content.startswith(b"\xef\xbb\xbf")
         rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
         assert rows[0] == [title]
+        assert status_row in rows
         assert [stock_estimate, missing] in rows
         assert [observed, missing] in rows
         assert any(partial in row for row in rows)
@@ -140,6 +145,7 @@ def test_receiver_exports_submitted_scope_without_general_source_station_access(
         pages = PdfReader(BytesIO(pdf.content)).pages
         assert pages
         text = "\n".join(page.extract_text() for page in pages)
+        assert status_row[1] in text.splitlines()
         for expected in (
             title,
             "北區 scope <01> & 保留",
@@ -432,3 +438,67 @@ def test_scope_export_preserves_large_whole_station_reserves_exactly(
         # Detailed P(18) serial chains remain in the associated accounting snapshot,
         # rather than multiplying repeated serial tables in the compact scope statement.
         assert "009007199254740993" not in text
+
+
+def test_draft_scope_keeps_unapproved_p18_submission_status_in_all_report_languages(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with counting_setup(admin, database_url) as setup:
+        source = setup["accounting"]["N1"]
+        counter = setup["clients"]["bothcounting"]
+        amended = counter.put(
+            source["path"],
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 1,
+                "special_paper_id": source["special_papers"]["id"],
+                "special_paper_revision": 1,
+                "notes": "Supplement paper references; retain original approval.",
+                "amendment_reason": "Correct the paper references.",
+            },
+        )
+        assert amended.status_code == 200, amended.text
+        submitted = counter.post(
+            source["path"] + "/submit",
+            json={"request_id": str(uuid4()), "expected_revision": 2},
+        )
+        assert submitted.status_code == 200, submitted.text
+        receiver = setup["clients"]["receiveronly"]
+        path = setup["paths"]["n1_counting_scopes"]
+        saved = receiver.post(
+            path,
+            json=scope_command(
+                setup,
+                accounting_revisions=[{"station_id": setup["stations"]["N1"]["id"], "revision": 2}],
+            ),
+        )
+        assert saved.status_code == 201, saved.text
+        assert saved.json()["count_ready"] is False
+        target = path + f"/{saved.json()['id']}/revisions/1/statement"
+        for locale, status_row, source_status in (
+            (
+                "en",
+                ["Record status", "Draft"],
+                ["Source P(18) status when frozen", "Submitted for review"],
+            ),
+            ("tc", ["記錄狀態", "草稿"], ["凍結時來源 P(18) 狀態", "已提交待確認"]),
+            ("sc", ["记录状态", "草稿"], ["冻结时来源 P(18) 状态", "已提交待确认"]),
+        ):
+            response = receiver.get(target, params={"locale": locale})
+            assert response.status_code == 200
+            report = response.json()
+            assert status_row in report["metadata"]
+            assert source_status in [row for table in report["tables"] for row in table["rows"]]
+            csv_response = receiver.get(target + ".csv", params={"locale": locale})
+            assert csv_response.status_code == 200
+            rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
+            assert status_row in rows and source_status in rows
+            pdf = receiver.get(target + ".pdf", params={"locale": locale})
+            assert pdf.status_code == 200
+            lines = [
+                line
+                for page in PdfReader(BytesIO(pdf.content)).pages
+                for line in page.extract_text().splitlines()
+            ]
+            assert status_row[1] in lines and source_status[1] in lines

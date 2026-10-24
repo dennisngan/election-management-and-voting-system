@@ -73,7 +73,7 @@ def _metadata(report: dict[str, Any]) -> list[list[str]]:
                 "notes",
                 "amendment_reason",
             ),
-            labels,
+            {**labels, "submitted": labels["scope_submitted_status"]},
         ),
         [labels["generated_at"], hong_kong_time(report["generated_at"])],
         [labels["time_basis"], "Asia/Hong_Kong (UTC+08:00)"],
