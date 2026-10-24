@@ -91,6 +91,38 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "external_manual": "人工提供的外部數字",
         "mixed": "外部數字及後備庫存推算",
         "fallback_stock": "後備庫存推算投票人數",
+        "external_reconciled": "恢復後核對的外部數字",
+        "source_basis": "凍結來源基礎",
+        "activation_id": "後備啟用記錄編號",
+        "activation_revision": "後備啟用修訂版本",
+        "activation_event_at": "後備啟用時間（香港時間）",
+        "activation_cumulative_quantity": "啟用時確認累計人數",
+        "activation_context": "啟用來源說明",
+        "activation_approved_at": "啟用確認時間（香港時間）",
+        "activation_approved_by": "啟用確認主管編號",
+        "stock_snapshot_id": "期末 P(12) 快照記錄編號",
+        "stock_snapshot_revision": "期末 P(12) 快照修訂版本",
+        "ordinary_issued_since_activation_quantity": "啟用後普通發票增量",
+        "stock_derived_cumulative_quantity": "庫存推算期末累計人數",
+        "recovered_cumulative_quantity": "恢復後外部累計人數",
+        "reconciliation_difference": "外部與庫存推算差額",
+        "recovery_id": "恢復記錄編號",
+        "recovery_revision": "恢復修訂版本",
+        "recovery_event_at": "恢復事件時間（香港時間）",
+        "recovery_context": "恢復來源說明",
+        "recovery_reason": "恢復核對原因",
+        "recovery_approved_at": "恢復確認時間（香港時間）",
+        "recovery_approved_by": "恢復確認主管編號",
+        "coverage": "來源涵蓋時段",
+        "mode": "來源模式",
+        "normal": "外部提供",
+        "fallback": "後備庫存",
+        "reconciled": "外部核對後",
+        "coverage_start_at": "涵蓋開始（香港時間）",
+        "coverage_end_at": "涵蓋結束（香港時間）",
+        "cumulative_start_quantity": "起始累計人數",
+        "cumulative_end_quantity": "結束累計人數",
+        "hourly_quantity": "時段增量",
         "event_at": "原始事件時間（香港時間）",
         "entered_at": "伺服器記錄時間（香港時間）",
         "actor_id": "記錄職員編號",
@@ -170,6 +202,38 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "external_manual": "人工提供的外部数字",
         "mixed": "外部数字及后备库存推算",
         "fallback_stock": "后备库存推算投票人数",
+        "external_reconciled": "恢复后核对的外部数字",
+        "source_basis": "冻结来源依据",
+        "activation_id": "后备启用记录编号",
+        "activation_revision": "后备启用修订版本",
+        "activation_event_at": "后备启用时间（香港时间）",
+        "activation_cumulative_quantity": "启用时确认累计人数",
+        "activation_context": "启用来源说明",
+        "activation_approved_at": "启用确认时间（香港时间）",
+        "activation_approved_by": "启用确认主管编号",
+        "stock_snapshot_id": "期末 P(12) 快照记录编号",
+        "stock_snapshot_revision": "期末 P(12) 快照修订版本",
+        "ordinary_issued_since_activation_quantity": "启用后普通发票增量",
+        "stock_derived_cumulative_quantity": "库存推算期末累计人数",
+        "recovered_cumulative_quantity": "恢复后外部累计人数",
+        "reconciliation_difference": "外部与库存推算差额",
+        "recovery_id": "恢复记录编号",
+        "recovery_revision": "恢复修订版本",
+        "recovery_event_at": "恢复事件时间（香港时间）",
+        "recovery_context": "恢复来源说明",
+        "recovery_reason": "恢复核对原因",
+        "recovery_approved_at": "恢复确认时间（香港时间）",
+        "recovery_approved_by": "恢复确认主管编号",
+        "coverage": "来源覆盖时段",
+        "mode": "来源模式",
+        "normal": "外部提供",
+        "fallback": "后备库存",
+        "reconciled": "外部核对后",
+        "coverage_start_at": "覆盖开始（香港时间）",
+        "coverage_end_at": "覆盖结束（香港时间）",
+        "cumulative_start_quantity": "起始累计人数",
+        "cumulative_end_quantity": "结束累计人数",
+        "hourly_quantity": "时段增量",
         "event_at": "原始事件时间（香港时间）",
         "entered_at": "服务器记录时间（香港时间）",
         "actor_id": "记录职员编号",
@@ -251,6 +315,38 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "external_manual": "Manually supplied external figures",
         "mixed": "External figures and fallback stock derivation",
         "fallback_stock": "Fallback stock-derived turnout",
+        "external_reconciled": "Reconciled recovered external figures",
+        "source_basis": "Frozen source basis",
+        "activation_id": "Fallback activation ID",
+        "activation_revision": "Fallback activation revision",
+        "activation_event_at": "Fallback activation time (HKT)",
+        "activation_cumulative_quantity": "Confirmed cumulative turnout at activation",
+        "activation_context": "Activation source context",
+        "activation_approved_at": "Activation approval time (HKT)",
+        "activation_approved_by": "Activation approving Supervisor ID",
+        "stock_snapshot_id": "Endpoint P(12) snapshot ID",
+        "stock_snapshot_revision": "Endpoint P(12) snapshot revision",
+        "ordinary_issued_since_activation_quantity": "Ordinary issuance since activation",
+        "stock_derived_cumulative_quantity": "Stock-derived cumulative endpoint",
+        "recovered_cumulative_quantity": "Recovered external cumulative turnout",
+        "reconciliation_difference": "Recovered minus stock-derived difference",
+        "recovery_id": "Recovery ID",
+        "recovery_revision": "Recovery revision",
+        "recovery_event_at": "Recovery event time (HKT)",
+        "recovery_context": "Recovery source context",
+        "recovery_reason": "Recovery reconciliation reason",
+        "recovery_approved_at": "Recovery approval time (HKT)",
+        "recovery_approved_by": "Recovery approving Supervisor ID",
+        "coverage": "Source coverage intervals",
+        "mode": "Source mode",
+        "normal": "External manual",
+        "fallback": "Fallback stock",
+        "reconciled": "Reconciled external",
+        "coverage_start_at": "Coverage starts at (HKT)",
+        "coverage_end_at": "Coverage ends at (HKT)",
+        "cumulative_start_quantity": "Starting cumulative turnout",
+        "cumulative_end_quantity": "Ending cumulative turnout",
+        "hourly_quantity": "Interval increase",
         "event_at": "Original event time (HKT)",
         "entered_at": "Server entry time (HKT)",
         "actor_id": "Recorded by account ID",
@@ -350,6 +446,58 @@ def metadata_rows(report: dict[str, Any]) -> list[list[str]]:
     return [[labels[key], value] for key, value in values]
 
 
+def source_basis_tables(row: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]:
+    basis = row.get("source_basis")
+    if basis is None:
+        return []
+    activation = basis["activation"]
+    values = [
+        ("activation_id", basis["activation_id"]),
+        ("activation_revision", basis["activation_revision"]),
+        ("activation_event_at", activation["event_at"]),
+        ("activation_cumulative_quantity", activation["cumulative_quantity"]),
+        ("activation_context", activation["source_context"]),
+        ("activation_approved_at", activation["approved_at"]),
+        ("activation_approved_by", activation["approved_by"]),
+        ("stock_snapshot_id", basis["stock_snapshot_id"]),
+        ("stock_snapshot_revision", basis["stock_snapshot_revision"]),
+        ("ordinary_issued_since_activation_quantity",
+         basis["ordinary_issued_since_activation_quantity"]),
+        ("stock_derived_cumulative_quantity", basis["stock_derived_cumulative_quantity"]),
+    ]
+    if "recovery_id" in basis:
+        recovery = basis["recovery"]
+        values += [
+            ("recovered_cumulative_quantity", basis["recovered_cumulative_quantity"]),
+            ("reconciliation_difference", basis["reconciliation_difference"]),
+            ("recovery_id", basis["recovery_id"]),
+            ("recovery_revision", basis["recovery_revision"]),
+            ("recovery_event_at", recovery["event_at"]),
+            ("recovery_context", recovery["source_context"]),
+            ("recovery_reason", recovery["reason"]),
+            ("recovery_approved_at", recovery["approved_at"]),
+            ("recovery_approved_by", recovery["approved_by"]),
+        ]
+    identity = (labels["period_index"] + " " + str(row["period_index"]) + " · "
+                + labels["revision"] + " " + str(row["revision"]))
+    details = [[labels["field"] + "\n" + labels["source_basis"] + " · " + identity,
+                labels["value"]]]
+    for key, value in values:
+        display = hong_kong_time(value) if key.endswith("_at") and value else amount(value, labels)
+        details.append([labels[key], display])
+    coverage = [[labels["mode"] + "\n" + labels["coverage"] + " · " + identity,
+                 *[labels[key] for key in ("coverage_start_at", "coverage_end_at",
+                   "cumulative_start_quantity", "cumulative_end_quantity", "hourly_quantity")]]]
+    for segment in basis["coverage"]:
+        coverage.append([
+            labels[segment["mode"]], hong_kong_time(segment["start_at"]),
+            hong_kong_time(segment["end_at"]), str(segment["cumulative_start_quantity"]),
+            str(segment["cumulative_end_quantity"]), str(segment["hourly_quantity"]),
+        ])
+    return [HistoryTable("", details, (0.40, 0.60)),
+            HistoryTable("", coverage, (0.11, 0.22, 0.22, 0.15, 0.15, 0.15), split_in_row=False)]
+
+
 def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
     labels = report["labels"]
     overview = [
@@ -445,6 +593,7 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
             )
             details.append([labels[key], text])
         sections.append(HistoryTable("", details, (0.32, 0.68)))
+        sections.extend(source_basis_tables(row, labels))
     return sections
 
 
