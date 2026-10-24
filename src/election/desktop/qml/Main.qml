@@ -27,7 +27,7 @@ ApplicationWindow {
     readonly property color line: "#e1e7f0"
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
-    readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "counterReturns", "turnout", "complaints",
+    readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "specialPapers", "counterReturns", "turnout", "complaints",
         "complaintPeriods", "queue", "boxes"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
@@ -357,6 +357,30 @@ ApplicationWindow {
                         window.currentPage = "stockSnapshots"
                         controller.workspace.open()
                         controller.stockSnapshots.open()
+                    }
+                }
+                Button {
+                    id: specialPapersNavigation
+                    objectName: "specialPapersNavigation"
+                    text: window.t("special_title"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "specialPapers"
+                    Material.background: window.currentPage === "specialPapers" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: specialPapersNavigation.text
+                        textFormat: Text.PlainText
+                        font: specialPapersNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "specialPapers"
+                        controller.workspace.open()
+                        controller.specialPapers.open()
                     }
                 }
                 Button {
@@ -767,6 +791,14 @@ ApplicationWindow {
                         visible: window.currentPage === "stockSnapshots"
                         Layout.fillWidth: true
                         snapshots: controller.stockSnapshots
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    SpecialPapersPage {
+                        visible: window.currentPage === "specialPapers"
+                        Layout.fillWidth: true
+                        papers: controller.specialPapers
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)
