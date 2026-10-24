@@ -24,17 +24,21 @@ class BoxClock:
         return self.value
 
 
-def box_stations(admin: TestClient, *, activate: bool = True) -> dict:
+def box_stations(
+    admin: TestClient, *, activate: bool = True, candidates_per_constituency: int = 1,
+) -> dict:
     election = create_election(admin)
     rows = {}
     for code, station_codes in (("N", ("N1", "N2", "N3")), ("S", ("S1",))):
         constituency = create_constituency(admin, election["id"], code)
         base = f"/api/elections/{election['id']}/constituencies/{constituency['id']}"
-        candidate = admin.post(
-            base + "/candidates",
-            json={"name": "票箱測試候選人", "ballot_number": 1, "request_id": str(uuid4())},
-        )
-        assert candidate.status_code == 201
+        for ballot_number in range(1, candidates_per_constituency + 1):
+            candidate = admin.post(
+                base + "/candidates",
+                json={"name": "票箱測試候選人", "ballot_number": ballot_number,
+                      "request_id": str(uuid4())},
+            )
+            assert candidate.status_code == 201
         for station_code in station_codes:
             payload = {
                 "name": "票箱測試站 " + station_code,

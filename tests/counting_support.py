@@ -148,13 +148,15 @@ def _prepare_source_accounting(
 
 
 @contextmanager
-def counting_setup(admin: TestClient, database_url: str) -> Iterator[dict]:
+def counting_setup(
+    admin: TestClient, database_url: str, *, candidates_per_constituency: int = 1,
+) -> Iterator[dict]:
     """Provide a live single-election received-box and approved-source P(18) context.
 
     All setup writes use the same authenticated public API journeys as staff clients.
     The returned paths and IDs are intended for Ticket 17 API and Qt acceptance tests.
     """
-    stations = box_stations(admin)
+    stations = box_stations(admin, candidates_per_constituency=candidates_per_constituency)
     clock = BoxClock()
     station_ids = [stations[code]["id"] for code in ("N1", "N2", "N3", "S1")]
     with ExitStack() as stack:
