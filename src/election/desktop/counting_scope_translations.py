@@ -67,6 +67,7 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_blocker_source_accounting_unapproved": "來源 P(18) 帳目尚未核准。",
         "counting_scope_blocker_scope_basis_stale": "票箱或來源帳目已變更，現有依據已失效。",
         "scope_reason_required": "已提交點票範圍的更正必須說明原因。",
+        "scope_state_conflict": "另一位職員已變更此點票範圍的提交狀態；請重新載入後再繼續。",
         "scope_reference_conflict": "此點票站已使用該點票範圍編號。",
         "box_already_in_scope": "所選票箱已加入另一個點票範圍。",
         "scope_membership_conflict": "另一項操作已把所選票箱加入其他點票範圍；請重新整理。",
@@ -142,6 +143,7 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_blocker_source_accounting_unapproved": "来源 P(18) 账目尚未核准。",
         "counting_scope_blocker_scope_basis_stale": "票箱或来源账目已变更，现有依据已失效。",
         "scope_reason_required": "已提交点票范围的更正必须说明原因。",
+        "scope_state_conflict": "另一位职员已更改此点票范围的提交状态；请重新加载后再继续。",
         "scope_reference_conflict": "此点票站已使用该点票范围编号。",
         "box_already_in_scope": "所选票箱已加入另一个点票范围。",
         "scope_membership_conflict": "另一项操作已把所选票箱加入其他点票范围；请刷新。",
@@ -238,6 +240,10 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
             "A box or source accounting record changed; this scope basis is stale."
         ),
         "scope_reason_required": "A reason is required to amend a submitted counting scope.",
+        "scope_state_conflict": (
+            "Another staff member changed this scope’s submission state. "
+            "Reload it before continuing."
+        ),
         "scope_reference_conflict": (
             "This counting scope reference is already used at this station."
         ),
