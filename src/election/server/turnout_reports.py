@@ -20,7 +20,7 @@ from election.server.turnout import (
     period_count,
     turnout_record_view,
 )
-from election.server.turnout_basis import locked_schedule
+from election.server.turnout_basis import locked_schedule, turnout_scope
 from election.server.turnout_models import TurnoutRecord
 
 type ReportLocale = Literal["tc", "sc", "en"]
@@ -497,10 +497,11 @@ def turnout_reports_router(
         index: int | None = None,
         revision: int | None = None,
     ) -> dict[str, Any]:
+        turnout_scope(db, actor, station_id)
         station, constituency, election = station_scope(db, actor, station_id)
         schedule = locked_schedule(db, election.id)
         records = current_records(db, station_id)
-        prefix, valid = approved_prefix(records, schedule)
+        prefix, valid = approved_prefix(records, schedule, db)
         if index is None:
             rows = [records[key] for key in sorted(records)]
         else:

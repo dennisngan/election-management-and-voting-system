@@ -4,11 +4,11 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Annotated, Any, NoReturn
+from typing import Annotated, Any, Literal, NoReturn
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,14 @@ from election.server.polling import as_utc, station_scope
 from election.server.reporting_periods import period_bounds as configured_period_bounds
 from election.server.reporting_periods import period_count as period_count
 from election.server.security import verify_password
-from election.server.turnout_basis import locked_schedule
+from election.server.turnout_basis import (
+    FallbackSelection,
+    fallback_period_basis,
+    locked_schedule,
+    mode_basis_required,
+    turnout_basis_current,
+    turnout_scope,
+)
 from election.server.turnout_models import TurnoutRecord, TurnoutRequest
 
 MAX_TOTAL = 9223372036854775807
@@ -36,6 +43,25 @@ class TurnoutDraft(TurnoutCommand):
     supplied_cumulative: int | None = Field(default=None, strict=True, ge=0, le=MAX_TOTAL)
     source_context: str = Field(default="", max_length=2000)
     event_at: AwareDatetime | None = None
+
+    mode: Literal["normal", "fallback"] = "normal"
+    fallback_activation_id: int | None = Field(default=None, strict=True, gt=0)
+    fallback_activation_revision: int | None = Field(default=None, strict=True, ge=1)
+    stock_snapshot_id: int | None = Field(default=None, strict=True, gt=0)
+    stock_snapshot_revision: int | None = Field(default=None, strict=True, ge=1)
+
+    @model_validator(mode="after")
+    def consistent_source_selection(self) -> TurnoutDraft:
+        sources = (self.fallback_activation_id, self.fallback_activation_revision,
+                   self.stock_snapshot_id, self.stock_snapshot_revision)
+        if self.mode == "fallback":
+            if any(value is None for value in sources):
+                raise ValueError("Select the confirmed activation and endpoint P(12) revision")
+            if self.supplied_hourly is not None or self.supplied_cumulative is not None:
+                raise ValueError("Fallback turnout is calculated from ordinary stock")
+        elif any(value is not None for value in sources):
+            raise ValueError("Normal external turnout does not accept fallback source identifiers")
+        return self
 
     @field_validator("event_at")
     @classmethod
@@ -71,7 +97,7 @@ def period_bounds(schedule: ElectionSchedule, index: int) -> tuple[datetime, dat
 
 
 def turnout_record_view(row: TurnoutRecord) -> dict[str, Any]:
-    return {
+    result: dict[str, Any] = {
         "id": row.id,
         "station_id": row.station_id,
         "period_index": row.period_index,
@@ -79,7 +105,7 @@ def turnout_record_view(row: TurnoutRecord) -> dict[str, Any]:
         "schedule_revision": row.schedule_revision,
         "start_at": as_utc(row.start_at),
         "end_at": as_utc(row.end_at),
-        "provenance": "external_manual",
+        "provenance": row.provenance,
         "supplied_hourly": row.supplied_hourly,
         "supplied_cumulative": row.supplied_cumulative,
         "source_context": row.source_context,
@@ -99,6 +125,10 @@ def turnout_record_view(row: TurnoutRecord) -> dict[str, Any]:
         "basis_predecessor_revision": row.basis_predecessor_revision,
     }
 
+    if row.source_basis is not None:
+        result["source_basis"] = row.source_basis
+    return result
+
 
 def current_records(db: Session, station_id: int) -> dict[int, TurnoutRecord]:
     rows = db.scalars(
@@ -112,7 +142,7 @@ def current_records(db: Session, station_id: int) -> dict[int, TurnoutRecord]:
 
 
 def approved_prefix(
-    records: dict[int, TurnoutRecord], schedule: ElectionSchedule
+    records: dict[int, TurnoutRecord], schedule: ElectionSchedule, db: Session
 ) -> tuple[dict[str, Any], set[int]]:
     prefix: dict[str, Any] = {
         "periods": 0,
@@ -138,6 +168,7 @@ def approved_prefix(
             or row.derived_hourly is None
             or row.derived_cumulative_end is None
             or row.derived_cumulative_end != cumulative + row.derived_hourly
+            or not turnout_basis_current(db, row, schedule, predecessor)
         ):
             break
         valid.add(row.id)
@@ -163,12 +194,13 @@ def turnout_snapshot(
 ) -> dict[str, Any]:
     if offset < 0 or not 1 <= limit <= 1000:
         invalid()
+    turnout_scope(db, actor, station_id)
     station, constituency, election = station_scope(db, actor, station_id)
     # Every turnout write takes the schedule lock before touching record history.
     # Using it for reads also avoids a Station→Schedule inversion with activation.
     schedule = locked_schedule(db, election.id)
     records = current_records(db, station_id)
-    prefix, valid = approved_prefix(records, schedule)
+    prefix, valid = approved_prefix(records, schedule, db)
     count = period_count(schedule)
     items = []
     for index in range(offset + 1, min(offset + limit, count) + 1):
@@ -214,7 +246,8 @@ def validate_content(row: TurnoutRecord, now: datetime, *, complete: bool) -> No
     if row.event_at is not None and row.event_at > now:
         invalid()
     if complete and (
-        (row.supplied_hourly is None and row.supplied_cumulative is None)
+        (row.source_basis is None and row.supplied_hourly is None
+         and row.supplied_cumulative is None)
         or not row.source_context.strip()
         or row.event_at is None
         or row.event_at < row.end_at
@@ -283,7 +316,8 @@ def turnout_router(
         role = "supervisor" if action == "approve" else "polling_officer"
         if actor.role != role:
             raise HTTPException(403, detail={"code": role + "_required"})
-        _, constituency, election = station_scope(db, actor, station_id, write=True)
+        turnout_scope(db, actor, station_id, writable=True)
+        _, constituency, election = station_scope(db, actor, station_id)
         if isinstance(data, TurnoutApproval):
             # Reconfirm the current credential even for a cached approval outcome.
             password_hash = db.scalar(
@@ -291,6 +325,12 @@ def turnout_router(
             )
             if not verify_password(password_hash, data.password):
                 raise HTTPException(401, detail={"code": "invalid_credentials"})
+        command_data = data.model_dump(mode="json", exclude={"request_id", "password"})
+        if isinstance(data, TurnoutDraft) and data.mode == "normal":
+            # Preserve identities issued by the normal-only version across this migration.
+            for key in ("mode", "fallback_activation_id", "fallback_activation_revision",
+                        "stock_snapshot_id", "stock_snapshot_revision"):
+                command_data.pop(key, None)
         digest = hashlib.sha256(
             json.dumps(
                 {
@@ -298,7 +338,7 @@ def turnout_router(
                     "period_index": index,
                     "actor_id": actor.id,
                     "action": action,
-                    "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
+                    "data": command_data,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -332,6 +372,26 @@ def turnout_router(
                     invalid()
             elif current and current.status != "draft":
                 raise HTTPException(409, detail={"code": "turnout_state_conflict"})
+            provenance, source_basis = "external_manual", None
+            if data.mode == "fallback":
+                _, valid = approved_prefix(records, schedule, db)
+                predecessor = records.get(index - 1) if index > 1 else None
+                if index > 1 and (predecessor is None or predecessor.id not in valid):
+                    raise HTTPException(409, detail={"code": "turnout_previous_period_required"})
+                assert data.fallback_activation_id is not None
+                assert data.fallback_activation_revision is not None
+                assert data.stock_snapshot_id is not None
+                assert data.stock_snapshot_revision is not None
+                provenance, source_basis = fallback_period_basis(
+                    db, station_id, schedule, index,
+                    FallbackSelection(
+                        data.fallback_activation_id, data.fallback_activation_revision,
+                        data.stock_snapshot_id, data.stock_snapshot_revision,
+                    ),
+                    predecessor,
+                )
+            elif mode_basis_required(db, station_id, start, end):
+                raise HTTPException(409, detail={"code": "fallback_source_required"})
             row = TurnoutRecord(
                 station_id=station_id,
                 period_index=index,
@@ -339,6 +399,7 @@ def turnout_router(
                 schedule_revision=schedule.revision,
                 start_at=start,
                 end_at=end,
+                provenance=provenance, source_basis=source_basis,
                 supplied_hourly=data.supplied_hourly,
                 supplied_cumulative=data.supplied_cumulative,
                 source_context=data.source_context,
@@ -368,26 +429,38 @@ def turnout_router(
             if not current:
                 raise HTTPException(409, detail={"code": "turnout_state_conflict"})
             if current.status == "approved" and action == "approve":
-                _, valid = approved_prefix(records, schedule)
+                _, valid = approved_prefix(records, schedule, db)
                 if current.id not in valid:
                     raise HTTPException(409, detail={"code": "turnout_review_required"})
             if current.status != ("submitted" if action == "approve" else "draft"):
                 raise HTTPException(409, detail={"code": "turnout_state_conflict"})
             row = current
             validate_content(row, now, complete=True)
+            if row.source_basis is not None:
+                _, valid = approved_prefix(records, schedule, db)
+                predecessor = records.get(index - 1) if index > 1 else None
+                if index > 1 and (predecessor is None or predecessor.id not in valid):
+                    raise HTTPException(409, detail={"code": "turnout_previous_period_required"})
+                if not turnout_basis_current(db, row, schedule, predecessor):
+                    raise HTTPException(409, detail={"code": "turnout_review_required"})
+            elif mode_basis_required(db, station_id, row.start_at, row.end_at):
+                raise HTTPException(409, detail={"code": "fallback_source_required"})
             if action == "approve":
                 if row.schedule_revision != schedule.revision or (row.start_at, row.end_at) != (
                     start,
                     end,
                 ):
                     raise HTTPException(409, detail={"code": "turnout_review_required"})
-                _, valid = approved_prefix(records, schedule)
+                _, valid = approved_prefix(records, schedule, db)
                 predecessor = records.get(index - 1) if index > 1 else None
                 if index > 1 and (not predecessor or predecessor.id not in valid):
                     raise HTTPException(409, detail={"code": "turnout_previous_period_required"})
                 baseline = predecessor.derived_cumulative_end if predecessor else 0
                 assert baseline is not None
-                hourly = row.supplied_hourly
+                hourly = (
+                    row.source_basis["stock_derived_cumulative_quantity"] - baseline
+                    if row.source_basis is not None else row.supplied_hourly
+                )
                 if hourly is None:
                     assert row.supplied_cumulative is not None
                     hourly = row.supplied_cumulative - baseline
@@ -428,7 +501,10 @@ def turnout_router(
                     "election_id": election.id,
                     "constituency_id": constituency.id,
                     "station_id": station_id,
-                    "record": result,
+                    "record": {key: value for key, value in result.items()
+                               if key != "source_basis"},
+                    **({"source_basis_record_id": row.id, "source_basis_revision": row.revision}
+                       if row.source_basis is not None else {}),
                 },
             )
         )

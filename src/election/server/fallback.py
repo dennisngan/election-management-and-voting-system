@@ -19,7 +19,12 @@ from election.server.security import verify_password
 from election.server.stock import stock_write
 from election.server.stock_serials import MAX_STOCK_QUANTITY
 from election.server.stock_time import StockEventTime
-from election.server.turnout_basis import locked_schedule, stock_snapshot_basis, turnout_scope
+from election.server.turnout_basis import (
+    active_fallback_at,
+    locked_schedule,
+    stock_snapshot_basis,
+    turnout_scope,
+)
 
 
 class FallbackCommand(BaseModel):
@@ -107,8 +112,8 @@ def fallback_router(
     def collection(station_id: int, db: Database, actor: Ready) -> dict[str, Any]:
         scope = turnout_scope(db, actor, station_id)
         rows = fallback_rows(db, station_id)
-        active = next((head.id for head, _ in reversed(rows)
-                       if head.kind == "activation" and head.approved_revision is not None), None)
+        selected = active_fallback_at(db, station_id, timestamp())
+        active = selected[0].id if selected is not None else None
         return {
             "scope": scope, "items": [fallback_view(head, row) for head, row in rows],
             "mode": "fallback" if active is not None else "normal", "active_activation_id": active,

@@ -8,9 +8,11 @@ from fastapi.testclient import TestClient
 
 from tests.stock_support import stock_payload
 from tests.turnout_support import (
+    READY_PASSWORD,
     TurnoutClock,
     approve_period,
     submit_period,
+    turnout_command,
     turnout_scope,
     turnout_staff,
 )
@@ -102,3 +104,26 @@ def fallback_setup(admin: TestClient, database_url: str) -> Iterator[dict]:
                 ),
             },
         }
+
+
+def confirm_fallback_activation(setup: dict) -> dict:
+    """Confirm the supplied activation through the assigned staff's public API."""
+    created = setup["officer"].post(setup["path"], json=setup["command"])
+    assert created.status_code == 201
+    activation = created.json()
+    assert activation["revision"] == 1 and activation["status"] == "draft"
+    assert activation["cumulative_quantity"] == 110
+    assert activation["stock_snapshot"] == setup["snapshot"]
+    target = setup["path"] + f"/{activation['id']}"
+    submitted = setup["officer"].post(target + "/submit", json=turnout_command(1))
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "submitted"
+    confirmed = setup["supervisor"].post(
+        target + "/approve", json=turnout_command(1, password=READY_PASSWORD),
+    )
+    assert confirmed.status_code == 200
+    approved = confirmed.json()
+    assert approved["revision"] == 1 and approved["status"] == "approved"
+    assert approved["approved_by"] == setup["supervisor_account"]["id"]
+    assert approved["stock_snapshot"] == setup["snapshot"]
+    return approved

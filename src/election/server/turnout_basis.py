@@ -1,19 +1,25 @@
 """Current reporting scope, schedule and exact ordinary-stock source checks."""
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from election.server.configuration_models import Constituency, Election
+from election.server.fallback_models import FallbackRecord, FallbackRevision
 from election.server.lifecycle_models import ActiveElection, ElectionSchedule
 from election.server.models import Account
+from election.server.polling import as_utc
+from election.server.reporting_periods import period_bounds
 from election.server.stock import stock_scope
+from election.server.stock_serials import MAX_STOCK_QUANTITY
 from election.server.stock_snapshot_models import StockSnapshot, StockSnapshotRevision
 from election.server.stock_snapshots import snapshot_basis_current, snapshot_view
+from election.server.turnout_models import TurnoutRecord
 
 
 def locked_schedule(db: Session, election_id: int) -> ElectionSchedule:
@@ -75,3 +81,138 @@ def stock_snapshot_basis(
     )
     return frozen
 
+
+
+@dataclass(frozen=True)
+class FallbackSelection:
+    activation_id: int
+    activation_revision: int
+    stock_snapshot_id: int
+    stock_snapshot_revision: int
+
+
+def confirmed_mode_events(
+    db: Session, station_id: int, end_at: datetime,
+) -> list[tuple[FallbackRecord, FallbackRevision]]:
+    query = select(FallbackRecord, FallbackRevision).join(FallbackRevision, and_(
+        FallbackRevision.record_id == FallbackRecord.id,
+        FallbackRevision.revision == FallbackRecord.approved_revision,
+    )).where(
+        FallbackRecord.station_id == station_id,
+        FallbackRevision.event_at <= end_at,
+        FallbackRevision.status == "approved",
+    ).order_by(FallbackRevision.event_at, FallbackRecord.id)
+    return [(head, row) for head, row in db.execute(
+        query.with_for_update().execution_options(populate_existing=True),
+    )]
+
+
+def active_fallback_at(
+    db: Session, station_id: int, at: datetime,
+) -> tuple[FallbackRecord, FallbackRevision] | None:
+    events = confirmed_mode_events(db, station_id, at)
+    return events[-1] if events and events[-1][0].kind == "activation" else None
+
+
+def mode_basis_required(
+    db: Session, station_id: int, start_at: datetime, end_at: datetime,
+) -> bool:
+    events = confirmed_mode_events(db, station_id, end_at)
+    before = [item for item in events if item[1].event_at <= start_at]
+    return bool(
+        (before and before[-1][0].kind == "activation")
+        or any(start_at < row.event_at <= end_at for _, row in events)
+    )
+
+
+def fallback_period_basis(
+    db: Session, station_id: int, schedule: ElectionSchedule, period_index: int,
+    selection: FallbackSelection, predecessor: TurnoutRecord | None,
+) -> tuple[str, dict[str, Any]]:
+    start_at, end_at = period_bounds(schedule, period_index)
+    active = active_fallback_at(db, station_id, end_at)
+    if active is None or active[0].id != selection.activation_id:
+        raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+    head, activation = active
+    if (
+        head.revision != selection.activation_revision
+        or head.approved_revision != selection.activation_revision
+        or activation.revision != selection.activation_revision
+        or activation.schedule_revision != schedule.revision
+    ):
+        raise HTTPException(409, detail={"code": "fallback_review_required"})
+    original = stock_snapshot_basis(
+        db, station_id, activation.stock_snapshot_id,
+        activation.stock_snapshot_revision, activation.event_at,
+    )
+    if original != activation.data["stock_snapshot"]:
+        raise HTTPException(409, detail={"code": "fallback_review_required"})
+    endpoint = stock_snapshot_basis(
+        db, station_id, selection.stock_snapshot_id, selection.stock_snapshot_revision, end_at,
+    )
+    ordinary_delta = endpoint["ordinary_issued_quantity"] - original["ordinary_issued_quantity"]
+    if ordinary_delta < 0:
+        raise HTTPException(409, detail={"code": "fallback_stock_regression"})
+    baseline = predecessor.derived_cumulative_end if predecessor else 0
+    assert baseline is not None
+    confirmed = activation.data["cumulative_quantity"]
+    cumulative = confirmed + ordinary_delta
+    if cumulative < baseline or cumulative > MAX_STOCK_QUANTITY:
+        raise HTTPException(422, detail={"code": "turnout_validation"})
+    coverage = []
+    if activation.event_at > start_at:
+        if confirmed < baseline:
+            raise HTTPException(422, detail={"code": "turnout_validation"})
+        coverage.append({
+            "mode": "normal", "start_at": as_utc(start_at),
+            "end_at": as_utc(activation.event_at),
+            "cumulative_start_quantity": baseline,
+            "cumulative_end_quantity": confirmed, "hourly_quantity": confirmed - baseline,
+        })
+    fallback_start = max(start_at, activation.event_at)
+    fallback_baseline = confirmed if coverage else baseline
+    if cumulative < fallback_baseline:
+        raise HTTPException(422, detail={"code": "turnout_validation"})
+    coverage.append({
+        "mode": "fallback", "start_at": as_utc(fallback_start), "end_at": as_utc(end_at),
+        "cumulative_start_quantity": fallback_baseline,
+        "cumulative_end_quantity": cumulative, "hourly_quantity": cumulative - fallback_baseline,
+    })
+    basis = {
+        "activation_id": head.id, "activation_revision": activation.revision,
+        "stock_snapshot_id": selection.stock_snapshot_id,
+        "stock_snapshot_revision": selection.stock_snapshot_revision,
+        "predecessor_record_id": predecessor.id if predecessor else None,
+        "predecessor_revision": predecessor.revision if predecessor else None,
+        "ordinary_issued_since_activation_quantity": ordinary_delta,
+        "stock_derived_cumulative_quantity": cumulative,
+        "activation": {
+            "id": head.id, "revision": activation.revision,
+            "event_at": as_utc(activation.event_at), "cumulative_quantity": confirmed,
+            "source_context": activation.data["source_context"],
+            "approved_at": as_utc(activation.approved_at), "approved_by": activation.approved_by,
+        },
+        "activation_stock_snapshot": original, "stock_snapshot": endpoint, "coverage": coverage,
+    }
+    return ("mixed" if len(coverage) > 1 else "fallback_stock"), basis
+
+
+def turnout_basis_current(
+    db: Session, row: TurnoutRecord, schedule: ElectionSchedule,
+    predecessor: TurnoutRecord | None,
+) -> bool:
+    if row.source_basis is None:
+        return row.provenance == "external_manual" and not mode_basis_required(
+            db, row.station_id, row.start_at, row.end_at,
+        )
+    try:
+        selection = FallbackSelection(
+            row.source_basis["activation_id"], row.source_basis["activation_revision"],
+            row.source_basis["stock_snapshot_id"], row.source_basis["stock_snapshot_revision"],
+        )
+        provenance, basis = fallback_period_basis(
+            db, row.station_id, schedule, row.period_index, selection, predecessor,
+        )
+        return provenance == row.provenance and basis == row.source_basis
+    except (HTTPException, KeyError, TypeError, ValueError):
+        return False

@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    JSON,
     BigInteger,
     CheckConstraint,
     ForeignKey,
@@ -16,6 +15,7 @@ from sqlalchemy.dialects.mysql import DATETIME
 from sqlalchemy.orm import Mapped, mapped_column
 
 from election.server.db import Base
+from election.server.stock_snapshot_models import SnapshotQuantityJSON
 
 
 class TurnoutRecord(Base):
@@ -49,6 +49,10 @@ class TurnoutRecord(Base):
     end_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
     supplied_hourly: Mapped[int | None] = mapped_column(BigInteger)
     supplied_cumulative: Mapped[int | None] = mapped_column(BigInteger)
+    provenance: Mapped[str] = mapped_column(
+        String(32), default="external_manual", server_default="external_manual",
+    )
+    source_basis: Mapped[dict[str, Any] | None] = mapped_column(SnapshotQuantityJSON)
     source_context: Mapped[str] = mapped_column(String(2000))
     event_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6))
     entered_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
@@ -76,4 +80,4 @@ class TurnoutRequest(Base):
     station_id: Mapped[int] = mapped_column(ForeignKey("polling_stations.id"))
     actor_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     digest: Mapped[str] = mapped_column(String(64))
-    response: Mapped[dict[str, Any]] = mapped_column(JSON)
+    response: Mapped[dict[str, Any]] = mapped_column(SnapshotQuantityJSON)
