@@ -64,6 +64,18 @@ class FallbackDraft(FallbackCommand):
         return value
 
 
+class FallbackAmendment(FallbackDraft):
+    expected_revision: int = Field(strict=True, ge=1)
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def meaningful_reason(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Explain the source correction")
+        return value
+
+
 class FallbackReview(FallbackCommand):
     expected_revision: int = Field(strict=True, ge=1)
 
@@ -192,7 +204,20 @@ def fallback_router(
             event_at = data.event_at.astimezone(UTC).replace(tzinfo=None)
             if event_at > now:
                 raise HTTPException(422, detail={"code": "fallback_validation"})
-            if data.kind == "activation" and active_fallback_at(db, station_id, event_at):
+            head = None
+            if action == "amend":
+                assert record_id is not None and isinstance(data, FallbackAmendment)
+                head = record(db, station_id, record_id)
+                if head.revision != data.expected_revision:
+                    raise HTTPException(409, detail={"code": "revision_conflict"})
+                previous = revision(db, head, head.revision)
+                if previous.status not in ("submitted", "approved"):
+                    raise HTTPException(409, detail={"code": "fallback_state_conflict"})
+                if head.kind != data.kind or head.activation_id != data.activation_id:
+                    raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+            if data.kind == "activation" and active_fallback_at(
+                db, station_id, event_at, exclude_record_id=head.id if head else None,
+            ):
                 raise HTTPException(409, detail={"code": "fallback_source_conflict"})
             source = stock_snapshot_basis(
                 db, station_id, data.stock_snapshot_id, data.stock_snapshot_revision, event_at,
@@ -209,17 +234,20 @@ def fallback_router(
                     "reconciliation": recovery_reconciliation(
                         db, station_id, schedule, data.activation_id, data.activation_revision,
                         event_at, data.stock_snapshot_id, data.stock_snapshot_revision,
-                        data.cumulative_quantity,
+                        data.cumulative_quantity, exclude_record_id=head.id if head else None,
                     ),
                 })
-            head = FallbackRecord(
-                station_id=station_id, kind=data.kind, revision=1, approved_revision=None,
-                activation_id=data.activation_id, created_at=now,
-            )
-            db.add(head)
-            db.flush()
+            if head is None:
+                head = FallbackRecord(
+                    station_id=station_id, kind=data.kind, revision=1, approved_revision=None,
+                    activation_id=data.activation_id, created_at=now,
+                )
+                db.add(head)
+                db.flush()
+            else:
+                head.revision += 1
             row = FallbackRevision(
-                record_id=head.id, revision=1, schedule_revision=schedule.revision,
+                record_id=head.id, revision=head.revision, schedule_revision=schedule.revision,
                 event_at=event_at, entered_at=now, actor_id=actor.id, status="draft",
                 stock_snapshot_id=data.stock_snapshot_id,
                 stock_snapshot_revision=data.stock_snapshot_revision, reason=data.reason,
@@ -278,6 +306,12 @@ def fallback_router(
     @router.post("", status_code=201)
     def create(station_id: int, data: FallbackDraft, db: Database, actor: Ready) -> dict[str, Any]:
         return stock_write(db, lambda: execute(station_id, None, "save", data, db, actor))
+
+    @router.post("/{record_id}/amend", status_code=201)
+    def amend(
+        station_id: int, record_id: int, data: FallbackAmendment, db: Database, actor: Ready,
+    ) -> dict[str, Any]:
+        return stock_write(db, lambda: execute(station_id, record_id, "amend", data, db, actor))
 
     @router.post("/{record_id}/submit")
     def submit(
