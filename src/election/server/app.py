@@ -25,6 +25,7 @@ from election.server.complaint_reports import complaint_reports_router
 from election.server.complaints import complaints_router
 from election.server.config import Settings
 from election.server.configuration import configuration_router
+from election.server.counting_scopes import counting_scopes_router
 from election.server.db import make_engine
 from election.server.fallback import fallback_router
 from election.server.lifecycle import lifecycle_router
@@ -164,6 +165,7 @@ def create_app(
     app.include_router(special_paper_reports_router(database, ready_account, timestamp))
     app.include_router(special_paper_router(database, ready_account, timestamp))
     app.include_router(accounting_router(database, ready_account, timestamp))
+    app.include_router(counting_scopes_router(database, ready_account, timestamp))
     app.include_router(accounting_reports_router(database, ready_account, timestamp))
 
     def new_session(db: Session, account: Account) -> dict[str, Any]:
