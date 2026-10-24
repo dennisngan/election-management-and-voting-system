@@ -30,6 +30,7 @@ from election.server.polling import polling_router
 from election.server.queue import queue_router
 from election.server.queue_reports import queue_reports_router
 from election.server.security import hash_password, token_digest, verify_password
+from election.server.special_paper_reports import special_paper_reports_router
 from election.server.special_papers import special_paper_router
 from election.server.staff import staff_router, station_access_router
 from election.server.stations import stations_router
@@ -156,6 +157,7 @@ def create_app(
     app.include_router(stock_snapshot_reports_router(database, ready_account, timestamp))
     app.include_router(stock_snapshot_router(database, ready_account, timestamp))
     app.include_router(stock_return_router(database, ready_account, timestamp))
+    app.include_router(special_paper_reports_router(database, ready_account, timestamp))
     app.include_router(special_paper_router(database, ready_account, timestamp))
 
     def new_session(db: Session, account: Account) -> dict[str, Any]:
