@@ -40,7 +40,8 @@ def test_material_selects_fallback_sources_and_supervisor_approves_mixed_115(
         run_workspace_qml(
             {"server": https_server.url, "username": setup["account"]["username"],
              "password": READY_PASSWORD, "station_id": endpoint["station_id"], "locale": "tc",
-             "activation_id": activation["id"], "snapshot_id": endpoint["id"], "prefilled": prefilled,
+             "activation_id": activation["id"], "snapshot_id": endpoint["id"],
+             "prefilled": prefilled,
              "supervisor_username": setup["supervisor_account"]["username"]},
             """
             click('turnoutNavigation')
