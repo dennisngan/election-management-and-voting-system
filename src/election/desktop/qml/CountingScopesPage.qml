@@ -86,7 +86,7 @@ ColumnLayout {
         return row[key] === undefined || row[key] === null ? "—" : String(row[key])
     }
     function exportReport(format) {
-        if (!selected.id || working) return
+        if (!selected.id || editorState.busy) return
         pendingFormat = format
         pendingLocale = locale
         exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
@@ -94,6 +94,10 @@ ColumnLayout {
         exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/counting-scope-"
             + selected.id + "-revision-" + selected.revision + "-" + locale + "." + format
         exportDialog.open()
+    }
+    function moveFocus(control, forward) {
+        var next = control.nextItemInFocusChain(forward)
+        if (next) next.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason)
     }
 
     component Heading: Label {
@@ -127,7 +131,7 @@ ColumnLayout {
         implicitHeight: 48
         placeholderText: caption
         Accessible.name: caption
-        enabled: page.editable && !page.working
+        enabled: page.editable && !page.editorState.busy
         readOnly: !page.editable
         selectByMouse: true
         onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
@@ -166,7 +170,7 @@ ColumnLayout {
             text: page.t("counting_scope_reload")
             flat: true; highlighted: false
             visible: page.editorState.dirty || page.editorState.newer_revision
-            enabled: !page.working
+            enabled: !page.editorState.busy
             onClicked: discardDialog.open()
             onReveal: control => page.reveal(control)
         }
@@ -187,21 +191,21 @@ ColumnLayout {
                 Action {
                     objectName: "countingScopePreview"
                     text: page.t("counting_scope_preview")
-                    enabled: !page.working && !page.editorState.dirty
+                    enabled: !page.editorState.busy && !page.editorState.dirty
                         && !page.editorState.newer_revision
                     onClicked: page.countingScopes.preview(page.locale)
                 }
                 Action {
                     objectName: "countingScopeExportPdf"
                     text: page.t("stock_export_pdf")
-                    enabled: !page.working && !page.editorState.dirty
+                    enabled: !page.editorState.busy && !page.editorState.dirty
                         && !page.editorState.newer_revision
                     onClicked: page.exportReport("pdf")
                 }
                 Action {
                     objectName: "countingScopeExportCsv"
                     text: page.t("stock_export_csv")
-                    enabled: !page.working && !page.editorState.dirty
+                    enabled: !page.editorState.busy && !page.editorState.dirty
                         && !page.editorState.newer_revision
                     onClicked: page.exportReport("csv")
                 }
@@ -249,7 +253,8 @@ ColumnLayout {
             objectName: "countingScopeNew"
             text: page.t("counting_scope_new")
             highlighted: true
-            enabled: page.editable && !page.working
+            enabled: page.editorState.role === "counting_officer"
+                && !page.editorState.busy && !page.editorState.dirty
             onClicked: page.countingScopes.newScope()
         }
     }
@@ -267,7 +272,7 @@ ColumnLayout {
             text: modelData.reference + " · " + page.t(modelData.status) + " · "
                 + page.t("revision") + " " + modelData.revision
             highlighted: modelData.id === page.selected.id
-            enabled: !page.working && !page.editorState.dirty
+            enabled: !page.editorState.busy && !page.editorState.dirty
             onClicked: page.countingScopes.selectScope(modelData.id)
         }
     }
@@ -285,7 +290,7 @@ ColumnLayout {
             model: page.historyOptions()
             textRole: "label"
             currentIndex: page.historyIndex()
-            enabled: !page.working && !page.editorState.dirty
+            enabled: !page.editorState.busy && !page.editorState.dirty
                 && !page.editorState.newer_revision
             Accessible.name: page.t("counting_scope_revision")
             onActivated: index => page.countingScopes.loadRevision(model[index].revision)
@@ -359,7 +364,7 @@ ColumnLayout {
             Layout.fillWidth: true
             text: page.boxLabel(modelData)
             checked: page.hasBox(modelData.id)
-            enabled: page.editable && !page.working
+            enabled: page.editable && !page.editorState.busy
                 && (!modelData.scope_id || modelData.scope_id === page.selected.id)
             Accessible.name: text
             onToggled: page.countingScopes.setBoxSelected(modelData.id, checked)
@@ -412,7 +417,7 @@ ColumnLayout {
                 model: page.sourceOptions(modelData)
                 textRole: "label"
                 currentIndex: page.sourceIndex(modelData)
-                enabled: page.editable && !page.working
+                enabled: page.editable && !page.editorState.busy
                 Accessible.name: page.t("counting_scope_accounting") + " · " + page.stationName(modelData)
                 onActivated: index => page.countingScopes.chooseAccounting(
                     modelData.station.id, model[index].revision)
@@ -523,6 +528,7 @@ ColumnLayout {
         model: page.selected.blockers || []
         delegate: Label {
             required property var modelData
+            required property int index
             objectName: "countingScopeBlocker_" + index
             Layout.fillWidth: true
             text: "• " + page.blockerText(modelData)
@@ -538,19 +544,24 @@ ColumnLayout {
         textFormat: Text.PlainText; color: "#176b45"; wrapMode: Text.WordWrap
     }
 
+    FormCaption { text: page.t("counting_scope_notes"); Layout.fillWidth: true }
     TextArea {
         id: notesField
         objectName: "countingScopeNotes"
         Layout.fillWidth: true
         implicitHeight: Math.max(92, contentHeight + topPadding + bottomPadding)
-        placeholderText: page.t("counting_scope_notes")
         text: page.form.notes || ""
-        enabled: page.editable && !page.working
+        enabled: page.editable && !page.editorState.busy
         readOnly: !page.editable
         textFormat: TextEdit.PlainText
         wrapMode: TextEdit.WordWrap
+        clip: true
+        leftPadding: 12; rightPadding: 12; topPadding: 12; bottomPadding: 12; topInset: 0
         selectByMouse: true
         Accessible.name: page.t("counting_scope_notes")
+        Keys.priority: Keys.BeforeItem
+        Keys.onTabPressed: event => { page.moveFocus(notesField, true); event.accepted = true }
+        Keys.onBacktabPressed: event => { page.moveFocus(notesField, false); event.accepted = true }
         onTextEdited: page.countingScopes.setForm("notes", text)
         onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
             if (notesField.activeFocus) page.reveal(notesField)
@@ -561,20 +572,28 @@ ColumnLayout {
             border.width: parent.activeFocus ? 2 : 1
         }
     }
+    FormCaption {
+        visible: !!page.selected.id
+        text: page.t("counting_scope_reason"); Layout.fillWidth: true
+    }
     TextArea {
         id: reasonField
         objectName: "countingScopeReason"
         Layout.fillWidth: true
         visible: !!page.selected.id
         implicitHeight: Math.max(82, contentHeight + topPadding + bottomPadding)
-        placeholderText: page.t("counting_scope_reason")
         text: page.form.amendment_reason || ""
-        enabled: page.editable && !page.working && page.selected.status !== "draft"
+        enabled: page.editable && !page.editorState.busy && page.selected.status !== "draft"
         readOnly: !enabled
         textFormat: TextEdit.PlainText
         wrapMode: TextEdit.WordWrap
+        clip: true
+        leftPadding: 12; rightPadding: 12; topPadding: 12; bottomPadding: 12; topInset: 0
         selectByMouse: true
         Accessible.name: page.t("counting_scope_reason")
+        Keys.priority: Keys.BeforeItem
+        Keys.onTabPressed: event => { page.moveFocus(reasonField, true); event.accepted = true }
+        Keys.onBacktabPressed: event => { page.moveFocus(reasonField, false); event.accepted = true }
         onTextEdited: page.countingScopes.setForm("amendment_reason", text)
         onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
             if (reasonField.activeFocus) page.reveal(reasonField)
@@ -592,7 +611,7 @@ ColumnLayout {
             text: page.t("counting_scope_save")
             highlighted: true
             visible: page.editorState.role === "counting_officer"
-            enabled: page.editable && !page.working && !page.editorState.newer_revision
+            enabled: page.editable && !page.editorState.busy && !page.editorState.newer_revision
             onClicked: page.countingScopes.save()
         }
         Action {
@@ -600,7 +619,7 @@ ColumnLayout {
             text: page.t("counting_scope_submit")
             highlighted: false
             visible: page.editorState.role === "counting_officer" && page.selected.status === "draft"
-            enabled: page.editable && !page.working && !page.editorState.dirty
+            enabled: page.editable && !page.editorState.busy && !page.editorState.dirty
                 && !!page.selected.is_current && !!page.selected.source_current
                 && !(page.selected.blockers || []).length
             onClicked: page.countingScopes.submit()
