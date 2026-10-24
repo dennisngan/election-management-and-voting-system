@@ -343,6 +343,9 @@ def turnout_router(
                         "stock_snapshot_id", "stock_snapshot_revision",
                         "fallback_recovery_id", "fallback_recovery_revision"):
                 command_data.pop(key, None)
+        if isinstance(data, TurnoutDraft) and data.mode == "fallback":
+            for key in ("fallback_recovery_id", "fallback_recovery_revision"):
+                command_data.pop(key, None)
         digest = hashlib.sha256(
             json.dumps(
                 {

@@ -169,8 +169,10 @@ def fallback_router(
                 raise HTTPException(401, detail={"code": "invalid_credentials"})
         command_data = data.model_dump(mode="json", exclude={"request_id", "password"})
         if isinstance(data, FallbackDraft) and data.kind == "activation":
-            for key in ("activation_id", "activation_revision", "reason"):
+            for key in ("activation_id", "activation_revision"):
                 command_data.pop(key, None)
+            if not data.reason:
+                command_data.pop("reason", None)
         digest = hashlib.sha256(json.dumps({
             "station_id": station_id, "record_id": record_id,
             "actor_id": actor.id, "action": action,
