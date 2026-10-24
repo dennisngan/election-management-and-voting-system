@@ -66,7 +66,8 @@ def test_localized_discard_keeps_unsaved_input_on_cancel_and_restores_only_on_co
             frame()
             if setup['scope_id']:
                 click('countingScopeOption_' + str(setup['scope_id']))
-                wait(lambda: not any(editor.property('state')[key] for key in ('busy', 'refreshing')))
+                wait(lambda: not any(editor.property('state')[key]
+                    for key in ('busy', 'refreshing')))
                 frame()
             enter(setup['notes'], 'Unsaved local note; cancel must retain it.')
             for locale, keep, discard in (

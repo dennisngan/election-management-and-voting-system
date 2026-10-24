@@ -24,6 +24,9 @@ ColumnLayout {
     spacing: 20
 
     function t(key) { return words[key] || key }
+    function scopeStatus(status) {
+        return status === "submitted" ? t("counting_scope_submitted_status") : t(status)
+    }
     function hasBox(id) { return (editorState.selected_box_ids || []).indexOf(id) >= 0 }
     function stationName(row) {
         var station = row.station || {}
@@ -66,7 +69,7 @@ ColumnLayout {
     }
     function historyOptions() {
         return (editorState.history || []).map(function(row) {
-            return {revision: row.revision, label: page.t(row.status) + " · "
+            return {revision: row.revision, label: page.scopeStatus(row.status) + " · "
                 + page.t("revision") + " " + row.revision + " · " + row.reference}
         })
     }
@@ -269,7 +272,7 @@ ColumnLayout {
         delegate: Action {
             required property var modelData
             objectName: "countingScopeOption_" + modelData.id
-            text: modelData.reference + " · " + page.t(modelData.status) + " · "
+            text: modelData.reference + " · " + page.scopeStatus(modelData.status) + " · "
                 + page.t("revision") + " " + modelData.revision
             highlighted: modelData.id === page.selected.id
             enabled: !page.editorState.busy && !page.editorState.dirty
