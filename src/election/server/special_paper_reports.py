@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
 from election.server.special_paper_labels import LABELS
 from election.server.special_paper_models import SpecialPaperRevision, SpecialPaperSnapshot
@@ -77,6 +78,55 @@ def _csv_report(projection: dict[str, Any]) -> bytes:
     return output.getvalue().encode("utf-8-sig")
 
 
+def _pdf_report(projection: dict[str, Any]) -> bytes:
+    labels, snapshot = projection["labels"], projection["items"][0]
+    sections = [HistoryTable(
+        labels["summary"],
+        [[labels["field"], labels["value"]]]
+        + [[labels["report_scope"], labels["scope_note"]],
+           [labels["provenance"], labels["provenance_note"]],
+           [labels["estimated_box_papers_quantity"], labels["estimate_note"]]]
+        + [[labels[key], str(snapshot[key])] for key in QUANTITIES],
+        (0.50, 0.50),
+    )]
+    for heading, keys, widths in (
+        ("source", ("received_quantity", "ordinary_issued_quantity",
+                    "estimated_box_papers_quantity"), (0.40, 0.20, 0.20, 0.20)),
+        ("issues", ("replacement_issued_quantity", "spoilt_original_quantity",
+                    "tendered_issued_quantity"), (0.40, 0.20, 0.20, 0.20)),
+        ("retrieved", ("retrieved_refused_quantity", "retrieved_found_quantity",
+                       "retrieved_held_quantity", "retrieved_unused_quantity"),
+         (0.36, 0.16, 0.16, 0.16, 0.16)),
+        ("unused", ("ordinary_unissued_quantity", "replacement_unissued_quantity",
+                    "tendered_unissued_quantity", "never_issued_quantity"),
+         (0.36, 0.16, 0.16, 0.16, 0.16)),
+    ):
+        sections.append(HistoryTable(
+            labels[heading], [[labels["series"], *[labels[key] for key in keys]]]
+            + [[row["series"], *[str(row[key]) for key in keys]] for row in snapshot["series"]],
+            widths, labels["none"] if not snapshot["series"] else "", split_in_row=False,
+        ))
+    sections.append(HistoryTable(
+        labels["receipt_basis"], [[labels["receipt_id"], labels["revision"]]]
+        + [[str(row["receipt_id"]), str(row["revision"])] for row in snapshot["receipt_basis"]],
+        (0.50, 0.50), labels["none"] if not snapshot["receipt_basis"] else "", split_in_row=False,
+    ))
+    sections.append(HistoryTable(
+        labels["received_ranges"],
+        [[labels[key] for key in ("source", "pool", "serial_from", "serial_to", "quantity")]]
+        + [[str(row["receipt_id"]) + " · " + labels["revision"] + " " + str(row["revision"])
+            + " · " + row["series"], labels[row["pool"]], row["serial_from"],
+            row["serial_to"], str(row["quantity"])] for row in snapshot["received_ranges"]],
+        (0.30, 0.10, 0.21, 0.21, 0.18),
+        labels["none"] if not snapshot["received_ranges"] else "", split_in_row=False,
+    ))
+    footer = (projection["scope"]["station"]["code"] + " · " + labels["snapshot_id"] + " "
+              + str(snapshot["id"]) + " · " + labels["revision"] + " " + str(snapshot["revision"]))
+    return history_pdf(
+        projection["title"], _metadata_rows(projection), sections, footer, labels["page"],
+    )
+
+
 def special_paper_reports_router(
     database: Callable[[], Generator[Session]],
     ready_account: Callable[..., Account],
@@ -132,6 +182,20 @@ def special_paper_reports_router(
         filename = f"special-papers-{snapshot_id}-r{revision}-{locale}.csv"
         return Response(
             _csv_report(projection), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @router.get("/statement.pdf")
+    def statement_pdf(
+        station_id: int, db: Database, actor: Ready,
+        snapshot_id: Annotated[int, Query(ge=1)],
+        revision: Annotated[int, Query(ge=1)],
+        locale: ReportLocale = "tc",
+    ) -> Response:
+        projection = statement(station_id, db, actor, snapshot_id, revision, locale)
+        filename = f"special-papers-{snapshot_id}-r{revision}-{locale}.pdf"
+        return Response(
+            _pdf_report(projection), media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
