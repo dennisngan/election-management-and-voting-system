@@ -20,8 +20,15 @@ from election.server.models import Account, AuditEvent, LoginSession
 from election.server.security import hash_password
 from election.server.staff_models import StationAssignment
 from election.server.station_models import PollingStation
-from tests.configuration_desktop_support import ready_setup, setup_idle
-from tests.desktop_support import TLS_DIRECTORY, HttpsServer, state_of, wait_for
+from tests.configuration_desktop_support import ready_setup
+from tests.desktop_support import (
+    TLS_DIRECTORY,
+    HttpsServer,
+    state_of,
+    wait_for,
+    wait_for_editor_command,
+    wait_for_editor_idle,
+)
 
 DIRECTORY_SIZE = 1500
 
@@ -199,7 +206,7 @@ def test_officer_old_password_is_rejected_while_an_administrator_desktop_refresh
     ready_setup(desktop, https_server, account, qt_app)
     staff = desktop.property("staff")
     staff.open()
-    wait_for(qt_app, lambda: setup_idle(staff))
+    wait_for_editor_idle(qt_app, staff)
     assert staff.property("state")["error"] == ""
     directory = large_election_test_staff_directory
     state = staff.property("state")
@@ -236,7 +243,7 @@ def test_officer_old_password_is_rejected_while_an_administrator_desktop_refresh
     staff.save(initial_password, initial_password)
     # Credential setup observes command acknowledgements while dashboard refresh
     # remains enabled. The complete directory assertions above stay independent.
-    wait_for(qt_app, lambda: not staff.property("state")["busy"])
+    wait_for_editor_command(qt_app, staff)
     assert staff.property("state")["error"] == ""
     created = staff.property("state")["selected"]
     assert created["username"] == username
@@ -249,14 +256,14 @@ def test_officer_old_password_is_rejected_while_an_administrator_desktop_refresh
         officer.changePassword(initial_password, personal_password, personal_password)
         wait_for(qt_app, lambda: state_of(officer)["phase"] == "workspace")
         assert staff.loadAccount(created["id"], False)
-        wait_for(qt_app, lambda: not staff.property("state")["busy"])
+        wait_for_editor_command(qt_app, staff)
         loaded = staff.property("state")
         assert loaded["error"] == ""
         assert loaded["selected"]["id"] == created["id"]
         assert loaded["selected"]["must_change_password"] is False
         previous_revision = loaded["selected"]["revision"]
         staff.resetPassword(reset_password, reset_password)
-        wait_for(qt_app, lambda: not staff.property("state")["busy"])
+        wait_for_editor_command(qt_app, staff)
         reset = staff.property("state")
         assert reset["error"] == ""
         assert reset["notice"] == "password_reset_success"
