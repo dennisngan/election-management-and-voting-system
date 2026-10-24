@@ -190,6 +190,8 @@ def fallback_router(
             event_at = data.event_at.astimezone(UTC).replace(tzinfo=None)
             if event_at > now:
                 raise HTTPException(422, detail={"code": "fallback_validation"})
+            if data.kind == "activation" and active_fallback_at(db, station_id, event_at):
+                raise HTTPException(409, detail={"code": "fallback_source_conflict"})
             source = stock_snapshot_basis(
                 db, station_id, data.stock_snapshot_id, data.stock_snapshot_revision, event_at,
             )
@@ -229,6 +231,10 @@ def fallback_router(
             if head.revision != data.expected_revision:
                 raise HTTPException(409, detail={"code": "revision_conflict"})
             row = revision(db, head, head.revision)
+            if head.kind == "activation" and active_fallback_at(
+                db, station_id, row.event_at, exclude_record_id=head.id,
+            ):
+                raise HTTPException(409, detail={"code": "fallback_source_conflict"})
             expected = "submitted" if action == "approve" else "draft"
             if row.status != expected:
                 raise HTTPException(409, detail={"code": "fallback_state_conflict"})
