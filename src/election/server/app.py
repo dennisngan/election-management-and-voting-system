@@ -24,6 +24,7 @@ from election.server.complaints import complaints_router
 from election.server.config import Settings
 from election.server.configuration import configuration_router
 from election.server.db import make_engine
+from election.server.fallback import fallback_router
 from election.server.lifecycle import lifecycle_router
 from election.server.models import Account, AuditEvent, LoginSession
 from election.server.polling import polling_router
@@ -150,6 +151,7 @@ def create_app(
     app.include_router(box_router(database, ready_account, timestamp))
     app.include_router(turnout_reports_router(database, ready_account, timestamp))
     app.include_router(turnout_router(database, ready_account, timestamp))
+    app.include_router(fallback_router(database, ready_account, timestamp))
     app.include_router(stock_router(database, ready_account, timestamp))
     app.include_router(stock_reports_router(database, ready_account, timestamp))
     app.include_router(allocation_reports_router(database, ready_account, timestamp))

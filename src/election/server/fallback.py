@@ -1,0 +1,293 @@
+"""EPR fallback activation retains a confirmed turnout and ordinary-stock basis."""
+
+import hashlib
+import json
+from collections.abc import Callable, Generator
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import and_, select
+from sqlalchemy.orm import Session
+
+from election.server.configuration_models import Constituency, Election
+from election.server.fallback_models import FallbackRecord, FallbackRequest, FallbackRevision
+from election.server.lifecycle_models import ActiveElection
+from election.server.models import Account, AuditEvent
+from election.server.polling import as_utc
+from election.server.security import verify_password
+from election.server.stock import stock_scope, stock_write
+from election.server.stock_serials import MAX_STOCK_QUANTITY
+from election.server.stock_snapshot_models import StockSnapshot, StockSnapshotRevision
+from election.server.stock_snapshots import snapshot_basis_current, snapshot_view
+from election.server.stock_time import StockEventTime
+from election.server.turnout import locked_schedule
+
+
+class FallbackCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+    expected_schedule_revision: int = Field(strict=True, ge=1)
+
+
+class FallbackDraft(FallbackCommand):
+    kind: Literal["activation"]
+    event_at: StockEventTime
+    cumulative_quantity: int = Field(strict=True, ge=0, le=MAX_STOCK_QUANTITY)
+    stock_snapshot_id: int = Field(strict=True, gt=0)
+    stock_snapshot_revision: int = Field(strict=True, ge=1)
+    source_context: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("source_context")
+    @classmethod
+    def meaningful_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A supplied source context is required")
+        return value
+
+
+class FallbackReview(FallbackCommand):
+    expected_revision: int = Field(strict=True, ge=1)
+
+
+class FallbackApproval(FallbackReview):
+    password: str = Field(min_length=1, max_length=128, repr=False)
+
+
+def fallback_view(head: FallbackRecord, row: FallbackRevision) -> dict[str, Any]:
+    return {
+        **row.data,
+        "id": head.id, "station_id": head.station_id, "kind": head.kind,
+        "revision": row.revision, "schedule_revision": row.schedule_revision,
+        "status": row.status, "event_at": as_utc(row.event_at),
+        "entered_at": as_utc(row.entered_at), "actor_id": row.actor_id,
+        "stock_snapshot_id": row.stock_snapshot_id,
+        "stock_snapshot_revision": row.stock_snapshot_revision, "reason": row.reason,
+        "submitted_at": as_utc(row.submitted_at), "submitted_by": row.submitted_by,
+        "approved_at": as_utc(row.approved_at), "approved_by": row.approved_by,
+    }
+
+
+def fallback_scope(
+    db: Session, actor: Account, station_id: int, *, writable: bool = False,
+) -> dict[str, Any]:
+    scope = stock_scope(db, actor, station_id)
+    # Match activation/configuration first, then the physical-stock write locks.
+    active = db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
+    election = db.scalar(select(Election).where(
+        Election.id == scope["election"]["id"],
+    ).with_for_update().execution_options(populate_existing=True))
+    assert election is not None
+    db.scalar(select(Constituency).where(
+        Constituency.id == scope["constituency"]["id"],
+    ).with_for_update().execution_options(populate_existing=True))
+    if writable and (
+        active is None or active.election_id != election.id or election.status != "active"
+    ):
+        raise HTTPException(409, detail={"code": "active_election_required"})
+    return stock_scope(db, actor, station_id)
+
+
+def fallback_rows(db: Session, station_id: int) -> list[tuple[FallbackRecord, FallbackRevision]]:
+    query = select(FallbackRecord, FallbackRevision).join(FallbackRevision, and_(
+        FallbackRevision.record_id == FallbackRecord.id,
+        FallbackRevision.revision == FallbackRecord.revision,
+    )).where(FallbackRecord.station_id == station_id).order_by(FallbackRecord.id)
+    return [(head, row) for head, row in db.execute(
+        query.with_for_update().execution_options(populate_existing=True),
+    )]
+
+
+def fallback_source(
+    db: Session, station_id: int, snapshot_id: int, revision: int, event_at: datetime,
+) -> dict[str, Any]:
+    head = db.scalar(select(StockSnapshot).where(
+        StockSnapshot.id == snapshot_id, StockSnapshot.station_id == station_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if head is None:
+        raise HTTPException(404, detail={"code": "stock_snapshot_not_found"})
+    if head.revision != revision:
+        raise HTTPException(409, detail={"code": "stock_snapshot_basis_stale"})
+    row = db.scalar(select(StockSnapshotRevision).where(
+        StockSnapshotRevision.snapshot_id == snapshot_id,
+        StockSnapshotRevision.revision == revision,
+    ).with_for_update().execution_options(populate_existing=True))
+    assert row is not None
+    if not row.data["complete"]:
+        raise HTTPException(409, detail={"code": "stock_snapshot_incomplete"})
+    if row.event_at != event_at:
+        raise HTTPException(409, detail={"code": "fallback_balance_time_required"})
+    if not snapshot_basis_current(db, station_id, row, lock=True):
+        raise HTTPException(409, detail={"code": "stock_snapshot_basis_stale"})
+    frozen: dict[str, Any] = jsonable_encoder(
+        snapshot_view(row, station_id),
+        custom_encoder={datetime: lambda value: value.isoformat().replace("+00:00", "Z")},
+    )
+    return frozen
+
+
+def fallback_router(
+    database: Callable[[], Generator[Session]],
+    ready_account: Callable[..., Account],
+    timestamp: Callable[[], datetime],
+) -> APIRouter:
+    router = APIRouter(
+        prefix="/api/workspace/stations/{station_id}/fallback", tags=["EPR fallback"],
+    )
+    Database = Annotated[Session, Depends(database)]
+    Ready = Annotated[Account, Depends(ready_account)]
+
+    def record(db: Session, station_id: int, record_id: int) -> FallbackRecord:
+        row = db.scalar(select(FallbackRecord).where(
+            FallbackRecord.id == record_id, FallbackRecord.station_id == station_id,
+        ).with_for_update().execution_options(populate_existing=True))
+        if row is None:
+            raise HTTPException(404, detail={"code": "fallback_record_not_found"})
+        return row
+
+    def revision(db: Session, head: FallbackRecord, number: int) -> FallbackRevision:
+        row = db.scalar(select(FallbackRevision).where(
+            FallbackRevision.record_id == head.id, FallbackRevision.revision == number,
+        ).with_for_update().execution_options(populate_existing=True))
+        if row is None:
+            raise HTTPException(404, detail={"code": "fallback_revision_not_found"})
+        return row
+
+    @router.get("")
+    def collection(station_id: int, db: Database, actor: Ready) -> dict[str, Any]:
+        scope = fallback_scope(db, actor, station_id)
+        rows = fallback_rows(db, station_id)
+        active = next((head.id for head, _ in reversed(rows)
+                       if head.kind == "activation" and head.approved_revision is not None), None)
+        return {
+            "scope": scope, "items": [fallback_view(head, row) for head, row in rows],
+            "mode": "fallback" if active is not None else "normal", "active_activation_id": active,
+        }
+
+    @router.get("/{record_id}/history")
+    def history(station_id: int, record_id: int, db: Database, actor: Ready) -> dict[str, Any]:
+        fallback_scope(db, actor, station_id)
+        head = record(db, station_id, record_id)
+        rows = db.scalars(select(FallbackRevision).where(
+            FallbackRevision.record_id == head.id,
+        ).order_by(FallbackRevision.revision).with_for_update())
+        return {"items": [fallback_view(head, row) for row in rows]}
+
+    @router.get("/{record_id}")
+    def current(
+        station_id: int, record_id: int, db: Database, actor: Ready,
+        revision_number: int | None = Query(default=None, alias="revision", ge=1),
+    ) -> dict[str, Any]:
+        fallback_scope(db, actor, station_id)
+        head = record(db, station_id, record_id)
+        return fallback_view(head, revision(db, head, revision_number or head.revision))
+
+    def execute(
+        station_id: int, record_id: int | None, action: str,
+        data: FallbackDraft | FallbackReview, db: Session, actor: Account,
+    ) -> dict[str, Any]:
+        required = "supervisor" if action == "approve" else "polling_officer"
+        if actor.role != required:
+            raise HTTPException(403, detail={"code": required + "_required"})
+        scope = fallback_scope(db, actor, station_id, writable=True)
+        schedule = locked_schedule(db, scope["election"]["id"])
+        if isinstance(data, FallbackApproval):
+            password_hash = db.scalar(select(Account.password_hash).where(
+                Account.id == actor.id,
+            ).with_for_update())
+            if not verify_password(password_hash, data.password):
+                raise HTTPException(401, detail={"code": "invalid_credentials"})
+        digest = hashlib.sha256(json.dumps({
+            "station_id": station_id, "record_id": record_id,
+            "actor_id": actor.id, "action": action,
+            "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
+        }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        replay = db.scalar(select(FallbackRequest).where(
+            FallbackRequest.request_id == str(data.request_id),
+        ).with_for_update())
+        if replay is not None:
+            if replay.digest != digest:
+                raise HTTPException(409, detail={"code": "request_conflict"})
+            return replay.response
+        if data.expected_schedule_revision != schedule.revision:
+            raise HTTPException(409, detail={"code": "turnout_schedule_conflict"})
+        now = timestamp()
+        if isinstance(data, FallbackDraft):
+            event_at = data.event_at.astimezone(UTC).replace(tzinfo=None)
+            if event_at > now:
+                raise HTTPException(422, detail={"code": "fallback_validation"})
+            source = fallback_source(
+                db, station_id, data.stock_snapshot_id, data.stock_snapshot_revision, event_at,
+            )
+            head = FallbackRecord(
+                station_id=station_id, kind=data.kind, revision=1, approved_revision=None,
+                activation_id=None, created_at=now,
+            )
+            db.add(head)
+            db.flush()
+            row = FallbackRevision(
+                record_id=head.id, revision=1, schedule_revision=schedule.revision,
+                event_at=event_at, entered_at=now, actor_id=actor.id, status="draft",
+                stock_snapshot_id=data.stock_snapshot_id,
+                stock_snapshot_revision=data.stock_snapshot_revision, reason="",
+                submitted_at=None, submitted_by=None, approved_at=None, approved_by=None,
+                data={"cumulative_quantity": data.cumulative_quantity,
+                      "source_context": data.source_context, "stock_snapshot": source,
+                      "scope": scope},
+            )
+            db.add(row)
+        else:
+            assert record_id is not None
+            head = record(db, station_id, record_id)
+            if head.revision != data.expected_revision:
+                raise HTTPException(409, detail={"code": "revision_conflict"})
+            row = revision(db, head, head.revision)
+            expected = "submitted" if action == "approve" else "draft"
+            if row.status != expected:
+                raise HTTPException(409, detail={"code": "fallback_state_conflict"})
+            if row.schedule_revision != schedule.revision:
+                raise HTTPException(409, detail={"code": "turnout_review_required"})
+            fallback_source(
+                db, station_id, row.stock_snapshot_id, row.stock_snapshot_revision, row.event_at,
+            )
+            if action == "approve":
+                row.status, row.approved_at, row.approved_by = "approved", now, actor.id
+                head.approved_revision = row.revision
+            else:
+                row.status, row.submitted_at, row.submitted_by = "submitted", now, actor.id
+        db.flush()
+        result = fallback_view(head, row)
+        db.add(FallbackRequest(
+            request_id=str(data.request_id), station_id=station_id, actor_id=actor.id,
+            digest=digest, response=result,
+        ))
+        db.add(AuditEvent(
+            actor_id=actor.id, action="fallback_" + action, occurred_at=now,
+            details={"station_id": station_id, "record_id": head.id,
+                     "revision": row.revision, "kind": head.kind, "status": row.status,
+                     "stock_snapshot_id": row.stock_snapshot_id,
+                     "stock_snapshot_revision": row.stock_snapshot_revision},
+        ))
+        db.commit()
+        return result
+
+    @router.post("", status_code=201)
+    def create(station_id: int, data: FallbackDraft, db: Database, actor: Ready) -> dict[str, Any]:
+        return stock_write(db, lambda: execute(station_id, None, "save", data, db, actor))
+
+    @router.post("/{record_id}/submit")
+    def submit(
+        station_id: int, record_id: int, data: FallbackReview, db: Database, actor: Ready,
+    ) -> dict[str, Any]:
+        return stock_write(db, lambda: execute(station_id, record_id, "submit", data, db, actor))
+
+    @router.post("/{record_id}/approve")
+    def approve(
+        station_id: int, record_id: int, data: FallbackApproval, db: Database, actor: Ready,
+    ) -> dict[str, Any]:
+        return stock_write(db, lambda: execute(station_id, record_id, "approve", data, db, actor))
+
+    return router

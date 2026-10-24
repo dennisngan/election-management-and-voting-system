@@ -11,6 +11,7 @@ from election.server import (  # noqa: F401 -- register tables with Base.metadat
     complaint_models,
     complaint_period_models,
     configuration_models,
+    fallback_models,
     lifecycle_models,
     models,
     polling_models,
