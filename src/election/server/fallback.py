@@ -8,23 +8,18 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from election.server.configuration_models import Constituency, Election
 from election.server.fallback_models import FallbackRecord, FallbackRequest, FallbackRevision
-from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
 from election.server.polling import as_utc
 from election.server.security import verify_password
-from election.server.stock import stock_scope, stock_write
+from election.server.stock import stock_write
 from election.server.stock_serials import MAX_STOCK_QUANTITY
-from election.server.stock_snapshot_models import StockSnapshot, StockSnapshotRevision
-from election.server.stock_snapshots import snapshot_basis_current, snapshot_view
 from election.server.stock_time import StockEventTime
-from election.server.turnout import locked_schedule
+from election.server.turnout_basis import locked_schedule, stock_snapshot_basis, turnout_scope
 
 
 class FallbackCommand(BaseModel):
@@ -71,26 +66,6 @@ def fallback_view(head: FallbackRecord, row: FallbackRevision) -> dict[str, Any]
     }
 
 
-def fallback_scope(
-    db: Session, actor: Account, station_id: int, *, writable: bool = False,
-) -> dict[str, Any]:
-    scope = stock_scope(db, actor, station_id)
-    # Match activation/configuration first, then the physical-stock write locks.
-    active = db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
-    election = db.scalar(select(Election).where(
-        Election.id == scope["election"]["id"],
-    ).with_for_update().execution_options(populate_existing=True))
-    assert election is not None
-    db.scalar(select(Constituency).where(
-        Constituency.id == scope["constituency"]["id"],
-    ).with_for_update().execution_options(populate_existing=True))
-    if writable and (
-        active is None or active.election_id != election.id or election.status != "active"
-    ):
-        raise HTTPException(409, detail={"code": "active_election_required"})
-    return stock_scope(db, actor, station_id)
-
-
 def fallback_rows(db: Session, station_id: int) -> list[tuple[FallbackRecord, FallbackRevision]]:
     query = select(FallbackRecord, FallbackRevision).join(FallbackRevision, and_(
         FallbackRevision.record_id == FallbackRecord.id,
@@ -99,34 +74,6 @@ def fallback_rows(db: Session, station_id: int) -> list[tuple[FallbackRecord, Fa
     return [(head, row) for head, row in db.execute(
         query.with_for_update().execution_options(populate_existing=True),
     )]
-
-
-def fallback_source(
-    db: Session, station_id: int, snapshot_id: int, revision: int, event_at: datetime,
-) -> dict[str, Any]:
-    head = db.scalar(select(StockSnapshot).where(
-        StockSnapshot.id == snapshot_id, StockSnapshot.station_id == station_id,
-    ).with_for_update().execution_options(populate_existing=True))
-    if head is None:
-        raise HTTPException(404, detail={"code": "stock_snapshot_not_found"})
-    if head.revision != revision:
-        raise HTTPException(409, detail={"code": "stock_snapshot_basis_stale"})
-    row = db.scalar(select(StockSnapshotRevision).where(
-        StockSnapshotRevision.snapshot_id == snapshot_id,
-        StockSnapshotRevision.revision == revision,
-    ).with_for_update().execution_options(populate_existing=True))
-    assert row is not None
-    if not row.data["complete"]:
-        raise HTTPException(409, detail={"code": "stock_snapshot_incomplete"})
-    if row.event_at != event_at:
-        raise HTTPException(409, detail={"code": "fallback_balance_time_required"})
-    if not snapshot_basis_current(db, station_id, row, lock=True):
-        raise HTTPException(409, detail={"code": "stock_snapshot_basis_stale"})
-    frozen: dict[str, Any] = jsonable_encoder(
-        snapshot_view(row, station_id),
-        custom_encoder={datetime: lambda value: value.isoformat().replace("+00:00", "Z")},
-    )
-    return frozen
 
 
 def fallback_router(
@@ -158,7 +105,7 @@ def fallback_router(
 
     @router.get("")
     def collection(station_id: int, db: Database, actor: Ready) -> dict[str, Any]:
-        scope = fallback_scope(db, actor, station_id)
+        scope = turnout_scope(db, actor, station_id)
         rows = fallback_rows(db, station_id)
         active = next((head.id for head, _ in reversed(rows)
                        if head.kind == "activation" and head.approved_revision is not None), None)
@@ -169,7 +116,7 @@ def fallback_router(
 
     @router.get("/{record_id}/history")
     def history(station_id: int, record_id: int, db: Database, actor: Ready) -> dict[str, Any]:
-        fallback_scope(db, actor, station_id)
+        turnout_scope(db, actor, station_id)
         head = record(db, station_id, record_id)
         rows = db.scalars(select(FallbackRevision).where(
             FallbackRevision.record_id == head.id,
@@ -181,7 +128,7 @@ def fallback_router(
         station_id: int, record_id: int, db: Database, actor: Ready,
         revision_number: int | None = Query(default=None, alias="revision", ge=1),
     ) -> dict[str, Any]:
-        fallback_scope(db, actor, station_id)
+        turnout_scope(db, actor, station_id)
         head = record(db, station_id, record_id)
         return fallback_view(head, revision(db, head, revision_number or head.revision))
 
@@ -192,7 +139,7 @@ def fallback_router(
         required = "supervisor" if action == "approve" else "polling_officer"
         if actor.role != required:
             raise HTTPException(403, detail={"code": required + "_required"})
-        scope = fallback_scope(db, actor, station_id, writable=True)
+        scope = turnout_scope(db, actor, station_id, writable=True)
         schedule = locked_schedule(db, scope["election"]["id"])
         if isinstance(data, FallbackApproval):
             password_hash = db.scalar(select(Account.password_hash).where(
@@ -219,7 +166,7 @@ def fallback_router(
             event_at = data.event_at.astimezone(UTC).replace(tzinfo=None)
             if event_at > now:
                 raise HTTPException(422, detail={"code": "fallback_validation"})
-            source = fallback_source(
+            source = stock_snapshot_basis(
                 db, station_id, data.stock_snapshot_id, data.stock_snapshot_revision, event_at,
             )
             head = FallbackRecord(
@@ -250,7 +197,7 @@ def fallback_router(
                 raise HTTPException(409, detail={"code": "fallback_state_conflict"})
             if row.schedule_revision != schedule.revision:
                 raise HTTPException(409, detail={"code": "turnout_review_required"})
-            fallback_source(
+            stock_snapshot_basis(
                 db, station_id, row.stock_snapshot_id, row.stock_snapshot_revision, row.event_at,
             )
             if action == "approve":

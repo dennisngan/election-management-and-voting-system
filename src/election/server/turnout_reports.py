@@ -16,11 +16,11 @@ from election.server.polling import as_utc, station_scope
 from election.server.turnout import (
     approved_prefix,
     current_records,
-    locked_schedule,
     period_bounds,
     period_count,
     turnout_record_view,
 )
+from election.server.turnout_basis import locked_schedule
 from election.server.turnout_models import TurnoutRecord
 
 type ReportLocale = Literal["tc", "sc", "en"]

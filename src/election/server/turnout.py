@@ -18,6 +18,7 @@ from election.server.polling import as_utc, station_scope
 from election.server.reporting_periods import period_bounds as configured_period_bounds
 from election.server.reporting_periods import period_count as period_count
 from election.server.security import verify_password
+from election.server.turnout_basis import locked_schedule
 from election.server.turnout_models import TurnoutRecord, TurnoutRequest
 
 MAX_TOTAL = 9223372036854775807
@@ -149,18 +150,6 @@ def approved_prefix(
         )
         predecessor = row
     return prefix, valid
-
-
-def locked_schedule(db: Session, election_id: int) -> ElectionSchedule:
-    schedule = db.scalar(
-        select(ElectionSchedule)
-        .where(ElectionSchedule.election_id == election_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
-    if schedule is None:
-        raise HTTPException(409, detail={"code": "schedule_not_configured"})
-    return schedule
 
 
 def turnout_snapshot(
