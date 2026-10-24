@@ -71,19 +71,44 @@ def wait_for(app: QCoreApplication, predicate: Callable[[], bool], timeout: floa
 
 def wait_for_editor_idle(app: QCoreApplication, editor: Any, timeout: float = 5) -> None:
     """Observe full-idle completion even if a later refresh starts in the same event batch."""
+    _wait_for_editor_ready(
+        app, editor, lambda state: not state["busy"] and not state.get("refreshing", False), timeout
+    )
+
+
+def wait_for_editor_command(app: QCoreApplication, editor: Any, timeout: float = 5) -> None:
+    """Observe command completion independently of background directory refreshes."""
+    _wait_for_editor_ready(app, editor, lambda state: not state["busy"], timeout)
+
+
+def _wait_for_editor_ready(
+    app: QCoreApplication,
+    editor: Any,
+    ready: Callable[[dict[str, Any]], bool],
+    timeout: float,
+) -> None:
     completed = False
+    observed = False
 
     def observe() -> None:
-        nonlocal completed
+        nonlocal completed, observed
+        if completed:
+            return
+        observed = True
         # The public Python Qt property avoids a second QVariant conversion of large directories.
-        state = editor.state
-        if not state["busy"] and not state.get("refreshing", False):
+        if ready(editor.state):
             completed = True
+
+    def is_complete() -> bool:
+        # Include the initial state read in wait_for's existing deadline. Later
+        # polls reuse the signal observation instead of copying the directory.
+        if not observed:
+            observe()
+        return completed
 
     editor.stateChanged.connect(observe)
     try:
-        observe()
-        wait_for(app, lambda: completed, timeout)
+        wait_for(app, is_complete, timeout)
     finally:
         editor.stateChanged.disconnect(observe)
 

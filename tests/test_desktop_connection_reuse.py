@@ -9,7 +9,14 @@ from PySide6.QtTest import QTest
 
 from election.desktop.controller import DesktopController
 from tests.configuration_desktop_support import ready_setup
-from tests.desktop_support import HttpsServer, sign_in, state_of, wait_for, wait_for_editor_idle
+from tests.desktop_support import (
+    HttpsServer,
+    sign_in,
+    state_of,
+    wait_for,
+    wait_for_editor_command,
+    wait_for_editor_idle,
+)
 from tests.lifecycle_support import lifecycle_database_url
 from tests.test_staff_desktop import create_officer
 
@@ -64,7 +71,7 @@ def test_password_reset_preserves_a_concurrent_held_profile_and_sends_one_reset(
     previous_revision = staff.property("state")["selected"]["revision"]
     password = "Transport-Reset-Test-126!"
     staff.resetPassword(password, password)
-    wait_for(qt_app, lambda: not staff.property("state")["busy"])
+    wait_for_editor_command(qt_app, staff)
     reset = staff.property("state")
     assert reset["error"] == ""
     assert reset["notice"] == "password_reset_success"
