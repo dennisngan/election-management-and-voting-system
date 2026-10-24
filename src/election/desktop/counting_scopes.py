@@ -2,15 +2,14 @@
 
 from collections.abc import Callable
 from copy import deepcopy
-from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
+from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
-from election.desktop.lifecycle import HKT, TIME_FORMAT
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
 DEFINITIVE_ERRORS = frozenset(
@@ -317,10 +316,8 @@ class CountingScopesController(QObject):
     def _time_form(value: Any) -> str:
         if not isinstance(value, str) or not value:
             return ""
-        try:
-            return datetime.fromisoformat(value).astimezone(HKT).strftime(TIME_FORMAT)
-        except ValueError:
-            return ""
+        formatted = format_event_time(value)
+        return "" if formatted == "—" else formatted.removesuffix(" HKT")
 
     def _load_selected(self, row: dict[str, Any]) -> None:
         selected_box_ids = [
@@ -644,8 +641,9 @@ class CountingScopesController(QObject):
 
     def _payload(self) -> dict[str, Any] | None:
         forms = self._state["forms"]
+        selected = self._state["selected"]
         try:
-            event = datetime.strptime(forms["event_at"].strip(), TIME_FORMAT).replace(tzinfo=HKT)
+            event = parse_event_time(forms["event_at"], selected.get("event_at"))
         except ValueError:
             self._state.update(error="counting_scope_validation", error_origin="local", notice="")
             self.stateChanged.emit()
@@ -655,7 +653,6 @@ class CountingScopesController(QObject):
             self._state.update(error="counting_scope_validation", error_origin="local", notice="")
             self.stateChanged.emit()
             return None
-        selected = self._state["selected"]
         basis = {box.get("id"): box for box in self._state["boxes"]}
         box_revisions = [
             {"box_id": box_id, "revision": basis[box_id]["revision"]}
@@ -676,7 +673,7 @@ class CountingScopesController(QObject):
             "request_id": self._pending_request_id or str(uuid4()),
             "expected_revision": selected.get("revision", 0),
             "reference": selected.get("reference", reference),
-            "event_at": event.isoformat(),
+            "event_at": event,
             "box_revisions": box_revisions,
             "accounting_revisions": accounting_revisions,
             "notes": forms["notes"].strip(),
