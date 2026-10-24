@@ -55,6 +55,26 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_balance_time_required": "P(12) 觀察時間必須與啟用／恢復事件時間相同。",
         "fallback_source_conflict": "所選後備來源與目前已確認的模式事件不一致，請核對記錄。",
         "fallback_stock_regression": "普通發票數量比啟用基礎更低，請核對所選 P(12) 版本。",
+        "fallback_new_activation": "新增後備啟用",
+        "fallback_new_recovery": "記錄恢復外部數字",
+        "fallback_recovery": "恢復核對基礎",
+        "fallback_parent_activation_id": "原啟用記錄編號",
+        "fallback_parent_activation_revision": "原啟用確認版本",
+        "fallback_reason": "恢復／修正原因",
+        "fallback_save_recovery": "儲存恢復草稿",
+        "fallback_approve_recovery": "確認恢復版本",
+        "fallback_reconciliation": "恢復核對比較",
+        "fallback_stock_cumulative": "庫存推算累計人數",
+        "fallback_recovered_cumulative": "恢復後外部累計人數",
+        "fallback_reconciliation_difference": "外部與庫存推算差額",
+        "fallback_reconciliation_hint": (
+            "保留伺服器計算的庫存基礎與外部恢復數字。主管確認後返回外部數字模式；相關 "
+            "P(15) 仍須重新覆核。"
+        ),
+        "fallback_begin_amend": "建立有原因的修正",
+        "fallback_correction": "有原因的修正",
+        "fallback_amend_save": "儲存修正版本",
+        "fallback_amended": "修正版本已儲存；請提交並重新由主管確認。",
     },
     "sc": {
         "fallback_title": "EPR 后备模式",
@@ -110,6 +130,26 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_balance_time_required": "P(12) 观察时间必须与启用／恢复事件时间相同。",
         "fallback_source_conflict": "所选后备来源与当前已确认的模式事件不一致，请核对记录。",
         "fallback_stock_regression": "普通发票数量比启用依据更低，请核对所选 P(12) 版本。",
+        "fallback_new_activation": "新增后备启用",
+        "fallback_new_recovery": "记录恢复外部数字",
+        "fallback_recovery": "恢复核对依据",
+        "fallback_parent_activation_id": "原启用记录编号",
+        "fallback_parent_activation_revision": "原启用确认版本",
+        "fallback_reason": "恢复／修正原因",
+        "fallback_save_recovery": "保存恢复草稿",
+        "fallback_approve_recovery": "确认恢复版本",
+        "fallback_reconciliation": "恢复核对比较",
+        "fallback_stock_cumulative": "库存推算累计人数",
+        "fallback_recovered_cumulative": "恢复后外部累计人数",
+        "fallback_reconciliation_difference": "外部与库存推算差额",
+        "fallback_reconciliation_hint": (
+            "保留服务器计算的库存依据与外部恢复数字。主管确认后返回外部数字模式；相关 "
+            "P(15) 仍须重新复核。"
+        ),
+        "fallback_begin_amend": "建立有原因的修正",
+        "fallback_correction": "有原因的修正",
+        "fallback_amend_save": "保存修正版本",
+        "fallback_amended": "修正版本已保存；请提交并重新由主管确认。",
     },
     "en": {
         "fallback_title": "EPR fallback",
@@ -189,6 +229,30 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_stock_regression": (
             "Ordinary issuance is lower than the activation basis. Review the selected "
             "P(12) revisions."
+        ),
+        "fallback_new_activation": "New fallback activation",
+        "fallback_new_recovery": "Record external recovery",
+        "fallback_recovery": "Recovery reconciliation basis",
+        "fallback_parent_activation_id": "Original activation ID",
+        "fallback_parent_activation_revision": "Original approved activation revision",
+        "fallback_reason": "Recovery or correction reason",
+        "fallback_save_recovery": "Save recovery draft",
+        "fallback_approve_recovery": "Confirm recovery revision",
+        "fallback_reconciliation": "Recovery comparison",
+        "fallback_stock_cumulative": "Stock-derived cumulative turnout",
+        "fallback_recovered_cumulative": "Recovered external cumulative turnout",
+        "fallback_reconciliation_difference": "Recovered minus stock-derived difference",
+        "fallback_reconciliation_hint": (
+            "Retain the server-calculated stock basis and recovered external total. "
+            "Supervisor confirmation returns to external-figure mode; affected P(15) "
+            "periods still require renewed review."
+        ),
+        "fallback_begin_amend": "Prepare a reasoned correction",
+        "fallback_correction": "Reasoned correction",
+        "fallback_amend_save": "Save correction revision",
+        "fallback_amended": (
+            "The correction revision was saved. Submit it for renewed Supervisor "
+            "confirmation."
         ),
     },
 }

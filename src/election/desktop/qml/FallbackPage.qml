@@ -11,17 +11,21 @@ ColumnLayout {
     readonly property var editorState: fallback.state
     readonly property var form: editorState.forms || ({})
     readonly property var selected: editorState.selected || ({})
-    readonly property var snapshot: selected.stock_snapshot || ({})
+    readonly property var snapshot: selected.stock_snapshot_display || ({})
+    readonly property bool recovery: form.kind === "recovery"
     readonly property var election: (editorState.context || ({})).election || ({})
     readonly property bool working: editorState.busy || editorState.refreshing
     readonly property bool officer: editorState.role === "polling_officer"
     readonly property bool supervisor: editorState.role === "supervisor"
     readonly property bool editable: officer && election.status === "active"
-        && !selected.id && !editorState.historical
+        && (!selected.id || editorState.editing) && !editorState.historical
     readonly property bool canSubmit: officer && selected.status === "draft"
         && !editorState.historical && election.status === "active"
     readonly property bool canApprove: supervisor && selected.status === "submitted"
         && !editorState.historical && election.status === "active"
+    readonly property bool canAmend: officer && election.status === "active"
+        && !editorState.historical && !editorState.editing
+        && ["submitted", "approved"].indexOf(selected.status) >= 0
     property string pendingAction: "reload"
     property int pendingIdentity: 0
     signal reveal(var control)
@@ -34,7 +38,13 @@ ColumnLayout {
         return t("fallback_kind_" + record.kind) + " " + record.id + " · "
             + t("revision") + " " + record.revision + " · " + t("fallback_status_" + record.status)
     }
+    function comparisonValue(key) {
+        let display = selected.reconciliation_display || ({})
+        return display[key] !== undefined ? display[key] : "—"
+    }
     function switchSelection(action, identity, discard) {
+        if (action === "activation" || action === "recovery")
+            return fallback.newRecord(action, discard)
         if (action === "record") return fallback.selectRecord(identity, discard)
         if (action === "revision") return fallback.loadRevision(identity, discard)
         return fallback.reload(discard)
@@ -69,6 +79,30 @@ ColumnLayout {
         onReveal: control => page.reveal(control)
     }
 
+    component MultilineField: TextArea {
+        id: field
+        Layout.fillWidth: true
+        readOnly: !page.editable; enabled: !page.working
+        selectByMouse: true; textFormat: TextEdit.PlainText; wrapMode: TextEdit.WrapAnywhere
+        topPadding: 12; bottomPadding: 12; leftPadding: 12; rightPadding: 12
+        topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
+        implicitHeight: Math.max(96, contentHeight + topPadding + bottomPadding)
+        background: Rectangle { color: "white"; radius: 8; border.color: "#c4cedc" }
+        Keys.priority: Keys.BeforeItem
+        Keys.onTabPressed: event => {
+            let next = field.nextItemInFocusChain(true)
+            if (next) next.forceActiveFocus(Qt.TabFocusReason)
+            event.accepted = true
+        }
+        Keys.onBacktabPressed: event => {
+            let next = field.nextItemInFocusChain(false)
+            if (next) next.forceActiveFocus(Qt.BacktabFocusReason)
+            event.accepted = true
+        }
+        onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+            if (field.activeFocus) page.reveal(field)
+        })
+    }
 
     RowLayout {
         Layout.fillWidth: true
@@ -115,6 +149,21 @@ ColumnLayout {
                 visible: page.editorState.items.length === 0
                 text: page.t("fallback_empty")
             }
+            GridLayout {
+                Layout.fillWidth: true; columns: page.width > 740 ? 2 : 1
+                visible: page.officer && page.election.status === "active"
+                Action {
+                    objectName: "fallbackNewActivation"; text: page.t("fallback_new_activation")
+                    highlighted: false; working: page.working
+                    onClicked: page.requestSelection("activation", 0)
+                }
+                Action {
+                    objectName: "fallbackNewRecovery"; text: page.t("fallback_new_recovery")
+                    working: page.working
+                    enabled: !page.working && page.editorState.active_activation_id !== null
+                    onClicked: page.requestSelection("recovery", 0)
+                }
+            }
             ComboBox {
                 id: recordPicker
                 objectName: "fallbackRecordPicker"
@@ -133,6 +182,12 @@ ColumnLayout {
                 onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
                     if (recordPicker.activeFocus) page.reveal(recordPicker)
                 })
+            }
+            Action {
+                objectName: "fallbackBeginAmend"; visible: page.canAmend
+                text: page.t("fallback_begin_amend"); highlighted: false; working: page.working
+                enabled: !page.working && !page.editorState.newer_revision
+                onClicked: page.fallback.beginAmend()
             }
             Action {
                 objectName: "fallbackReload"; text: page.t("reload_saved")
@@ -154,7 +209,36 @@ ColumnLayout {
         ColumnLayout {
             id: formLayout
             anchors.fill: parent; anchors.margins: 20; spacing: 14
-            Heading { text: page.t("fallback_activation") }
+            Heading {
+                objectName: "fallbackFormTitle"
+                text: page.t(page.editorState.editing ? "fallback_correction"
+                    : page.recovery ? "fallback_recovery" : "fallback_activation")
+            }
+            GridLayout {
+                Layout.fillWidth: true; columns: page.width > 740 ? 2 : 1
+                visible: page.recovery
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("fallback_parent_activation_id") }
+                    FormField {
+                        objectName: "fallbackActivationId"
+                        text: page.form.activation_id || ""; readOnly: true; working: page.working
+                        Accessible.name: page.t("fallback_parent_activation_id")
+                        onReveal: control => page.reveal(control)
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("fallback_parent_activation_revision") }
+                    FormField {
+                        objectName: "fallbackActivationRevision"
+                        text: page.form.activation_revision || ""; readOnly: true
+                        working: page.working
+                        Accessible.name: page.t("fallback_parent_activation_revision")
+                        onReveal: control => page.reveal(control)
+                    }
+                }
+            }
             FormCaption { text: page.t("fallback_event_time") }
             FormField {
                 objectName: "fallbackEventTime"
@@ -204,44 +288,87 @@ ColumnLayout {
                 }
             }
             FormCaption { text: page.t("fallback_source") }
-            TextArea {
-                id: sourceField
+            MultilineField {
                 objectName: "fallbackSource"
-                Layout.fillWidth: true
-                text: page.form.source_context || ""; readOnly: !page.editable
-                enabled: !page.working; selectByMouse: true; textFormat: TextEdit.PlainText
-                wrapMode: TextEdit.WrapAnywhere
-                topPadding: 12; bottomPadding: 12; leftPadding: 12; rightPadding: 12
-                topInset: 0; bottomInset: 0; leftInset: 0; rightInset: 0
-                implicitHeight: Math.max(96, contentHeight + topPadding + bottomPadding)
-                background: Rectangle { color: "white"; radius: 8; border.color: "#c4cedc" }
+                text: page.form.source_context || ""
                 Accessible.name: page.t("fallback_source")
                 onTextChanged: if (activeFocus) page.fallback.setField("source_context", text)
-                Keys.priority: Keys.BeforeItem
-                Keys.onTabPressed: event => {
-                    let next = sourceField.nextItemInFocusChain(true)
-                    if (next) next.forceActiveFocus(Qt.TabFocusReason)
-                    event.accepted = true
-                }
-                Keys.onBacktabPressed: event => {
-                    let next = sourceField.nextItemInFocusChain(false)
-                    if (next) next.forceActiveFocus(Qt.BacktabFocusReason)
-                    event.accepted = true
-                }
-                onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
-                    if (sourceField.activeFocus) page.reveal(sourceField)
-                })
+            }
+            FormCaption {
+                visible: page.recovery || page.editorState.editing || !!page.form.reason
+                text: page.t("fallback_reason")
+            }
+            MultilineField {
+                objectName: "fallbackReason"
+                visible: page.recovery || page.editorState.editing || !!page.form.reason
+                text: page.form.reason || ""
+                Accessible.name: page.t("fallback_reason")
+                onTextChanged: if (activeFocus) page.fallback.setField("reason", text)
             }
             Action {
-                objectName: "fallbackSave"; visible: page.editable
-                text: page.t("fallback_save"); working: page.working
+                objectName: "fallbackSave"; visible: page.editable && !page.selected.id
+                text: page.t(page.recovery ? "fallback_save_recovery" : "fallback_save")
+                working: page.working
                 onClicked: page.fallback.save()
+            }
+            Action {
+                objectName: "fallbackAmend"
+                visible: page.editable && !!page.selected.id && page.editorState.editing
+                text: page.t("fallback_amend_save"); working: page.working
+                enabled: !page.working && !page.editorState.newer_revision
+                onClicked: page.fallback.amend()
             }
             Action {
                 objectName: "fallbackSubmit"; visible: page.canSubmit
                 text: page.t("fallback_submit"); working: page.working
                 enabled: !page.working && !page.editorState.dirty && !page.editorState.newer_revision
                 onClicked: page.fallback.submit()
+            }
+        }
+    }
+    FormPanel {
+        visible: page.selected.kind === "recovery" && page.selected.reconciliation !== undefined
+        implicitHeight: comparisonLayout.implicitHeight + 40
+        ColumnLayout {
+            id: comparisonLayout
+            anchors.fill: parent; anchors.margins: 20; spacing: 14
+            Heading {
+                objectName: "fallbackReconciliationTitle"
+                text: page.t("fallback_reconciliation")
+            }
+            FormCaption { text: page.t("fallback_reconciliation_hint") }
+            GridLayout {
+                Layout.fillWidth: true; columns: page.width > 740 ? 3 : 1
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("fallback_stock_cumulative") }
+                    Label {
+                        objectName: "fallbackComparisonStock"
+                        Layout.fillWidth: true; textFormat: Text.PlainText
+                        wrapMode: Text.WrapAnywhere; font.pixelSize: 24; color: "#25344b"
+                        text: page.comparisonValue("stock_derived_cumulative_quantity")
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("fallback_recovered_cumulative") }
+                    Label {
+                        objectName: "fallbackComparisonRecovered"
+                        Layout.fillWidth: true; textFormat: Text.PlainText
+                        wrapMode: Text.WrapAnywhere; font.pixelSize: 24; color: "#25344b"
+                        text: page.comparisonValue("recovered_cumulative_quantity")
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("fallback_reconciliation_difference") }
+                    Label {
+                        objectName: "fallbackComparisonDifference"
+                        Layout.fillWidth: true; textFormat: Text.PlainText
+                        wrapMode: Text.WrapAnywhere; font.pixelSize: 24; color: "#25344b"
+                        text: page.comparisonValue("difference")
+                    }
+                }
             }
         }
     }
@@ -267,7 +394,7 @@ ColumnLayout {
                         objectName: "fallbackOrdinaryRemaining"
                         Layout.fillWidth: true; textFormat: Text.PlainText
                         wrapMode: Text.WrapAnywhere; font.pixelSize: 24; color: "#25344b"
-                        text: page.amount(page.snapshot.ordinary_remaining_quantity)
+                        text: page.snapshot.ordinary_remaining_quantity_display || "—"
                     }
                 }
                 ColumnLayout {
@@ -277,7 +404,7 @@ ColumnLayout {
                         objectName: "fallbackOrdinaryIssued"
                         Layout.fillWidth: true; textFormat: Text.PlainText
                         wrapMode: Text.WrapAnywhere; font.pixelSize: 24; color: "#25344b"
-                        text: page.amount(page.snapshot.ordinary_issued_quantity)
+                        text: page.snapshot.ordinary_issued_quantity_display || "—"
                     }
                 }
             }
@@ -294,14 +421,14 @@ ColumnLayout {
                         objectName: "fallbackCounterRemaining" + parent.modelData.counter.id
                         Layout.fillWidth: true; font.pixelSize: 18; color: "#25344b"
                         textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere
-                        text: page.amount(parent.modelData.ordinary_remaining_quantity)
+                        text: parent.modelData.ordinary_remaining_quantity_display || "—"
                     }
                     Repeater {
                         model: parent.modelData.ranges
                         delegate: FormCaption {
                             required property var modelData
                             text: modelData.series + " · " + modelData.serial_from + "–"
-                                + modelData.serial_to + " · " + page.amount(modelData.quantity)
+                                + modelData.serial_to + " · " + (modelData.quantity_display || "—")
                         }
                     }
                 }
@@ -346,7 +473,8 @@ ColumnLayout {
             }
             Action {
                 objectName: "fallbackApprove"; visible: page.canApprove
-                text: page.t("fallback_approve"); working: page.working
+                text: page.t(page.recovery ? "fallback_approve_recovery" : "fallback_approve")
+                working: page.working
                 enabled: !page.working && !page.editorState.newer_revision
                 onClicked: page.fallback.approve(approvalPassword.text)
             }
