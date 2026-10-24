@@ -18,8 +18,15 @@ Ticket 08 adds ordinary-stock allocations to issuance counters, shared ownership
 P(14) current/historical statements. Ticket 09 adds remaining-stock snapshots, unissued counter
 returns and selected P(12) stock-derived issuance statements. Ticket 10 adds replacement, tendered
 and retrieved-unused paper accounting with frozen revisions and three-language statements.
-**14 of 27 tickets are complete: 01–11, 13, 14 and 15.**
-[Ticket 10 closure](docs/evidence/ticket-10/README.md) records the latest frozen `94eb11f` full suite:
+Ticket 12 adds Supervisor-confirmed fallback/recovery, stock-derived turnout, retained source/mode
+coverage and renewed downstream review after corrections. **15 of 27 tickets are complete: 01–15.**
+[Ticket 12 closure](docs/evidence/ticket-12/README.md) records the latest frozen `5f9ac69` full suite:
+**1,089 passed, 27 warnings, zero failures in 2602.12 seconds, exit 0**, with 286 unchanged source fingerprints.
+Ruff and mypy (95 source files) pass. Computer evidence totals 81 capture pairs, seven native exports
+and ten inspected PDF pages; failed runs and their repairs remain visible. This session stops after
+Ticket 12; [the saved prompt](.scratch/election-management-voting-system/CONTINUE-IMPLEMENTATION.md)
+resumes with Ticket 16 in a new session and permits isolated independent fanout/test overlap.
+[Ticket 10 closure](docs/evidence/ticket-10/README.md) records the earlier frozen `94eb11f` full suite:
 **1,042 passed, 25 warnings, zero failures in 2200.48 seconds**, exit 0, with 78 retained Computer
 capture pairs, nine native exports and 15 complete PDF pages. Known runtime diagnostics and earlier
 failed-run/provenance limits remain visible. [Ticket 09 closure](docs/evidence/ticket-09/README.md)
@@ -98,12 +105,25 @@ Use a new observation for a later stock check, or a reasoned amendment to correc
 Select a saved or historical revision to preview/export its frozen P(12) statement in the chosen
 language. Stock-derived issuance does not change supplied normal-mode turnout or verify electors.
 
-Open **Normal-mode turnout** to enter supplied hourly/cumulative figures and their external source
+Open **P(15) period turnout** to enter supplied hourly/cumulative figures and their external source
 for a configured reporting period. An explicit zero is a saved report; a missing period stays missing.
 A Supervisor confirms the exact submitted revision using their own existing password. Approved
 totals use compatible consecutive periods from a zero starting baseline. Earlier amendments
 retain the original approvals and flag affected later periods for renewed review. Choose the
 reviewed revision or current station overview before previewing/exporting P(15).
+
+Open **EPR fallback** to record an external-register interruption while the management app remains
+connected. Record the original time, confirmed external cumulative baseline, and the current complete
+P(12) snapshot at that exact time. A Supervisor confirms the source before fallback becomes active.
+Select fallback sources in P(15); cumulative turnout uses the confirmed baseline plus subsequent
+ordinary issuance. Replacement and tendered reserves do not add ordinary voters.
+
+Record recovery against the original activation and an exact-time complete P(12) source. The app
+retains the stock-derived total, recovered external total and their difference. Supervisor confirmation
+returns to normal mode; affected P(15) approvals require a reasoned amendment and renewed review.
+A recovered 116 replaces an estimated 115. Reasoned source corrections retain earlier revisions;
+P(15) previews and PDF/CSV exports retain their selected sources and interval coverage. Counting
+Officers can inspect these records but cannot prepare or approve polling-station turnout.
 
 Open **Complaint categories** as an Administrator to configure three-language display labels and
 availability. Verified reference labels remain separate from project translations/custom labels;
