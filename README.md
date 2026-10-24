@@ -15,8 +15,12 @@ Ticket 06 adds revision-bound opening/closing records and Supervisor approval. T
 received-stock pools, retained corrections and translated receipt statements. Independent slices
 also implement normal turnout, complaint cases/statistics, queue observations and box handover.
 Ticket 08 adds ordinary-stock allocations to issuance counters, shared ownership guards and
-P(14) current/historical statements. **12 of 27 tickets are complete: 01–08, 11, 13, 14 and 15.**
-[Ticket 15 closure](docs/evidence/ticket-15/README.md) records the latest completed frozen
+P(14) current/historical statements. Ticket 09 adds remaining-stock snapshots, unissued counter
+returns and selected P(12) stock-derived issuance statements. **13 of 27 tickets are complete:
+01–09, 11, 13, 14 and 15.** [Ticket 09 closure](docs/evidence/ticket-09/README.md) records the
+latest completed frozen `36562f5` full suite: **1,006 passed, 23 warnings, zero failures in
+1982.24 seconds**, exit 0, with actual Computer and corrected PDF/CSV evidence.
+[Ticket 15 closure](docs/evidence/ticket-15/README.md) retains its earlier frozen
 `b8cd10b` full suite: **884 passed, 21 warnings, zero failures in 1378.11 seconds**, exit 0.
 Its root-operated native evidence has 60 PNG/AX pairs, nine actual exports, thirteen native
 PDF-page captures and 188 passing corrected-artifact checks. The final native continuation uses
@@ -33,7 +37,7 @@ retains its earlier 861-test checkpoint and 54 native captures.
 retains its `165a748` checkpoint: 869 passed, 24 known warnings in 1320.53 seconds; 33 native
 capture pairs, seven exports, four native PDF pages and 422 checks. Its layout source
 `3ef03a2` and test-helper `165a748` review follow-ups have zero Standards/zero Spec findings.
-Ticket 09 is in progress. Windows verification remains Ticket 27; remaining stock-flow, counting
+Ticket 09 is complete. Windows verification remains Ticket 27; remaining stock-flow, counting
 and delivery work follows the dependency plan. Illustrative design-preview figures are not application data.
 
 After signing in as an Administrator and changing the initial password, open **Election setup**.
@@ -74,6 +78,21 @@ remain read-only. Select a saved revision to preview or export its statement as 
 in the selected language. PDFs use the [bundled Chinese font](docs/report-font.md). Characters that
 the PDF renderer cannot represent produce a visible export error; preview and CSV retain the
 source text. The server serializes PDF builds around the shared font's subsetting state.
+
+Open **Unissued counter stock returns** to record ordinary papers returned from a named
+counter to the PRO, with their ballot series, printed serial range and original event time.
+Only papers still held as unissued stock can be returned. Saved corrections require a reason
+and preserve previous revisions; returned papers become available for later allocations.
+These stock movements are separate from papers retrieved after issuance to an elector.
+
+Open **P(12) Counter balances** to record all counters at one observation time. Check each
+counter that has reported, then enter its remaining ordinary serial ranges. A checked counter
+with no ranges explicitly reports zero; an unchecked counter is unreported and leaves the
+observation incomplete. The server derives ordinary issuance from net allocations less remaining
+stock, retaining the receipt, allocation and return revisions used for that observation.
+Use a new observation for a later stock check, or a reasoned amendment to correct a saved one.
+Select a saved or historical revision to preview/export its frozen P(12) statement in the chosen
+language. Stock-derived issuance does not change supplied normal-mode turnout or verify electors.
 
 Open **Normal-mode turnout** to enter supplied hourly/cumulative figures and their external source
 for a configured reporting period. An explicit zero is a saved report; a missing period stays missing.
