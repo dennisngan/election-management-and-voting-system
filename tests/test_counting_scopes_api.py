@@ -6,7 +6,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.box_support import BoxClock, box_staff, box_stations, prepared_box
+from tests.box_support import BoxClock, box_staff, box_stations, event_command, prepared_box
+from tests.counting_support import counting_setup
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 
 
@@ -104,3 +105,89 @@ def test_unreceived_box_is_an_explicit_incomplete_draft_and_cannot_start_countin
         history = receiver.get(f"{path}/{record['id']}")
         assert history.status_code == 200
         assert history.json() == {"record": record, "history": [record]}
+
+
+def test_received_mixed_scope_pins_sources_without_attributing_whole_source_totals_twice(
+    admin: TestClient, database_url: str,
+) -> None:
+    with counting_setup(admin, database_url) as setup:
+        receiver = setup["clients"]["receiveronly"]
+        path = setup["paths"]["n1_counting_scopes"]
+        options = receiver.get(path)
+        assert options.status_code == 200, options.text
+        assert {source["station"]["id"] for source in options.json()["source_accounting"]} == {
+            setup["stations"]["N1"]["id"], setup["stations"]["N2"]["id"]
+        }
+        for source in options.json()["source_accounting"]:
+            assert source["record"]["approval_valid"] is True
+        assert receiver.get(setup["paths"]["n2_accounting"]).status_code == 403
+        selected = [setup["boxes"][key] for key in ("local_n1", "transferred_n2")]
+        command = {
+            "request_id": str(uuid4()), "expected_revision": 0,
+            "reference": "Mixed local and transferred scope",
+            "event_at": "2026-11-15T23:10:00+08:00",
+            "box_revisions": [{"box_id": box["id"], "revision": box["revision"]}
+                              for box in selected],
+            "accounting_revisions": [
+                {"station_id": setup["stations"][code]["id"], "revision": 1}
+                for code in ("N1", "N2")
+            ],
+        }
+        created = receiver.post(path, json=command)
+        assert created.status_code == 201, created.text
+        scope = created.json()
+        assert len(scope["accounting_basis"]) == 2
+        assert scope["estimated_box_from_stock_quantity"] is None
+        assert scope["estimated_box_from_turnout_quantity"] is None
+        assert [row["all_source_boxes_in_scope"] for row in scope["coverage"]] == [True, False]
+        assert scope["blockers"] == []
+        submitted = receiver.post(
+            f"{path}/{scope['id']}/submit",
+            json={"request_id": str(uuid4()), "expected_revision": 1},
+        )
+        assert submitted.status_code == 200, submitted.text
+        assert submitted.json()["count_ready"] is True
+        assert submitted.json()["box_basis"][1]["receipt"]["id"] == selected[1]["receipt"]["id"]
+
+        # Receive the remaining physical source box, then explicitly revise the set.
+        pending = setup["boxes"]["unreceived_n2"]
+        received = receiver.post(
+            f"{setup['paths']['n1_boxes']}/{pending['id']}/receipt",
+            json=event_command(1, "2026-11-15T23:15:00+08:00"),
+        )
+        # Transferred boxes still require their origin departure before receipt.
+        assert received.status_code == 409
+        departed = setup["clients"]["polling"].post(
+            f"{setup['paths']['n2_boxes']}/{pending['id']}/departure",
+            json=event_command(1, "2026-11-15T23:12:00+08:00"),
+        )
+        assert departed.status_code == 201, departed.text
+        received = receiver.post(
+            f"{setup['paths']['n1_boxes']}/{pending['id']}/receipt",
+            json=event_command(2, "2026-11-15T23:15:00+08:00"),
+        )
+        assert received.status_code == 201, received.text
+        selection = {**command, "request_id": str(uuid4()), "expected_revision": 1,
+                     "box_revisions": command["box_revisions"] + [
+                         {"box_id": pending["id"], "revision": received.json()["revision"]}
+                     ]}
+        missing_reason = receiver.put(f"{path}/{scope['id']}", json=selection)
+        assert missing_reason.status_code == 422
+        revised = receiver.put(f"{path}/{scope['id']}", json={
+            **selection, "request_id": str(uuid4()),
+            "amendment_reason": "Include the newly received second N2 box.",
+        })
+        assert revised.status_code == 200, revised.text
+        assert revised.json()["revision"] == 2
+        assert len(revised.json()["box_basis"]) == 3
+        assert len(revised.json()["accounting_basis"]) == 2
+        assert revised.json()["estimated_box_from_stock_quantity"] == 10
+        assert revised.json()["estimated_box_from_turnout_quantity"] is None
+        old = receiver.get(f"{path}/{scope['id']}/revisions/1").json()
+        assert old["status"] == "submitted"
+        assert len(old["box_basis"]) == 2
+        assert old["estimated_box_from_stock_quantity"] is None
+        assert old["is_current"] is False
+        assert old["count_ready"] is False
+        history = receiver.get(f"{path}/{scope['id']}").json()
+        assert [row["revision"] for row in history["history"]] == [2, 1]
