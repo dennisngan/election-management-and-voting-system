@@ -19,6 +19,9 @@ ColumnLayout {
     readonly property var context: editorState.context || ({})
     readonly property var schedule: editorState.schedule || ({})
     readonly property var prefix: editorState.approved_prefix || ({})
+    readonly property var sourceModes: ["normal", "fallback", "recovery"]
+    readonly property string sourceMode: form.mode || "normal"
+    readonly property var sourceBasis: selected.source_basis_display || ({})
     readonly property bool hasStation: !!editorState.station_id
     readonly property bool hasReviewedPeriod: !!reviewedPeriod.period_index
         && reviewedPeriod.period_index === editorState.selected_period
@@ -41,6 +44,9 @@ ColumnLayout {
     spacing: 20
 
     function t(key) { return words[key] || key }
+    function sourceModeIndex() { return Math.max(0, sourceModes.indexOf(sourceMode)) }
+    function sourceModeLabel(mode) { return t("turnout_mode_" + mode) }
+    function exact(value) { return value === undefined || value === null ? "—" : value }
     function time(value) { return value ? turnout.formatTime(value) : "—" }
     function languageName(code) {
         return code === "sc" ? "简体中文" : code === "en" ? "English" : "繁體中文"
@@ -123,6 +129,7 @@ ColumnLayout {
         spacing: 6
         FormCaption { text: detail.caption }
         Label {
+            objectName: detail.objectName ? detail.objectName + "Value" : ""
             text: detail.value
             textFormat: Text.PlainText
             color: "#25344b"
@@ -422,8 +429,148 @@ ColumnLayout {
                 Detail { caption: page.t("turnout_derived_start"); value: page.selected.derived_cumulative_start_display || "—" }
                 Detail { caption: page.t("turnout_derived_end"); value: page.selected.derived_cumulative_end_display || "—" }
             }
-            FormCaption { text: page.t("external_manual") }
-            FormCaption { text: page.t("turnout_optional_counts_hint") }
+            FormCaption { text: page.t("turnout_source_mode") }
+            ComboBox {
+                id: sourceModePicker
+                objectName: "turnoutSourceMode"
+                Layout.fillWidth: true
+                model: page.sourceModes.map(mode => page.sourceModeLabel(mode))
+                currentIndex: page.sourceModeIndex()
+                enabled: page.editable
+                implicitHeight: Math.max(48, sourceModeText.implicitHeight + 24)
+                Accessible.name: page.t("turnout_source_mode")
+                contentItem: Text {
+                    id: sourceModeText
+                    text: sourceModePicker.displayText
+                    textFormat: Text.PlainText
+                    font: sourceModePicker.font
+                    color: "#25344b"
+                    wrapMode: Text.WordWrap
+                    verticalAlignment: Text.AlignVCenter
+                }
+                delegate: ItemDelegate {
+                    id: sourceModeOption
+                    required property string modelData
+                    required property int index
+                    width: sourceModePicker.width
+                    highlighted: sourceModePicker.highlightedIndex === index
+                    implicitHeight: Math.max(48, sourceModeOptionText.implicitHeight + 20)
+                    contentItem: Text {
+                        id: sourceModeOptionText
+                        text: sourceModeOption.modelData
+                        textFormat: Text.PlainText
+                        font: sourceModeOption.font
+                        color: "#25344b"
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                onActivated: index => {
+                    page.turnout.setField("mode", page.sourceModes[index])
+                    currentIndex = Qt.binding(function() { return page.sourceModeIndex() })
+                }
+                onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+                    if (sourceModePicker.activeFocus) page.reveal(sourceModePicker)
+                })
+            }
+            FormCaption { visible: page.sourceMode === "normal"; text: page.t("external_manual") }
+            FormCaption {
+                text: page.t(page.sourceMode === "fallback" ? "turnout_fallback_source_hint"
+                    : page.sourceMode === "recovery" ? "turnout_recovery_source_hint"
+                    : "turnout_optional_counts_hint")
+            }
+            GridLayout {
+                visible: page.sourceMode === "fallback"
+                Layout.fillWidth: true
+                columns: page.width > 780 ? 2 : 1
+                columnSpacing: 24
+                rowSpacing: 16
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("turnout_activation_id") }
+                    FormField {
+                        objectName: "turnoutFallbackActivationId"
+                        text: page.form.fallback_activation_id || ""
+                        readOnly: !page.editable
+                        working: page.editorState.busy
+                        Accessible.name: page.t("turnout_activation_id")
+                        onTextEdited: page.turnout.setField("fallback_activation_id", text)
+                        onReveal: control => page.reveal(control)
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("turnout_activation_revision") }
+                    FormField {
+                        objectName: "turnoutFallbackActivationRevision"
+                        text: page.form.fallback_activation_revision || ""
+                        readOnly: !page.editable
+                        working: page.editorState.busy
+                        Accessible.name: page.t("turnout_activation_revision")
+                        onTextEdited: page.turnout.setField("fallback_activation_revision", text)
+                        onReveal: control => page.reveal(control)
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("turnout_snapshot_id") }
+                    FormField {
+                        objectName: "turnoutStockSnapshotId"
+                        text: page.form.stock_snapshot_id || ""
+                        readOnly: !page.editable
+                        working: page.editorState.busy
+                        Accessible.name: page.t("turnout_snapshot_id")
+                        onTextEdited: page.turnout.setField("stock_snapshot_id", text)
+                        onReveal: control => page.reveal(control)
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("turnout_snapshot_revision") }
+                    FormField {
+                        objectName: "turnoutStockSnapshotRevision"
+                        text: page.form.stock_snapshot_revision || ""
+                        readOnly: !page.editable
+                        working: page.editorState.busy
+                        Accessible.name: page.t("turnout_snapshot_revision")
+                        onTextEdited: page.turnout.setField("stock_snapshot_revision", text)
+                        onReveal: control => page.reveal(control)
+                    }
+                }
+            }
+            GridLayout {
+                visible: page.sourceMode === "recovery"
+                Layout.fillWidth: true
+                columns: page.width > 780 ? 2 : 1
+                columnSpacing: 24
+                rowSpacing: 16
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("turnout_recovery_id") }
+                    FormField {
+                        objectName: "turnoutFallbackRecoveryId"
+                        text: page.form.fallback_recovery_id || ""
+                        readOnly: !page.editable
+                        working: page.editorState.busy
+                        Accessible.name: page.t("turnout_recovery_id")
+                        onTextEdited: page.turnout.setField("fallback_recovery_id", text)
+                        onReveal: control => page.reveal(control)
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    FormCaption { text: page.t("turnout_recovery_revision") }
+                    FormField {
+                        objectName: "turnoutFallbackRecoveryRevision"
+                        text: page.form.fallback_recovery_revision || ""
+                        readOnly: !page.editable
+                        working: page.editorState.busy
+                        Accessible.name: page.t("turnout_recovery_revision")
+                        onTextEdited: page.turnout.setField("fallback_recovery_revision", text)
+                        onReveal: control => page.reveal(control)
+                    }
+                }
+            }
             FormCaption { visible: !page.pollingOfficer; text: page.t("turnout_read_only") }
             FormCaption {
                 visible: !page.activeElection
@@ -442,7 +589,7 @@ ColumnLayout {
                     FormField {
                         objectName: "turnoutHourly"
                         text: page.form.supplied_hourly || ""
-                        readOnly: !page.editable
+                        readOnly: !page.editable || page.sourceMode === "fallback"
                         working: page.editorState.busy
                         Accessible.name: page.t("turnout_supplied_hourly")
                         onTextEdited: page.turnout.setField("supplied_hourly", text)
@@ -456,7 +603,7 @@ ColumnLayout {
                     FormField {
                         objectName: "turnoutCumulative"
                         text: page.form.supplied_cumulative || ""
-                        readOnly: !page.editable
+                        readOnly: !page.editable || page.sourceMode === "fallback"
                         working: page.editorState.busy
                         Accessible.name: page.t("turnout_supplied_cumulative")
                         onTextEdited: page.turnout.setField("supplied_cumulative", text)
@@ -540,6 +687,72 @@ ColumnLayout {
                     enabled: page.editable && page.amendable && !page.editorState.newer_revision
                         && !!(page.form.amendment_reason || "").trim()
                     onClicked: page.turnout.amend()
+                }
+            }
+        }
+    }
+
+    FormPanel {
+        visible: page.hasStation && !!page.selected.source_basis_display
+        implicitHeight: sourceBasisLayout.implicitHeight + 40
+        ColumnLayout {
+            id: sourceBasisLayout
+            anchors.fill: parent
+            anchors.margins: 20
+            spacing: 16
+            Heading { text: page.t("turnout_frozen_source_basis") }
+            Detail {
+                objectName: "turnoutActivationReference"
+                caption: page.t("turnout_activation_reference")
+                value: page.exact(page.sourceBasis.activation_id) + " · "
+                    + page.t("revision") + " " + page.exact(page.sourceBasis.activation_revision)
+                    + " · " + page.time((page.sourceBasis.activation || ({})).event_at)
+            }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: page.width > 900 ? 3 : 1
+                columnSpacing: 24
+                rowSpacing: 16
+                Detail {
+                    objectName: "turnoutBaseline"
+                    caption: page.t("turnout_activation_baseline")
+                    value: page.exact((page.sourceBasis.activation || ({})).cumulative_quantity_display)
+                }
+                Detail {
+                    objectName: "turnoutOrdinaryDelta"
+                    caption: page.t("turnout_ordinary_delta")
+                    value: page.exact(page.sourceBasis.ordinary_issued_since_activation_quantity_display)
+                }
+                Detail {
+                    objectName: "turnoutStockCumulative"
+                    caption: page.t("turnout_stock_cumulative")
+                    value: page.exact(page.sourceBasis.stock_derived_cumulative_quantity_display)
+                }
+                Detail {
+                    objectName: "turnoutRecoveredCumulative"
+                    visible: page.sourceBasis.recovered_cumulative_quantity_display !== undefined
+                    caption: page.t("turnout_recovered_cumulative")
+                    value: page.exact(page.sourceBasis.recovered_cumulative_quantity_display)
+                }
+                Detail {
+                    objectName: "turnoutReconciliationDifference"
+                    visible: page.sourceBasis.reconciliation_difference_display !== undefined
+                    caption: page.t("turnout_reconciliation_difference")
+                    value: page.exact(page.sourceBasis.reconciliation_difference_display)
+                }
+            }
+            Repeater {
+                model: page.sourceBasis.coverage || []
+                delegate: Detail {
+                    required property var modelData
+                    required property int index
+                    objectName: "turnoutCoverage" + index
+                    caption: page.t("turnout_interval_" + modelData.mode) + " · "
+                        + page.time(modelData.start_at) + " → " + page.time(modelData.end_at)
+                    value: page.exact(modelData.cumulative_start_quantity_display) + " → "
+                        + page.exact(modelData.cumulative_end_quantity_display) + " · "
+                        + page.t("turnout_coverage_hourly") + " "
+                        + page.exact(modelData.hourly_quantity_display)
                 }
             }
         }
