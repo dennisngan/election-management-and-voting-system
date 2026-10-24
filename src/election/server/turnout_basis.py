@@ -342,14 +342,6 @@ def recovery_period_basis(
         predecessor, exclude_record_id=head.id, coverage_end_at=recovery.event_at,
     )
     recovered = reconciliation["recovered_cumulative_quantity"]
-    coverage = basis["coverage"]
-    last = coverage[-1]
-    if recovered < last["cumulative_start_quantity"]:
-        raise HTTPException(422, detail={"code": "turnout_validation"})
-    coverage[-1] = {
-        **last, "mode": "reconciled", "cumulative_end_quantity": recovered,
-        "hourly_quantity": recovered - last["cumulative_start_quantity"],
-    }
     baseline = predecessor.derived_cumulative_end if predecessor else 0
     assert baseline is not None
     selected = recovered
@@ -366,13 +358,10 @@ def recovery_period_basis(
         or (supplied_hourly is not None and supplied_hourly != selected - baseline)
     ):
         raise HTTPException(422, detail={"code": "turnout_validation"})
-    if recovery.event_at < end_at:
-        coverage.append({
-            "mode": "normal", "start_at": as_utc(recovery.event_at), "end_at": as_utc(end_at),
-            "cumulative_start_quantity": recovered, "cumulative_end_quantity": selected,
-            "hourly_quantity": selected - recovered,
-        })
-    basis["source_events"].append(_mode_source(db, station_id, schedule, head, recovery))
+    coverage, sources = _period_mode_coverage(
+        db, station_id, schedule, start_at, end_at, baseline, selected,
+    )
+    basis["coverage"], basis["source_events"] = coverage, sources
     basis.update({
         "selected_cumulative_quantity": selected,
         "recovery_id": head.id, "recovery_revision": recovery.revision,
