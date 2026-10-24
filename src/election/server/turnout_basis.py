@@ -171,6 +171,85 @@ def _confirmed_stock_basis(
     return _ConfirmedStockBasis(head, activation, original, endpoint, ordinary_delta, cumulative)
 
 
+
+def _mode_source(
+    db: Session, station_id: int, schedule: ElectionSchedule,
+    head: FallbackRecord, row: FallbackRevision,
+) -> dict[str, Any]:
+    if (head.revision != row.revision or head.approved_revision != row.revision
+            or row.schedule_revision != schedule.revision):
+        raise HTTPException(409, detail={"code": "fallback_review_required"})
+    source = stock_snapshot_basis(
+        db, station_id, row.stock_snapshot_id, row.stock_snapshot_revision, row.event_at,
+    )
+    if source != row.data["stock_snapshot"]:
+        raise HTTPException(409, detail={"code": "fallback_review_required"})
+    result: dict[str, Any] = {
+        "id": head.id, "revision": row.revision, "kind": head.kind,
+        "event_at": as_utc(row.event_at), "cumulative_quantity": row.data["cumulative_quantity"],
+        "source_context": row.data["source_context"], "reason": row.reason,
+        "approved_at": as_utc(row.approved_at), "approved_by": row.approved_by,
+        "stock_snapshot_id": row.stock_snapshot_id,
+        "stock_snapshot_revision": row.stock_snapshot_revision, "stock_snapshot": source,
+    }
+    if head.kind == "recovery":
+        assert head.activation_id is not None
+        comparison = recovery_reconciliation(
+            db, station_id, schedule,
+            FallbackSelection(head.activation_id, row.data["activation_revision"],
+                              row.stock_snapshot_id, row.stock_snapshot_revision),
+            row.event_at, row.data["cumulative_quantity"], exclude_record_id=head.id,
+        )
+        if comparison != row.data["reconciliation"]:
+            raise HTTPException(409, detail={"code": "fallback_review_required"})
+        result.update(
+            activation_id=head.activation_id, activation_revision=row.data["activation_revision"],
+            reconciliation=comparison,
+        )
+    return result
+
+
+def _period_mode_coverage(
+    db: Session, station_id: int, schedule: ElectionSchedule, start_at: datetime, end_at: datetime,
+    baseline: int, cumulative: int, *, exclude_record_id: int | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    events = confirmed_mode_events(db, station_id, end_at, exclude_record_id=exclude_record_id)
+    before = [item for item in events if item[1].event_at <= start_at]
+    active = before[-1] if before and before[-1][0].kind == "activation" else None
+    sources = [_mode_source(db, station_id, schedule, *active)] if active else []
+    coverage: list[dict[str, Any]] = []
+    cursor, quantity = start_at, baseline
+
+    def segment(mode: str, end: datetime, total: int) -> None:
+        nonlocal cursor, quantity
+        if total < quantity or (end == cursor and total != quantity):
+            raise HTTPException(422, detail={"code": "turnout_validation"})
+        if end > cursor:
+            coverage.append({
+                "mode": mode, "start_at": as_utc(cursor), "end_at": as_utc(end),
+                "cumulative_start_quantity": quantity, "cumulative_end_quantity": total,
+                "hourly_quantity": total - quantity,
+            })
+        cursor, quantity = end, total
+
+    for head, row in events:
+        if row.event_at <= start_at:
+            continue
+        frozen = _mode_source(db, station_id, schedule, head, row)
+        if head.kind == "activation":
+            if active is not None:
+                raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+            segment("normal", row.event_at, row.data["cumulative_quantity"])
+            active = head, row
+        else:
+            if active is None or head.activation_id != active[0].id:
+                raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+            segment("reconciled", row.event_at, row.data["cumulative_quantity"])
+            active = None
+        sources.append(frozen)
+    segment("fallback" if active else "normal", end_at, cumulative)
+    return coverage, sources
+
 def fallback_period_basis(
     db: Session, station_id: int, schedule: ElectionSchedule, period_index: int,
     selection: FallbackSelection, predecessor: TurnoutRecord | None,
@@ -192,25 +271,10 @@ def fallback_period_basis(
     confirmed = activation.data["cumulative_quantity"]
     if cumulative < baseline:
         raise HTTPException(422, detail={"code": "turnout_validation"})
-    coverage = []
-    if activation.event_at > start_at:
-        if confirmed < baseline:
-            raise HTTPException(422, detail={"code": "turnout_validation"})
-        coverage.append({
-            "mode": "normal", "start_at": as_utc(start_at),
-            "end_at": as_utc(activation.event_at),
-            "cumulative_start_quantity": baseline,
-            "cumulative_end_quantity": confirmed, "hourly_quantity": confirmed - baseline,
-        })
-    fallback_start = max(start_at, activation.event_at)
-    fallback_baseline = confirmed if coverage else baseline
-    if cumulative < fallback_baseline:
-        raise HTTPException(422, detail={"code": "turnout_validation"})
-    coverage.append({
-        "mode": "fallback", "start_at": as_utc(fallback_start), "end_at": as_utc(end_at),
-        "cumulative_start_quantity": fallback_baseline,
-        "cumulative_end_quantity": cumulative, "hourly_quantity": cumulative - fallback_baseline,
-    })
+    coverage, sources = _period_mode_coverage(
+        db, station_id, schedule, start_at, end_at, baseline, cumulative,
+        exclude_record_id=exclude_record_id,
+    )
     basis = {
         "activation_id": head.id, "activation_revision": activation.revision,
         "stock_snapshot_id": selection.stock_snapshot_id,
@@ -226,8 +290,10 @@ def fallback_period_basis(
             "approved_at": as_utc(activation.approved_at), "approved_by": activation.approved_by,
         },
         "activation_stock_snapshot": original, "stock_snapshot": endpoint, "coverage": coverage,
+        "source_events": sources,
     }
-    return ("mixed" if len(coverage) > 1 else "fallback_stock"), basis
+    return ("mixed" if any(row["mode"] != "fallback" for row in coverage)
+            else "fallback_stock"), basis
 
 
 def recovery_reconciliation(
@@ -306,6 +372,7 @@ def recovery_period_basis(
             "cumulative_start_quantity": recovered, "cumulative_end_quantity": selected,
             "hourly_quantity": selected - recovered,
         })
+    basis["source_events"].append(_mode_source(db, station_id, schedule, head, recovery))
     basis.update({
         "selected_cumulative_quantity": selected,
         "recovery_id": head.id, "recovery_revision": recovery.revision,
