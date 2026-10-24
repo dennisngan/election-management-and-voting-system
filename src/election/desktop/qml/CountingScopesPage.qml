@@ -632,13 +632,13 @@ ColumnLayout {
         onAccepted: page.countingScopes.download(
             page.pendingFormat, selectedFile.toString(), page.pendingLocale)
     }
-    Dialog {
+    ConfirmationDialog {
         id: discardDialog
         objectName: "countingScopeDiscardDialog"
-        title: page.t("counting_scope_discard")
-        modal: true
-        standardButtons: Dialog.Discard | Dialog.Cancel
-        width: Math.min(520, page.width)
-        onDiscarded: page.countingScopes.discardAndReload()
+        focus: true
+        message: page.t("counting_scope_discard")
+        acceptLabel: page.t("discard_changes")
+        rejectLabel: page.t("keep_editing")
+        onConfirmed: page.countingScopes.discardAndReload()
     }
 }

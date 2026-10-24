@@ -243,6 +243,7 @@ ColumnLayout {
     FormNotice {
         objectName: "accountingNotice"
         words: page.words; error: page.editorState.error; notice: page.editorState.notice
+        autoReveal: !discardDialog.visible
         onReveal: control => page.reveal(control)
     }
     FormCaption { visible: !page.hasStation; text: page.t("select_station") }
@@ -566,13 +567,14 @@ ColumnLayout {
         }
     }
 
-    Dialog {
+    ConfirmationDialog {
         id: discardDialog
-        title: page.t("accounting_discard")
-        modal: true
-        standardButtons: Dialog.Discard | Dialog.Cancel
-        width: Math.min(520, page.width)
-        onDiscarded: {
+        objectName: "accountingDiscardDialog"
+        focus: true
+        message: page.t("accounting_discard")
+        acceptLabel: page.t("discard_changes")
+        rejectLabel: page.t("keep_editing")
+        onConfirmed: {
             if (page.pendingRevision) page.accounting.loadRevision(page.pendingRevision, true)
             else page.accounting.reload(true)
         }
