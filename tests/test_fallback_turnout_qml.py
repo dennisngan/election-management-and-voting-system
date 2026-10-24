@@ -20,8 +20,9 @@ from tests.test_fallback_activation_api import private_active_election as privat
 from tests.turnout_support import READY_PASSWORD, turnout_command
 
 
+@pytest.mark.parametrize("prefilled", [False, True])
 def test_material_selects_fallback_sources_and_supervisor_approves_mixed_115(
-    admin: TestClient, database_url: str, https_server: HttpsServer,
+    admin: TestClient, database_url: str, https_server: HttpsServer, prefilled: bool,
 ) -> None:
     with fallback_setup(admin, database_url) as setup:
         activation = confirm_fallback_activation(setup)
@@ -39,7 +40,7 @@ def test_material_selects_fallback_sources_and_supervisor_approves_mixed_115(
         run_workspace_qml(
             {"server": https_server.url, "username": setup["account"]["username"],
              "password": READY_PASSWORD, "station_id": endpoint["station_id"], "locale": "tc",
-             "activation_id": activation["id"], "snapshot_id": endpoint["id"],
+             "activation_id": activation["id"], "snapshot_id": endpoint["id"], "prefilled": prefilled,
              "supervisor_username": setup["supervisor_account"]["username"]},
             """
             click('turnoutNavigation')
@@ -52,7 +53,12 @@ def test_material_selects_fallback_sources_and_supervisor_approves_mixed_115(
             assert turnout.property('state')['selected_period'] == 2
             # First new UI boundary: this source selector is missing in RED.
             assert control('turnoutSourceMode').property('currentIndex') == 0
+            if setup['prefilled']:
+                enter('turnoutHourly', '123')
+                enter('turnoutCumulative', '223')
             choose('turnoutSourceMode', 1)
+            assert control('turnoutHourly').property('text') == ''
+            assert control('turnoutCumulative').property('text') == ''
             assert control('turnoutSourceMode').property('displayText') == '後備普通庫存推算'
             assert control('turnoutHourly').property('readOnly') is True
             assert control('turnoutCumulative').property('readOnly') is True

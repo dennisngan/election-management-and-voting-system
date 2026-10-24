@@ -477,6 +477,9 @@ class TurnoutController(QObject):
             return
         if name in self._state["forms"] and self._state["forms"][name] != value:
             self._state["forms"][name] = value
+            if name == "mode" and value == "fallback":
+                self._state["forms"]["supplied_hourly"] = ""
+                self._state["forms"]["supplied_cumulative"] = ""
             self._state.update(dirty=True, error="", notice="")
             self.stateChanged.emit()
 
