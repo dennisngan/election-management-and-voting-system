@@ -15,6 +15,7 @@ from election.server import (  # noqa: F401 -- register tables with Base.metadat
     models,
     polling_models,
     queue_models,
+    special_paper_models,
     staff_models,
     station_models,
     stock_models,

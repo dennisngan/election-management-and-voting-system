@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from election.server.configuration_models import Constituency, Election
 from election.server.models import Account, AuditEvent
+from election.server.special_paper_inventory import preserve_special_reserves
 from election.server.staff_models import StationAssignment
 from election.server.station_models import PollingStation
 from election.server.stock_inventory import preserve_allocations
@@ -428,6 +429,10 @@ def stock_router(
             if head.revision != data.revision:
                 raise HTTPException(409, detail={"code": "revision_conflict"})
             no_overlap(db, scope, data, head.id)
+            preserve_special_reserves(
+                db, station_id, head.id, data.series, data.ranges,
+                data.event_at.astimezone(UTC).replace(tzinfo=None),
+            )
             preserve_allocations(db, station_id, head.id, data.series, data.ranges)
             head.revision += 1
             try:
