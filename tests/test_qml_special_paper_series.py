@@ -19,7 +19,10 @@ def test_material_retains_distinct_series_counts_and_realigns_after_station_chan
     https_server.clock.value = clock.value
     first_station, second_station = scope["stations"][:2]
     first_id, second_id = first_station["id"], second_station["id"]
-    with turnout_staff(admin, database_url, clock, [first_id, second_id]) as (officer, account):
+    with (
+        turnout_staff(admin, database_url, clock, [first_id, second_id]) as (officer, account),
+        turnout_staff(admin, database_url, clock, [first_id], "counting_officer") as (_, reader),
+    ):
         snapshots = {}
         for station_id, series_names in (
             (first_id, ("多系列 A", "多系列 B")),
@@ -60,6 +63,7 @@ def test_material_retains_distinct_series_counts_and_realigns_after_station_chan
                 "server": https_server.url, "username": account["username"],
                 "password": READY_PASSWORD, "station_id": first_id, "locale": "en",
                 "other_station_id": second_id,
+                "reader_username": reader["username"],
             },
             """
             click('specialPapersNavigation')
@@ -138,6 +142,70 @@ def test_material_retains_distinct_series_counts_and_realigns_after_station_chan
             assert editor.property('state')['selected']['retrieved_unused_quantity'] == 1
             assert editor.property('state')['selected']['never_issued_quantity'] == 10
             assert editor.property('state')['selected']['estimated_box_papers_quantity'] == 4
+
+            # Restore the two-series station after the page has shown a one-series
+            # model. The picker label must describe the counts actually displayed.
+            click('accountNavigation')
+            frame()
+            contexts = workspace.property('state')['contexts']
+            first_index = next(index for index, row in enumerate(contexts)
+                               if row['station']['id'] == setup['station_id'])
+            choose('workspaceStationPicker', first_index)
+            wait(lambda: not workspace.property('state')['busy'] and
+                 workspace.property('state')['selected']['station']['id'] == setup['station_id'])
+            click('specialPapersNavigation')
+            wait(idle)
+            choose('specialPicker', 0)
+            wait(idle)
+            frame()
+            picker = control('specialSeriesPicker')
+            visible_series = picker.property('currentText')
+            assert visible_series in ('多系列 A', '多系列 B')
+            expected_counts = ('0', '0', '0', '0', '0', '0') if visible_series == '多系列 A' else (
+                '2', '2', '1', '1', '1', '1')
+            actual_counts = tuple(control('specialCount_' + key).property('text') for key in keys)
+            # First new consistency assertion; subsequent readonly/readback checks
+            # are deliberately unreached when the visible label names another row.
+            assert actual_counts == expected_counts, (visible_series, actual_counts)
+            for key in keys:
+                assert control('specialCount_' + key).property('readOnly') is True
+            assert editor.property('state')['selected']['id'] == saved['selected']['id']
+            assert editor.property('state')['dirty'] is False
+
+            # A second real session clears the controller while retaining the QML
+            # page. The reader must see counts for the series named by its picker.
+            choose('specialSeriesPicker', 1)
+            assert control('specialSeriesPicker').property('currentText') == '多系列 B'
+            assert control('specialCount_replacement_issued_quantity').property('text') == '2'
+            controller.signOut()
+            wait(lambda: controller.property('state')['phase'] == 'signed_out')
+            frame()
+            controller.signIn(setup['server'], setup['reader_username'], setup['password'])
+            wait(lambda: controller.property('state')['phase'] == 'workspace')
+            workspace.open()
+            wait(lambda: not workspace.property('state')['busy'])
+            workspace.selectStation(setup['station_id'])
+            wait(lambda: not workspace.property('state')['busy'])
+            click('specialPapersNavigation')
+            wait(idle)
+            choose('specialPicker', 0)
+            wait(idle)
+            frame()
+            assert editor.property('state')['role'] == 'counting_officer'
+            visible_series = control('specialSeriesPicker').property('currentText')
+            assert visible_series in ('多系列 A', '多系列 B')
+            expected_counts = ('0', '0', '0', '0', '0', '0') if visible_series == '多系列 A' else (
+                '2', '2', '1', '1', '1', '1')
+            actual_counts = tuple(control('specialCount_' + key).property('text') for key in keys)
+            assert actual_counts == expected_counts, (visible_series, actual_counts)
+            for key in keys:
+                field = control('specialCount_' + key)
+                assert field.property('visible') is True
+                assert field.property('readOnly') is True
+            assert control('specialEdit').property('visible') is False
+            assert control('specialSave').property('visible') is False
+            assert editor.property('state')['selected']['id'] == saved['selected']['id']
+            assert editor.property('state')['dirty'] is False
             """,
         )
         first = officer.get(f"/api/workspace/stations/{first_id}/special-papers")
