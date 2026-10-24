@@ -16,6 +16,7 @@ from tests.desktop_support import (
     state_of,
     texts_of,
     wait_for,
+    wait_for_editor_command,
     wait_for_editor_idle,
 )
 
@@ -44,8 +45,8 @@ def create_officer(staff: Any, qt_app: QCoreApplication) -> tuple[dict, str]:
     staff.setField("display_name", "職員測試帳戶")
     staff.setField("role", "polling_officer")
     staff.save(password, password)
-    # Creation acknowledgement is independent of background directory polling.
-    wait_for(qt_app, lambda: not staff.property("state")["busy"])
+    # Observe the same public command milestone without repeatedly copying the directory.
+    wait_for_editor_command(qt_app, staff)
     saved = staff.property("state")
     assert saved["error"] == ""
     selected = saved["selected"]
