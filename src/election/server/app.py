@@ -13,6 +13,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from election.server.accounting import accounting_router
 from election.server.allocation_reports import allocation_reports_router
 from election.server.allocations import allocation_router
 from election.server.box_reports import box_reports_router
@@ -161,6 +162,7 @@ def create_app(
     app.include_router(stock_return_router(database, ready_account, timestamp))
     app.include_router(special_paper_reports_router(database, ready_account, timestamp))
     app.include_router(special_paper_router(database, ready_account, timestamp))
+    app.include_router(accounting_router(database, ready_account, timestamp))
 
     def new_session(db: Session, account: Account) -> dict[str, Any]:
         token = token_urlsafe(32)
