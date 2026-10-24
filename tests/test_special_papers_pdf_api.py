@@ -3,13 +3,12 @@
 import re
 from io import BytesIO
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
-from tests.special_paper_support import special_paper_setup
+from tests.special_paper_support import save_special_paper_revisions, special_paper_setup
 from tests.test_special_papers_api import database_url as database_url
 from tests.test_special_papers_api import private_active_election as private_active_election
 
@@ -54,21 +53,8 @@ def test_selected_pdf_preserves_fourteen_category_totals_and_historical_source_c
 ) -> None:
     with special_paper_setup(admin, database_url) as setup:
         officer, path = setup["officer"], setup["path"]
-        created = officer.post(path, json=setup["command"])
-        assert created.status_code == 201
-        first = created.json()
+        first, second, reason = save_special_paper_revisions(setup)
         target = path + f"/{first['id']}"
-        reason = "核對紙本數量：補發三張，尋回零張。\n第二行：保留原始觀察時間及來源版本。"
-        corrected = officer.put(target, json={
-            **setup["command"], "request_id": str(uuid4()), "revision": 1,
-            "reason": reason,
-            "series": [{
-                **setup["entered_series"], "replacement_issued_quantity": 3,
-                "spoilt_original_quantity": 3, "retrieved_found_quantity": 0,
-            }],
-        })
-        assert corrected.status_code == 200
-        second = corrected.json()
         params = {"snapshot_id": first["id"], "revision": 1, "locale": locale}
         response = officer.get(path + "/statement.pdf", params=params)
         # First PDF behavior assertion. Later PDF/artifact/readback checks are unreached in RED.

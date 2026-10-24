@@ -2,12 +2,11 @@
 
 import csv
 from io import StringIO
-from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.special_paper_support import special_paper_setup
+from tests.special_paper_support import save_special_paper_revisions, special_paper_setup
 from tests.test_special_papers_api import database_url as database_url
 from tests.test_special_papers_api import private_active_election as private_active_election
 
@@ -43,21 +42,8 @@ def test_selected_statement_and_csv_keep_historical_figures_and_precise_source_c
 ) -> None:
     with special_paper_setup(admin, database_url) as setup:
         officer, path = setup["officer"], setup["path"]
-        created = officer.post(path, json=setup["command"])
-        assert created.status_code == 201
-        first = created.json()
+        first, second, reason = save_special_paper_revisions(setup)
         target = path + f"/{first['id']}"
-        reason = "核對紙本數量：補發三張，尋回零張。\n第二行：保留原始觀察時間及來源版本。"
-        corrected = officer.put(target, json={
-            **setup["command"], "request_id": str(uuid4()), "revision": 1,
-            "reason": reason,
-            "series": [{
-                **setup["entered_series"], "replacement_issued_quantity": 3,
-                "spoilt_original_quantity": 3, "retrieved_found_quantity": 0,
-            }],
-        })
-        assert corrected.status_code == 200
-        second = corrected.json()
         assert second["revision"] == 2
         assert (first["retrieved_unused_quantity"], first["never_issued_quantity"],
                 first["estimated_box_papers_quantity"]) == (3, 7, 2)

@@ -103,3 +103,23 @@ def special_paper_setup(admin: TestClient, database_url: str) -> Iterator[dict]:
             },
             "clock": clock,
         }
+
+
+def save_special_paper_revisions(setup: dict) -> tuple[dict, dict, str]:
+    """Save an original observation and its reasoned amendment through the public API."""
+    officer, path = setup["officer"], setup["path"]
+    created = officer.post(path, json=setup["command"])
+    assert created.status_code == 201
+    first = created.json()
+    target = path + f"/{first['id']}"
+    reason = "核對紙本數量：補發三張，尋回零張。\n第二行：保留原始觀察時間及來源版本。"
+    corrected = officer.put(target, json={
+        **setup["command"], "request_id": str(uuid4()), "revision": 1,
+        "reason": reason,
+        "series": [{
+            **setup["entered_series"], "replacement_issued_quantity": 3,
+            "spoilt_original_quantity": 3, "retrieved_found_quantity": 0,
+        }],
+    })
+    assert corrected.status_code == 200
+    return first, corrected.json(), reason
