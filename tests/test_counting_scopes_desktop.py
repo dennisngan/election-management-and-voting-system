@@ -77,6 +77,7 @@ def test_received_box_scope_saves_and_submits_with_source_accounting_provenance(
             submitted = editor.property('state')['selected']
             assert submitted['status'] == 'submitted'
             assert submitted['count_ready'] is True
+            assert editor.property('state')['notice'] == 'counting_scope_submitted'
             assert control('countingScopeSubmit').property('visible') is False
             enter('countingScopeNotes', 'Amended source check after submission.')
             editor.loadRevision(1)
@@ -85,6 +86,7 @@ def test_received_box_scope_saves_and_submits_with_source_accounting_provenance(
                 'Amended source check after submission.'
             )
             assert editor.property('state')['selected']['revision'] == submitted['revision']
+            frame()
             click('countingScopeSave')
             wait(lambda: not editor.property('state')['busy'])
             assert editor.property('state')['error'] == 'scope_reason_required'
@@ -236,7 +238,12 @@ def test_dirty_scope_keeps_local_input_and_refuses_stale_save_until_reload(
         assert stale["dirty"] is True
         assert stale["newer_revision"] is True
         assert stale["forms"]["notes"] == "Local notes must survive a refresh."
-        assert stale["selected"]["revision"] == 2
+        # The unsaved form remains bound to the revision it was edited from;
+        # the separately observed peer head blocks writing until explicit reload.
+        assert stale["selected"]["revision"] == 1
+        peer_head = next(row for row in stale["scopes"] if row["id"] == created.json()["id"])
+        assert peer_head["revision"] == 2
+        assert peer_head["notes"] == "A peer saved a newer revision."
 
         editor.save()
         assert editor.property("state")["error"] == "revision_conflict"

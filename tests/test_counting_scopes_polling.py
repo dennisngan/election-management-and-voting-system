@@ -71,7 +71,8 @@ def test_material_refresh_keeps_invalid_time_and_validation_message(
             """
             click('countingScopesNavigation')
             editor = controller.countingScopes
-            wait(lambda: not editor.property('state')['busy'])
+            wait(lambda: not any(editor.property('state')[key] for key in ('busy', 'refreshing')))
+            frame()
             click('countingScopeOption_' + str(setup['scope_id']))
             wait(lambda: not editor.property('state')['busy'])
             enter('countingScopeEventAt', 'not a Hong Kong date')
@@ -150,9 +151,13 @@ def test_material_refresh_keeps_historical_report_and_refreshes_frozen_source_va
 
             click('countingScopesNavigation')
             editor = controller.countingScopes
-            wait(lambda: not editor.property('state')['busy'])
+            wait(lambda: not any(editor.property('state')[key] for key in ('busy', 'refreshing')))
+            frame()
             click('countingScopeOption_' + str(setup['scope_id']))
             wait(lambda: not editor.property('state')['busy'])
+            assert len(editor.property('state')['history']) == 2, (
+                editor.property('state')['selected'], editor.property('state')['error'])
+            frame()
             choose('countingScopeHistory', 1)
             wait(lambda: not editor.property('state')['busy']
                 and editor.property('state')['selected']['revision'] == 1)
@@ -253,3 +258,4 @@ def test_foreground_scope_save_supersedes_a_held_background_scope_read(
         assert current["selected"]["notes"] == "Foreground save must beat the held poll response."
         assert current["forms"]["notes"] == "Foreground save must beat the held poll response."
         assert current["error"] == ""
+        assert current["notice"] == "counting_scope_saved"

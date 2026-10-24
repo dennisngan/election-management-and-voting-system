@@ -59,9 +59,11 @@ def test_material_localizes_a_peer_submission_conflict_and_reloads_its_actual_st
 
             click('countingScopesNavigation')
             editor = controller.countingScopes
-            wait(lambda: not editor.property('state')['busy'])
+            wait(lambda: not any(editor.property('state')[key] for key in ('busy', 'refreshing')))
+            frame()
             click('countingScopeOption_' + str(setup['scope_id']))
-            wait(lambda: not editor.property('state')['busy'])
+            wait(lambda: not any(editor.property('state')[key] for key in ('busy', 'refreshing')))
+            frame()
             assert editor.property('state')['selected']['status'] == 'draft'
             # A second authenticated client submits the unchanged content revision.
             # The Material client still holds its original draft until it reloads.

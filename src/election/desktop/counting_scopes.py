@@ -717,6 +717,7 @@ class CountingScopesController(QObject):
                     notice="counting_scope_saved",
                 )
                 self._load_selected(row)
+                self._state["notice"] = "counting_scope_saved"
             else:
                 self._state.update(error="invalid_response", error_origin="write", notice="")
 
@@ -762,6 +763,7 @@ class CountingScopesController(QObject):
                     error_origin="",
                 )
                 self._load_selected(result)
+                self._state["notice"] = "counting_scope_submitted"
             else:
                 self._state.update(error="invalid_response", error_origin="write", notice="")
 
