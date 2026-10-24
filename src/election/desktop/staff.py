@@ -114,22 +114,50 @@ class StaffController(QObject):
         if self._state["selected"]:
             requests.append((f"/api/accounts/{self._state['selected']['id']}/audit", "audit"))
 
-        def fetch(index: int) -> None:
-            if index >= len(requests):
+        generation = self._generation
+        pending = len(requests)
+        staged: dict[str, list[Any]] = {}
+        error: str | None = None
+        self._state["refreshing"] = True
+        self.stateChanged.emit()
+
+        def settled() -> None:
+            nonlocal pending
+            pending -= 1
+            if pending:
                 return
-            path, key = requests[index]
+            # Publish once: intermediate completions must not signal full idle
+            # or repeatedly copy the large directories into the Qt view.
+            self._state.update(staged, refreshing=False)
+            if error is not None:
+                self._state.update(error=error, notice="")
+            self.stateChanged.emit()
 
-            def listed(data: dict[str, Any]) -> None:
-                items = data.get("items")
-                if not isinstance(items, list):
-                    self._state["error"] = "request_failed"
+        def listed(key: str) -> ResultHandler:
+            def received(data: dict[str, Any]) -> None:
+                nonlocal error
+                if generation != self._generation:
                     return
-                self._state[key] = items
-                fetch(index + 1)
+                items = data.get("items")
+                if isinstance(items, list):
+                    staged[key] = items
+                else:
+                    error = error or "request_failed"
+                settled()
 
-            self._send(path, "GET", None, listed, background=True)
+            return received
 
-        fetch(0)
+        def failed(code: str) -> None:
+            nonlocal error
+            if generation != self._generation:
+                return
+            error = error or code
+            settled()
+
+        for path, key in requests:
+            if generation != self._generation:
+                return
+            self._request(path, "GET", None, listed(key), failed)
 
     def _accept(self, data: dict[str, Any]) -> None:
         self._state["selected"] = data

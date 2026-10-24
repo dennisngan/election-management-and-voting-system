@@ -34,6 +34,12 @@ class HttpsServer:
     # ASGI middleware timings stop at response-header readiness, before transport completion.
     request_timings: list[dict[str, str | int | float]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    hold_staff_response_path: str = ""
+    fail_staff_response_path: str = ""
+    staff_response_failed: threading.Event = field(default_factory=threading.Event)
+    staff_response_entered: threading.Event = field(default_factory=threading.Event)
+    release_staff_response: threading.Event = field(default_factory=threading.Event)
+    staff_response_finished: threading.Event = field(default_factory=threading.Event)
     hold_profile: bool = False
     hold_password_response: bool = False
     hold_configuration_list: bool = False

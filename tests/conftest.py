@@ -151,6 +151,12 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
         if delayed_allocations:
             endpoint.hold_allocation_list = False
             endpoint.allocation_list_entered.set()
+        held_staff_response = bool(
+            request.method == "GET" and endpoint.hold_staff_response_path
+            and request.url.path == endpoint.hold_staff_response_path
+        )
+        if held_staff_response:
+            endpoint.hold_staff_response_path = ""
         response = await call_next(request)
         headers_ready_at = time.monotonic()
         # Observe only method/path/status and monotonic times. This is ASGI
@@ -166,6 +172,24 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
                     "status": response.status_code,
                 }
             )
+        if (
+            request.method == "GET" and request.url.path == endpoint.fail_staff_response_path
+            and response.status_code == 200
+        ):
+            endpoint.fail_staff_response_path = ""
+            endpoint.staff_response_failed.set()
+            # The authenticated read ran against MySQL. Substitute only its
+            # public HTTP response with a complete failure for the batch guard.
+            return Response(
+                content='{"detail":{"code":"request_failed"}}', status_code=503,
+                media_type="application/json",
+            )
+        if held_staff_response:
+            # Hold only the transport of a completed real staff read. The test
+            # releases explicitly; fixture cleanup also releases after failures.
+            endpoint.staff_response_entered.set()
+            await asyncio.to_thread(endpoint.release_staff_response.wait)
+            endpoint.staff_response_finished.set()
         if delayed_allocations:
             await asyncio.to_thread(endpoint.release_allocation_list.wait, 5)
         if (
@@ -233,6 +257,7 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
         endpoint.release_profile.set()
         endpoint.release_password_response.set()
         endpoint.release_allocation_list.set()
+        endpoint.release_staff_response.set()
         server.should_exit = True
         wait_for(qt_app, lambda: not thread.is_alive())
         thread.join(timeout=0)
