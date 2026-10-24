@@ -31,6 +31,7 @@ from election.server.counting_scopes import counting_scopes_router
 from election.server.db import make_engine
 from election.server.f1_reports import f1_reports_router
 from election.server.fallback import fallback_router
+from election.server.invalid_ballot_reasons import invalid_ballot_reasons_router
 from election.server.lifecycle import lifecycle_router
 from election.server.models import Account, AuditEvent, LoginSession
 from election.server.polling import polling_router
@@ -142,6 +143,9 @@ def create_app(
     app.include_router(configuration_router(database, administrator, timestamp))
     app.include_router(
         complaint_categories_router(database, administrator, ready_account, timestamp)
+    )
+    app.include_router(
+        invalid_ballot_reasons_router(database, administrator, ready_account, timestamp)
     )
     app.include_router(complaints_router(database, ready_account, timestamp))
     app.include_router(complaint_reports_router(database, ready_account, timestamp))
