@@ -69,7 +69,8 @@ class FallbackController(QObject):
             "context": {}, "role": "", "station_id": 0, "schedule_revision": 0,
             "items": [], "current": {}, "selected": {}, "history": [],
             "forms": empty_forms(), "dirty": False, "busy": False, "refreshing": False,
-            "newer_revision": False, "historical": False, "error": "", "notice": "",
+            "newer_revision": False, "historical": False, "editing": False,
+            "error": "", "notice": "",
             "mode": "normal", "active_activation_id": None,
         }
         self.erasePassword.emit()
@@ -163,7 +164,7 @@ class FallbackController(QObject):
         self._reviewed_schedule_revision = self._state["schedule_revision"]
         self._state.update(
             selected=record_display(row) if row else {}, forms=forms,
-            dirty=False, newer_revision=False, historical=historical,
+            dirty=False, newer_revision=False, historical=historical, editing=False,
         )
         self.erasePassword.emit()
 
@@ -316,7 +317,7 @@ class FallbackController(QObject):
         self._reviewed_schedule_revision = self._state["schedule_revision"]
         self._state.update(
             current={}, selected={}, history=[], forms=forms,
-            dirty=False, historical=False, newer_revision=False,
+            dirty=False, historical=False, newer_revision=False, editing=False,
         )
         self.erasePassword.emit()
         self.stateChanged.emit()
@@ -356,19 +357,49 @@ class FallbackController(QObject):
         self._send(f"{self._path()}/{identity}?revision={revision}", "GET", None, loaded)
         return True
 
+    @Slot(result=bool)
+    def beginAmend(self) -> bool:
+        if self._state["busy"]:
+            return False
+        if self._state["role"] != "polling_officer":
+            self._error("polling_officer_required")
+            return False
+        if (self._state["historical"]
+                or self._state["context"].get("election", {}).get("status") != "active"):
+            self._error("election_read_only")
+            return False
+        if not self._reviewed:
+            self._error("request_failed")
+            return False
+        if self._state["newer_revision"]:
+            self._error("fallback_review_required")
+            return False
+        selected = self._state["selected"]
+        if (selected.get("status") not in ("submitted", "approved")
+                or selected.get("id") != self._current_raw.get("id")
+                or selected.get("revision") != self._current_raw.get("revision")):
+            self._error("fallback_state_conflict")
+            return False
+        if not self._state["editing"]:
+            self._state["forms"]["reason"] = ""
+            self._state.update(editing=True, dirty=False, error="", notice="")
+            self._pending = None
+            self.stateChanged.emit()
+        return True
+
     @Slot(str, str)
     def setField(self, name: str, text: str) -> None:
         if (name not in self._state["forms"] or name == "kind"
                 or self._state["role"] != "polling_officer"
                 or self._state["busy"] or self._state["historical"] or not self._reviewed
-                or self._state["selected"]
+                or (self._state["selected"] and not self._state["editing"])
                 or self._state["context"].get("election", {}).get("status") != "active"):
             return
         self._state["forms"][name] = text
         self._state.update(dirty=True, notice="", error="")
         self.stateChanged.emit()
 
-    def _content(self) -> dict[str, Any] | None:
+    def _content(self, *, amend: bool = False) -> dict[str, Any] | None:
         form = self._state["forms"]
         try:
             kind = form["kind"]
@@ -395,9 +426,9 @@ class FallbackController(QObject):
             if not form["source_context"].strip() or len(form["source_context"]) > 2000:
                 raise ValueError("A supplied source context is required")
             values["source_context"] = form["source_context"]
-            if kind == "recovery":
+            if kind == "recovery" or amend:
                 if not form["reason"].strip() or len(form["reason"]) > 2000:
-                    raise ValueError("Explain the recovery reconciliation")
+                    raise ValueError("Explain the recovery or reasoned correction")
                 values["reason"] = form["reason"]
             return values
         except (ValueError, OverflowError):
@@ -421,7 +452,7 @@ class FallbackController(QObject):
         if not self._reviewed:
             self._error("request_failed")
             return
-        if action != "save" and self._state["dirty"]:
+        if action not in ("save", "amend") and self._state["dirty"]:
             self._error("unsaved_fallback_changes")
             return
         if self._state["newer_revision"]:
@@ -429,10 +460,14 @@ class FallbackController(QObject):
             return
         selected = self._state["selected"]
         status = selected.get("status", "missing")
-        if status != {"save": "missing", "submit": "draft", "approve": "submitted"}[action]:
+        expected = {
+            "save": ("missing",), "submit": ("draft",), "approve": ("submitted",),
+            "amend": ("submitted", "approved"),
+        }
+        if status not in expected[action] or (action == "amend" and not self._state["editing"]):
             self._error("fallback_state_conflict")
             return
-        values = self._content() if action == "save" else {}
+        values = self._content(amend=action == "amend") if action in ("save", "amend") else {}
         if values is None:
             return
         payload = {"expected_schedule_revision": self._state["schedule_revision"], **values}
@@ -457,7 +492,7 @@ class FallbackController(QObject):
             self._selection_id = data["id"]
             self._load(accept=True, notice={
                 "save": "fallback_saved", "submit": "fallback_submitted",
-                "approve": "fallback_approved",
+                "approve": "fallback_approved", "amend": "fallback_amended",
             }[action])
 
         path = self._path() + (f"/{selected['id']}/{action}" if action != "save" else "")
@@ -468,13 +503,16 @@ class FallbackController(QObject):
         self._command("save")
 
     @Slot()
+    def amend(self) -> None:
+        self._command("amend")
+
+    @Slot()
     def submit(self) -> None:
         self._command("submit")
 
     @Slot(str)
     def approve(self, existingPassword: str) -> None:
         self._command("approve", password=existingPassword)
-
 
     @Slot(str, result=str)
     def formatTime(self, value: str) -> str:

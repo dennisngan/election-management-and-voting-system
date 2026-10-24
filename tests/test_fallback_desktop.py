@@ -232,3 +232,101 @@ def test_polling_desktop_records_recovery_and_supervisor_confirms_116_without_ch
                 assert fresh["forms"]["kind"] == "activation"
                 assert fresh["forms"]["activation_id"] == ""
                 assert fresh["forms"]["reason"] == "" and fresh["dirty"] is False
+
+
+def test_polling_desktop_amends_confirmed_baseline_and_preserves_read_only_history(
+    admin: TestClient, database_url: str, https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    with fallback_setup(admin, database_url) as setup:
+        prepared = approved_mixed_period(setup)
+        activation, old_turnout = prepared["activation"], prepared["approved"]
+        https_server.clock.value = setup["clock"].value
+        station_id = setup["snapshot"]["station_id"]
+        with fallback_editor(https_server, qt_app, setup["account"], station_id) as (_, editor):
+            assert editor.selectRecord(activation["id"]) is True
+            wait_for_editor_idle(qt_app, editor)
+            # First new-feature call: explicitly beginning a reasoned Qt correction is missing.
+            assert editor.beginAmend() is True
+            assert editor.property("state")["editing"] is True
+            editor.setField("cumulative_quantity", "111")
+            editor.setField("source_context", "Corrected external baseline is 111 at 11:20.")
+            editor.setField("reason", "Register transcription correction: 110 should be 111.")
+            entered = editor.property("state")["forms"]
+            for change in (
+                lambda: editor.loadRevision(1), lambda: editor.selectRecord(activation["id"]),
+                editor.reload,
+            ):
+                assert change() is False
+                assert editor.property("state")["error"] == "unsaved_fallback_changes"
+                assert editor.property("state")["forms"] == entered
+            editor.refresh()
+            wait_for_editor_idle(qt_app, editor)
+            assert editor.property("state")["forms"] == entered
+            assert editor.property("state")["dirty"] is True
+            assert editor.property("state")["editing"] is True
+            editor.amend()
+            wait_for_editor_idle(qt_app, editor)
+            saved_state = editor.property("state")
+            assert saved_state["error"] == "" and saved_state["notice"] == "fallback_amended"
+            corrected = saved_state["selected"]
+            assert corrected["id"] == activation["id"]
+            assert corrected["revision"] == 2 and corrected["status"] == "draft"
+            assert corrected["cumulative_quantity"] == 111
+            assert corrected["stock_snapshot"] == activation["stock_snapshot"]
+            assert corrected["reason"] == entered["reason"]
+            assert saved_state["editing"] is False and saved_state["dirty"] is False
+            old_source = setup["officer"].get(
+                setup["path"] + f"/{activation['id']}?revision=1",
+            )
+            assert old_source.status_code == 200 and old_source.json() == activation
+            pending = setup["officer"].get(setup["scope"]["path"])
+            assert pending.status_code == 200
+            assert pending.json()["items"][1]["record"] == old_turnout
+            assert pending.json()["items"][1]["review_required"] is True
+            assert pending.json()["approved_prefix"]["cumulative_end"] == 100
+            editor.submit()
+            wait_for_editor_idle(qt_app, editor)
+            submitted = editor.property("state")["selected"]
+            assert submitted["status"] == "submitted" and submitted["revision"] == 2
+            with fallback_editor(
+                https_server, qt_app, setup["supervisor_account"], station_id,
+            ) as (_, reviewer):
+                assert reviewer.selectRecord(activation["id"]) is True
+                wait_for_editor_idle(qt_app, reviewer)
+                assert reviewer.loadRevision(2) is True
+                wait_for_editor_idle(qt_app, reviewer)
+                assert reviewer.beginAmend() is False
+                assert reviewer.property("state")["error"] == "polling_officer_required"
+                reviewer.approve(READY_PASSWORD)
+                wait_for_editor_idle(qt_app, reviewer)
+                reviewed = reviewer.property("state")
+                assert reviewed["error"] == "" and reviewed["notice"] == "fallback_approved"
+                approved = reviewed["selected"]
+                assert approved["revision"] == 2 and approved["status"] == "approved"
+                assert approved["cumulative_quantity"] == 111
+                assert [row["cumulative_quantity"] for row in reviewed["history"]] == [110, 111]
+                editor.refresh()
+                wait_for_editor_idle(qt_app, editor)
+                stale = editor.property("state")
+                assert stale["current"] == approved and stale["selected"] == submitted
+                assert stale["forms"]["cumulative_quantity"] == "111"
+                assert stale["newer_revision"] is True
+                assert editor.reload(True) is True
+                wait_for_editor_idle(qt_app, editor)
+                assert editor.property("state")["editing"] is False
+                assert editor.loadRevision(1) is True
+                wait_for_editor_idle(qt_app, editor)
+                historical = editor.property("state")
+                assert historical["historical"] is True and historical["editing"] is False
+                assert historical["selected"]["cumulative_quantity"] == 110
+                assert editor.beginAmend() is False
+                assert editor.property("state")["error"] == "election_read_only"
+                editor.setField("cumulative_quantity", "999")
+                assert editor.property("state")["forms"] == historical["forms"]
+                editor.amend()
+                assert editor.property("state")["error"] == "election_read_only"
+                retained = setup["officer"].get(
+                    setup["path"] + f"/{activation['id']}?revision=1",
+                )
+                assert retained.status_code == 200 and retained.json() == activation
