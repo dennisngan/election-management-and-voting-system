@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import select, tuple_
+from sqlalchemy import and_, select, tuple_
 from sqlalchemy.orm import Session
 
 from election.server.models import Account, AuditEvent
@@ -17,7 +17,7 @@ from election.server.special_paper_inventory import current_special_papers
 from election.server.special_paper_models import SpecialPaperRevision, SpecialPaperSnapshot
 from election.server.stock import stock_scope, stock_write
 from election.server.stock_inventory import received_ranges
-from election.server.stock_models import StockReceiptRevision
+from election.server.stock_models import StockReceipt, StockReceiptRevision
 from election.server.stock_serials import MAX_STOCK_QUANTITY
 from election.server.stock_snapshot_models import StockSnapshot, StockSnapshotRevision
 from election.server.stock_snapshots import snapshot_basis_current
@@ -111,7 +111,9 @@ def special_paper_accounting(
     assert snapshot is not None
     if not snapshot.data["complete"]:
         raise HTTPException(409, detail={"code": "stock_snapshot_incomplete"})
-    if snapshot.event_at > event_at or not snapshot_basis_current(db, station_id, snapshot):
+    if snapshot.event_at > event_at or not snapshot_basis_current(
+        db, station_id, snapshot, lock=True,
+    ):
         raise HTTPException(409, detail={"code": "stock_snapshot_basis_stale"})
     lines = received_ranges(db, station_id, lock=True)
     receipt_rows = list(db.scalars(select(StockReceiptRevision).where(
@@ -184,6 +186,31 @@ def special_paper_accounting(
         "stock_snapshot_event_at": snapshot.event_at.isoformat() + "Z",
         "stock_snapshot_data": snapshot.data,
     }
+
+
+def special_paper_basis_current(
+    db: Session, station_id: int, row: SpecialPaperRevision,
+) -> bool:
+    head = db.scalar(select(StockSnapshot).where(
+        StockSnapshot.id == row.stock_snapshot_id, StockSnapshot.station_id == station_id,
+    ))
+    if head is None or head.revision != row.stock_snapshot_revision:
+        return False
+    snapshot = db.scalar(select(StockSnapshotRevision).where(
+        StockSnapshotRevision.snapshot_id == head.id,
+        StockSnapshotRevision.revision == head.revision,
+    ))
+    if snapshot is None or not snapshot_basis_current(db, station_id, snapshot):
+        return False
+    receipts = set(db.execute(select(StockReceipt.id, StockReceipt.revision).join(
+        StockReceiptRevision, and_(
+            StockReceipt.id == StockReceiptRevision.receipt_id,
+            StockReceipt.revision == StockReceiptRevision.revision,
+        ),
+    ).where(StockReceipt.station_id == station_id,
+            StockReceiptRevision.event_at <= row.event_at)))
+    expected = {(source["receipt_id"], source["revision"]) for source in row.data["receipt_basis"]}
+    return receipts == expected
 
 
 def special_paper_router(
@@ -260,6 +287,17 @@ def special_paper_router(
             db.commit()
             return special_paper_view(row, station_id)
         return stock_write(db, write)
+
+    @router.get("")
+    def collection(station_id: int, db: Database, actor: Ready) -> dict[str, Any]:
+        scope = stock_scope(db, actor, station_id)
+        rows = current_special_papers(db, station_id)
+        items = [special_paper_view(row, station_id) for row in rows]
+        return {
+            "scope": scope, "items": items, "latest": items[-1] if items else None,
+            "latest_basis_current": special_paper_basis_current(db, station_id, rows[-1])
+            if rows else None,
+        }
 
     @router.post("", status_code=201)
     def create(station_id: int, data: SpecialPaperInput, response: Response,

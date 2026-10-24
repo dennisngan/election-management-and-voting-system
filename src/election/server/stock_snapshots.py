@@ -244,10 +244,12 @@ def snapshot_accounting(
     }
 
 
-def snapshot_basis_current(db: Session, station_id: int, row: StockSnapshotRevision) -> bool:
+def snapshot_basis_current(
+    db: Session, station_id: int, row: StockSnapshotRevision, *, lock: bool = False,
+) -> bool:
     allocations = {
         (item.allocation_id, item.revision)
-        for item in current_allocations(db, station_id)
+        for item in current_allocations(db, station_id, lock=lock)
         if item.event_at <= row.event_at
     }
     expected_allocations = {
@@ -255,25 +257,25 @@ def snapshot_basis_current(db: Session, station_id: int, row: StockSnapshotRevis
     }
     returns = {
         (item.return_id, item.revision)
-        for item in current_returns(db, station_id)
+        for item in current_returns(db, station_id, lock=lock)
         if item.event_at <= row.event_at
     }
     expected_returns = {(item["return_id"], item["revision"]) for item in row.data["return_basis"]}
     expected_receipts = {
         (item["receipt_id"], item["revision"]) for item in row.data["receipt_basis"]
     }
-    receipts = {
-        (item.id, item.revision)
-        for item in db.scalars(
-            select(StockReceipt).where(
-                StockReceipt.station_id == station_id,
-                StockReceipt.id.in_({item[0] for item in expected_receipts}),
-            )
-        )
-    }
-    counters = set(
-        db.scalars(select(IssuanceCounter.id).where(IssuanceCounter.station_id == station_id))
+    receipt_query = select(StockReceipt).where(
+        StockReceipt.station_id == station_id,
+        StockReceipt.id.in_({item[0] for item in expected_receipts}),
     )
+    counter_query = select(IssuanceCounter.id).where(IssuanceCounter.station_id == station_id)
+    if lock:
+        # Authentication can predate a competing writer's commit under MySQL RR.
+        # A write validator must inspect current source heads under its scope lock.
+        receipt_query = receipt_query.with_for_update().execution_options(populate_existing=True)
+        counter_query = counter_query.with_for_update()
+    receipts = {(item.id, item.revision) for item in db.scalars(receipt_query)}
+    counters = set(db.scalars(counter_query))
     expected_counters = {item["counter"]["id"] for item in row.data["counters"]}
     return (
         allocations == expected_allocations
