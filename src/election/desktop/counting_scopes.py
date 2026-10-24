@@ -1,5 +1,6 @@
 """Received-box counting scopes through the authenticated desktop API."""
 
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime
 from typing import Any
@@ -58,6 +59,7 @@ class CountingScopesController(QObject):
         self._request = request
         self._download = download
         self._generation = 0
+        self._selection_generation = 0
         self._report_generation = 0
         self._opened = False
         self._pending_request_id = ""
@@ -70,6 +72,7 @@ class CountingScopesController(QObject):
 
     def reset(self) -> None:
         self._generation += 1
+        self._selection_generation += 1
         self._report_generation += 1
         self._pending_request_id = ""
         self._state = {
@@ -91,6 +94,7 @@ class CountingScopesController(QObject):
             "refreshing": False,
             "newer_revision": False,
             "error": "",
+            "error_origin": "",
             "notice": "",
             "report": {},
             "report_text": "",
@@ -125,26 +129,34 @@ class CountingScopesController(QObject):
         success: ResultHandler,
         *,
         background: bool = False,
+        guard: Callable[[], bool] | None = None,
     ) -> None:
+        if not background:
+            self._generation += 1
+            self._state["refreshing"] = False
         generation = self._generation
         activity = "refreshing" if background else "busy"
         self._state[activity] = True
         self.stateChanged.emit()
 
         def done(data: dict[str, Any]) -> None:
-            if generation != self._generation:
+            if generation != self._generation or (guard is not None and not guard()):
                 return
             self._state[activity] = False
             success(data)
             self.stateChanged.emit()
 
         def failed(code: str) -> None:
-            if generation != self._generation:
+            if generation != self._generation or (guard is not None and not guard()):
                 return
             self._state[activity] = False
             if code in DEFINITIVE_ERRORS:
                 self._pending_request_id = ""
-            self._state.update(error=code, notice="")
+            self._state.update(
+                error=code,
+                notice="",
+                error_origin="write" if method != "GET" else "read",
+            )
             self.stateChanged.emit()
 
         self._request(path, method, payload, done, failed)
@@ -167,12 +179,55 @@ class CountingScopesController(QObject):
             and type(row.get("count_ready")) is bool
         )
 
+    def _clear_read_error(self) -> None:
+        if self._state["error_origin"] == "read":
+            self._state.update(error="", error_origin="", notice="")
+
+    def _refresh_historical_revision(
+        self, scope_id: int, revision: int, selection_generation: int
+    ) -> None:
+        def still_selected() -> bool:
+            selected = self._state["selected"]
+            return bool(
+                self._selection_generation == selection_generation
+                and selected.get("id") == scope_id
+                and selected.get("revision") == revision
+                and self._state["historical"]
+            )
+
+        def loaded(row: dict[str, Any]) -> None:
+            if not (
+                self._valid_view(row)
+                and row.get("id") == scope_id
+                and row.get("revision") == revision
+            ):
+                self._state.update(error="invalid_response", error_origin="read", notice="")
+                return
+            self._state.update(
+                selected=deepcopy(row),
+                historical=True,
+                newer_revision=False,
+            )
+            self._state["history"] = [
+                row if item.get("revision") == revision else item for item in self._state["history"]
+            ]
+            self._clear_read_error()
+
+        self._send(
+            f"{self._path()}/{scope_id}/revisions/{revision}",
+            "GET",
+            None,
+            loaded,
+            background=True,
+            guard=still_selected,
+        )
+
     def _accept(self, data: dict[str, Any]) -> None:
         if not isinstance(data, dict) or not all(
             key in data
             for key in ("context", "counting_applicable", "boxes", "source_accounting", "scopes")
         ):
-            self._state.update(error="invalid_response", notice="")
+            self._state.update(error="invalid_response", error_origin="read", notice="")
             return
         if not (
             isinstance(data["context"], dict)
@@ -182,32 +237,81 @@ class CountingScopesController(QObject):
             and isinstance(data["scopes"], list)
             and all(self._valid_view(row) for row in data["scopes"])
         ):
-            self._state.update(error="invalid_response", notice="")
+            self._state.update(error="invalid_response", error_origin="read", notice="")
             return
+
         old_scopes = self._state["scopes"]
-        old_selected = self._state["selected"]
+        old_selected = deepcopy(self._state["selected"])
         selected_id = old_selected.get("id")
-        scopes = deepcopy(data["scopes"])
-        selected: dict[str, Any] = next((row for row in scopes if row["id"] == selected_id), {})
-        newer = bool(
-            selected and old_selected and selected.get("revision") != old_selected.get("revision")
+        selected_revision = old_selected.get("revision")
+        was_dirty = self._state["dirty"]
+        was_historical = self._state["historical"]
+        feedback_protected = bool(
+            self._state["error"] and self._state["error_origin"] not in ("", "read")
         )
-        if self._state["dirty"] and old_scopes != scopes:
-            newer = True
-            self._clear_report()
+        scopes = deepcopy(data["scopes"])
+        latest: dict[str, Any] = next((row for row in scopes if row["id"] == selected_id), {})
+        head_changed = bool(
+            latest
+            and old_selected
+            and (
+                latest.get("revision") != selected_revision
+                or latest.get("status") != old_selected.get("status")
+            )
+        )
+        catalog_changed = old_scopes != scopes
         self._state.update(
             context=deepcopy(data["context"]),
             counting_applicable=data["counting_applicable"],
             boxes=deepcopy(data["boxes"]),
             source_accounting=deepcopy(data["source_accounting"]),
             scopes=scopes,
-            selected=deepcopy(selected),
-            newer_revision=newer,
-            error="",
-            notice="",
         )
-        if not self._state["dirty"] and selected:
-            self._load_selected(selected)
+        self._clear_read_error()
+
+        if not old_selected:
+            self._state.update(selected={}, newer_revision=False)
+            return
+        if not latest:
+            self._state.update(selected=old_selected, newer_revision=catalog_changed)
+            return
+        if was_historical:
+            selection_generation = self._selection_generation
+            self._state.update(
+                selected=old_selected,
+                historical=True,
+                newer_revision=False,
+            )
+            self._refresh_historical_revision(
+                old_selected["id"], old_selected["revision"], selection_generation
+            )
+            return
+
+        if was_dirty or (head_changed and feedback_protected):
+            selected = deepcopy(old_selected)
+            if not head_changed:
+                for key in ("source_current", "is_current", "count_ready", "blockers"):
+                    if key in latest:
+                        selected[key] = deepcopy(latest[key])
+            self._state.update(
+                selected=selected,
+                historical=False,
+                newer_revision=head_changed or catalog_changed,
+            )
+            return
+
+        if head_changed:
+            self._selection_generation += 1
+            self._state.update(history=[])
+            self._state["selected"] = deepcopy(latest)
+            self._load_selected(latest)
+            return
+
+        self._state.update(
+            selected=deepcopy(latest),
+            historical=False,
+            newer_revision=False,
+        )
 
     @staticmethod
     def _time_form(value: Any) -> str:
@@ -239,6 +343,9 @@ class CountingScopesController(QObject):
             historical=not row.get("is_current", True),
             dirty=False,
             newer_revision=False,
+            error="",
+            error_origin="",
+            notice="",
         )
         self._clear_report()
 
@@ -272,8 +379,9 @@ class CountingScopesController(QObject):
 
     @Slot()
     def discardAndReload(self) -> None:
-        if self._state["busy"] or self._state["refreshing"]:
+        if self._state["busy"]:
             return
+        self._selection_generation += 1
         selected_id = self._state["selected"].get("id")
         latest: dict[str, Any] = next(
             (row for row in self._state["scopes"] if row.get("id") == selected_id), {}
@@ -282,6 +390,7 @@ class CountingScopesController(QObject):
             dirty=False,
             newer_revision=False,
             error="",
+            error_origin="",
             notice="",
             history=[],
             report={},
@@ -296,21 +405,26 @@ class CountingScopesController(QObject):
                 selected={}, forms=empty_forms(), selected_box_ids=[], accounting_selection={}
             )
         self.stateChanged.emit()
-        self.reload()
+        if self._state["station_id"]:
+            self._send(self._path(), "GET", None, self._accept)
 
     @Slot(int)
     def selectScope(self, scope_id: int) -> None:
-        if self._state["busy"] or self._state["refreshing"]:
+        if self._state["busy"]:
             return
         row = next((item for item in self._state["scopes"] if item.get("id") == scope_id), None)
         if not row or (self._state["dirty"] and not self._state["historical"]):
-            self._state.update(error="unsaved_changes", notice="")
+            self._state.update(error="unsaved_changes", error_origin="local", notice="")
             self.stateChanged.emit()
             return
-        self._state.update(selected=deepcopy(row), error="", notice="")
+        self._selection_generation += 1
+        selection_generation = self._selection_generation
+        self._state.update(selected=deepcopy(row), error="", error_origin="", notice="")
         self._load_selected(row)
 
         def loaded(data: dict[str, Any]) -> None:
+            if self._selection_generation != selection_generation:
+                return
             record, history = data.get("record"), data.get("history")
             if (
                 self._valid_view(record)
@@ -321,13 +435,19 @@ class CountingScopesController(QObject):
                 self._state.update(selected=deepcopy(latest), history=deepcopy(history))
                 self._load_selected(self._state["selected"])
             else:
-                self._state.update(error="invalid_response", notice="")
+                self._state.update(error="invalid_response", error_origin="read", notice="")
 
-        self._send(f"{self._path()}/{scope_id}", "GET", None, loaded)
+        self._send(
+            f"{self._path()}/{scope_id}",
+            "GET",
+            None,
+            loaded,
+            guard=lambda: self._selection_generation == selection_generation,
+        )
 
     @Slot(int)
     def loadRevision(self, revision: int) -> None:
-        if self._state["busy"] or self._state["refreshing"]:
+        if self._state["busy"]:
             return
         scope = self._state["selected"]
         if not self._valid_view(scope) or type(revision) is not int or revision < 1:
@@ -335,12 +455,17 @@ class CountingScopesController(QObject):
         if self._state["dirty"] or self._state["newer_revision"]:
             self._state.update(
                 error="revision_conflict" if self._state["newer_revision"] else "unsaved_changes",
+                error_origin="local",
                 notice="",
             )
             self.stateChanged.emit()
             return
+        self._selection_generation += 1
+        selection_generation = self._selection_generation
 
         def loaded(row: dict[str, Any]) -> None:
+            if self._selection_generation != selection_generation:
+                return
             if (
                 self._valid_view(row)
                 and row.get("id") == scope["id"]
@@ -351,25 +476,26 @@ class CountingScopesController(QObject):
                 )
                 self._load_selected(row)
             else:
-                self._state.update(error="invalid_response", notice="")
+                self._state.update(error="invalid_response", error_origin="read", notice="")
 
         self._send(
             f"{self._path()}/{scope['id']}/revisions/{revision}",
             "GET",
             None,
             loaded,
-            background=True,
+            guard=lambda: self._selection_generation == selection_generation,
         )
 
     def _report_path(self, locale: str, extension: str = "") -> str | None:
         row = self._state["selected"]
         if self._state["busy"] or not self._valid_view(row) or locale not in ("tc", "sc", "en"):
-            self._state.update(error="counting_scope_not_found", notice="")
+            self._state.update(error="counting_scope_not_found", error_origin="local", notice="")
             self.stateChanged.emit()
             return None
         if self._state["dirty"] or self._state["newer_revision"]:
             self._state.update(
                 error="revision_conflict" if self._state["newer_revision"] else "unsaved_changes",
+                error_origin="local",
                 notice="",
             )
             self.stateChanged.emit()
@@ -389,7 +515,7 @@ class CountingScopesController(QObject):
         self._clear_report()
         report_generation = self._report_generation
         self._generation += 1
-        self._state.update(error="", notice="")
+        self._state.update(error="", error_origin="", notice="")
 
         def loaded(data: dict[str, Any]) -> None:
             if report_generation != self._report_generation:
@@ -404,7 +530,7 @@ class CountingScopesController(QObject):
                 and lines
                 and all(isinstance(line, str) for line in lines)
             ):
-                self._state.update(error="request_failed", notice="")
+                self._state.update(error="request_failed", error_origin="read", notice="")
                 return
             self._state.update(
                 report=data,
@@ -418,7 +544,9 @@ class CountingScopesController(QObject):
     @Slot(str, str, str)
     def download(self, format: str, filepath: str, locale: str) -> None:
         if format not in ("pdf", "csv") or self._download is None:
-            self._state.update(error="counting_scope_export_failed", notice="")
+            self._state.update(
+                error="counting_scope_export_failed", error_origin="local", notice=""
+            )
             self.stateChanged.emit()
             return
         destination = report_destination(filepath)
@@ -426,7 +554,9 @@ class CountingScopesController(QObject):
         if path is None:
             return
         if destination is None:
-            self._state.update(error="counting_scope_export_failed", notice="")
+            self._state.update(
+                error="counting_scope_export_failed", error_origin="local", notice=""
+            )
             self.stateChanged.emit()
             return
         self._generation += 1
@@ -437,7 +567,7 @@ class CountingScopesController(QObject):
 
         def failed(code: str) -> None:
             if generation == self._generation and report_generation == self._report_generation:
-                self._state.update(busy=False, error=code, notice="")
+                self._state.update(busy=False, error=code, error_origin="write", notice="")
                 self.stateChanged.emit()
 
         def loaded(data: dict[str, Any]) -> None:
@@ -455,9 +585,13 @@ class CountingScopesController(QObject):
 
     @Slot()
     def newScope(self) -> None:
-        if self._state["dirty"] or self._state["busy"] or self._state["refreshing"]:
-            self._state.update(error="unsaved_changes", notice="")
+        if self._state["dirty"] or self._state["busy"]:
+            self._state.update(error="unsaved_changes", error_origin="local", notice="")
         else:
+            if self._state["refreshing"]:
+                self._generation += 1
+                self._state["refreshing"] = False
+            self._selection_generation += 1
             self._state.update(
                 selected={},
                 historical=False,
@@ -482,7 +616,9 @@ class CountingScopesController(QObject):
             selected.append(box_id)
         if not checked and box_id in selected:
             selected.remove(box_id)
-        self._state.update(selected_box_ids=selected, dirty=True, error="", notice="")
+        self._state.update(
+            selected_box_ids=selected, dirty=True, error="", error_origin="", notice=""
+        )
         self.stateChanged.emit()
 
     @Slot(int, int)
@@ -492,7 +628,9 @@ class CountingScopesController(QObject):
             selection[str(station_id)] = revision
         else:
             selection.pop(str(station_id), None)
-        self._state.update(accounting_selection=selection, dirty=True, error="", notice="")
+        self._state.update(
+            accounting_selection=selection, dirty=True, error="", error_origin="", notice=""
+        )
         self.stateChanged.emit()
 
     @Slot(str, str)
@@ -501,7 +639,7 @@ class CountingScopesController(QObject):
             return
         forms = dict(self._state["forms"])
         forms[name] = value
-        self._state.update(forms=forms, dirty=True, error="", notice="")
+        self._state.update(forms=forms, dirty=True, error="", error_origin="", notice="")
         self.stateChanged.emit()
 
     def _payload(self) -> dict[str, Any] | None:
@@ -509,12 +647,12 @@ class CountingScopesController(QObject):
         try:
             event = datetime.strptime(forms["event_at"].strip(), TIME_FORMAT).replace(tzinfo=HKT)
         except ValueError:
-            self._state.update(error="counting_scope_validation", notice="")
+            self._state.update(error="counting_scope_validation", error_origin="local", notice="")
             self.stateChanged.emit()
             return None
         reference = forms["reference"].strip()
         if not reference or len(reference) > 80:
-            self._state.update(error="counting_scope_validation", notice="")
+            self._state.update(error="counting_scope_validation", error_origin="local", notice="")
             self.stateChanged.emit()
             return None
         selected = self._state["selected"]
@@ -550,7 +688,9 @@ class CountingScopesController(QObject):
     def save(self) -> None:
         if self._state["busy"] or self._state["historical"] or self._state["newer_revision"]:
             self._state.update(
-                error="revision_conflict" if self._state["newer_revision"] else "", notice=""
+                error="revision_conflict" if self._state["newer_revision"] else "",
+                error_origin="local",
+                notice="",
             )
             self.stateChanged.emit()
             return
@@ -573,11 +713,12 @@ class CountingScopesController(QObject):
                     selected=deepcopy(row),
                     history=[],
                     error="",
+                    error_origin="",
                     notice="counting_scope_saved",
                 )
                 self._load_selected(row)
             else:
-                self._state.update(error="invalid_response", notice="")
+                self._state.update(error="invalid_response", error_origin="write", notice="")
 
         self._send(path, method, payload, saved)
 
@@ -591,12 +732,13 @@ class CountingScopesController(QObject):
             or not row.get("source_current")
             or row.get("blockers")
         ):
-            self._state.update(error="counting_scope_not_ready", notice="")
+            self._state.update(error="counting_scope_not_ready", error_origin="local", notice="")
             self.stateChanged.emit()
             return
         if self._state["dirty"] or self._state["historical"] or self._state["newer_revision"]:
             self._state.update(
                 error="revision_conflict" if self._state["newer_revision"] else "unsaved_changes",
+                error_origin="local",
                 notice="",
             )
             self.stateChanged.emit()
@@ -617,10 +759,11 @@ class CountingScopesController(QObject):
                     history=[],
                     notice="counting_scope_submitted",
                     error="",
+                    error_origin="",
                 )
                 self._load_selected(result)
             else:
-                self._state.update(error="invalid_response", notice="")
+                self._state.update(error="invalid_response", error_origin="write", notice="")
 
         self._send(
             path,
