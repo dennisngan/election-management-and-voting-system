@@ -22,6 +22,7 @@ from election.server.configuration_store import (
     find_election,
     replay,
 )
+from election.server.invalid_ballot_reasons import seed_invalid_ballot_reasons
 from election.server.models import Account, AuditEvent
 
 
@@ -146,6 +147,7 @@ def configuration_router(
         try:
             db.flush()
             seed_election_categories(db, row.id, actor.id, timestamp())
+            seed_invalid_ballot_reasons(db, row.id, actor.id, timestamp())
             audit(
                 db,
                 actor,
