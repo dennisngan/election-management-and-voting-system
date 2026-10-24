@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from election.server.configuration_models import Constituency, Election
 from election.server.lifecycle_models import ActiveElection
@@ -224,7 +224,22 @@ def staff_router(
 
     @router.get("")
     def list_accounts(db: Database, actor: Admin) -> dict[str, Any]:
-        accounts = db.scalars(select(Account).order_by(Account.id.desc())).all()
+        # Directory DTOs need no credential hashes or creation metadata.
+        accounts = db.scalars(
+            select(Account)
+            .options(
+                load_only(
+                    Account.id,
+                    Account.username,
+                    Account.display_name,
+                    Account.role,
+                    Account.enabled,
+                    Account.must_change_password,
+                    Account.revision,
+                )
+            )
+            .order_by(Account.id.desc())
+        ).all()
         station_ids: dict[int, list[int]] = {}
         for account_id, station_id in db.execute(
             select(StationAssignment.account_id, StationAssignment.station_id).order_by(
@@ -266,6 +281,17 @@ def staff_router(
         account = staff_view(db, actor)
         stations = db.execute(
             select(PollingStation, Constituency, Election)
+            .options(
+                load_only(
+                    PollingStation.id,
+                    PollingStation.name,
+                    PollingStation.code,
+                    PollingStation.counting_mode,
+                    PollingStation.destination_station_id,
+                ),
+                load_only(Constituency.id, Constituency.name, Constituency.code),
+                load_only(Election.id, Election.name, Election.status),
+            )
             .join(Constituency, PollingStation.constituency_id == Constituency.id)
             .join(Election, Constituency.election_id == Election.id)
             .order_by(PollingStation.id)
