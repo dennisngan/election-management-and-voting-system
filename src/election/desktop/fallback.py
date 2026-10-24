@@ -10,6 +10,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
 from election.desktop.event_times import format_event_time
+from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.lifecycle import HKT
 
 MAX_QUANTITY = 9223372036854775807
@@ -31,6 +32,13 @@ def event_text(value: str) -> str:
 def record_display(row: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(row)
     result["cumulative_quantity_display"] = str(row["cumulative_quantity"])
+    if isinstance(row.get("stock_snapshot"), dict):
+        result["stock_snapshot_display"] = quantity_display(row["stock_snapshot"])
+    reconciliation = row.get("reconciliation")
+    if isinstance(reconciliation, dict):
+        result["reconciliation_display"] = {
+            key: str(value) for key, value in reconciliation.items()
+        }
     return result
 
 
@@ -54,7 +62,7 @@ class FallbackController(QObject):
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return deepcopy(self._state)
+        return qt_state(self._state)
 
     def reset(self) -> None:
         self._generation += 1

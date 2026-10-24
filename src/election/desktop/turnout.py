@@ -9,6 +9,7 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
+from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.lifecycle import HKT, TIME_FORMAT
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
@@ -30,11 +31,17 @@ def empty_forms() -> dict[str, str]:
         "event_time": "",
         "source_context": "",
         "amendment_reason": "",
+        "mode": "normal",
+        "fallback_activation_id": "", "fallback_activation_revision": "",
+        "stock_snapshot_id": "", "stock_snapshot_revision": "",
+        "fallback_recovery_id": "", "fallback_recovery_revision": "",
     }
 
 
 def record_display(row: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(row)
+    if isinstance(row.get("source_basis"), dict):
+        result["source_basis_display"] = quantity_display(row["source_basis"])
     for name in QUANTITIES:
         result[name + "_display"] = "—" if result[name] is None else str(result[name])
     result["period_index_display"] = str(result["period_index"])
@@ -74,19 +81,21 @@ class TurnoutController(QObject):
         self._opened = False
         self._reviewed = False
         self._reviewed_wrapper: dict[str, Any] = {}
+        self._raw_items: list[dict[str, Any]] = []
         self._pending: tuple[str, str] | None = None
         self._state: dict[str, Any] = {}
         self.reset()
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return deepcopy(self._state)
+        return qt_state(self._state)
 
     def reset(self) -> None:
         self._generation += 1
         self._opened = False
         self._reviewed = False
         self._reviewed_wrapper = {}
+        self._raw_items = []
         self._pending = None
         self._state = {
             "station_id": 0,
@@ -215,6 +224,18 @@ class TurnoutController(QObject):
                 forms["event_time"] = self.formatTime(row["event_at"]).removesuffix(" HKT")
             forms["source_context"] = row["source_context"]
             forms["amendment_reason"] = row["amendment_reason"]
+            basis = row.get("source_basis")
+            if isinstance(basis, dict):
+                if "recovery_id" in basis:
+                    forms["mode"] = "recovery"
+                    forms["fallback_recovery_id"] = str(basis["recovery_id"])
+                    forms["fallback_recovery_revision"] = str(basis["recovery_revision"])
+                else:
+                    forms["mode"] = "fallback"
+                    forms["fallback_activation_id"] = str(basis["activation_id"])
+                    forms["fallback_activation_revision"] = str(basis["activation_revision"])
+                    forms["stock_snapshot_id"] = str(basis["stock_snapshot_id"])
+                    forms["stock_snapshot_revision"] = str(basis["stock_snapshot_revision"])
         self._reviewed = True
         self._clear_report()
         self._reviewed_wrapper = deepcopy(wrapper)
@@ -266,6 +287,7 @@ class TurnoutController(QObject):
         ):
             self._error("request_failed")
             return False
+        self._raw_items = deepcopy(items)
         self._state.update(
             items=[period_display(item) for item in items],
             schedule=deepcopy(schedule),
@@ -427,18 +449,12 @@ class TurnoutController(QObject):
             if not self._record(data, index) or data["revision"] != revision:
                 self._error("request_failed")
                 return
-            wrapper = next(row for row in self._state["items"] if row["period_index"] == index)
-            # Compare live refreshes with the live wrapper reviewed at this point,
-            # while the separately selected old content remains explicitly read-only.
-            raw_wrapper = deepcopy(wrapper)
-            if raw_wrapper["record"]:
-                raw_wrapper["record"] = {
-                    key: value
-                    for key, value in raw_wrapper["record"].items()
-                    if not key.endswith("_display")
-                }
-            raw_wrapper.pop("period_index_display", None)
-            self._accept(data, raw_wrapper, historical=revision < current["revision"])
+            wrapper = next((row for row in self._raw_items if row["period_index"] == index), {})
+            if not wrapper:
+                self._error("request_failed")
+                return
+            # Keep the reviewed basis raw even when its Qt view has nested display fields.
+            self._accept(data, wrapper, historical=revision < current["revision"])
             self._history()
 
         self._send(f"{self._path()}/{index}?revision={revision}", "GET", None, loaded)
@@ -478,6 +494,30 @@ class TurnoutController(QObject):
                     values[name] = int(text)
                     if values[name] > MAX_TOTAL:
                         raise ValueError("Quantity exceeds signed64")
+            mode = form["mode"]
+            if mode not in ("normal", "fallback", "recovery"):
+                raise ValueError("Select a supported turnout source mode")
+            if mode in ("fallback", "recovery"):
+                if mode == "fallback" and (
+                    values["supplied_hourly"] is not None
+                    or values["supplied_cumulative"] is not None
+                ):
+                    raise ValueError("Fallback turnout is calculated from ordinary stock")
+                values["mode"] = mode
+                source_fields = (
+                    ("fallback_activation_id", "fallback_activation_revision",
+                     "stock_snapshot_id", "stock_snapshot_revision")
+                    if mode == "fallback"
+                    else ("fallback_recovery_id", "fallback_recovery_revision")
+                )
+                for name in source_fields:
+                    text = form[name].strip()
+                    if not text or not text.isascii() or not text.isdecimal():
+                        raise ValueError("Select an exact positive source identity")
+                    identity = int(text)
+                    if not 1 <= identity <= MAX_TOTAL:
+                        raise ValueError("Source identity is outside the supported range")
+                    values[name] = identity
             text = form["event_time"].strip()
             original = self._state["selected"].get("event_at")
             if original and text == self.formatTime(original).removesuffix(" HKT"):
