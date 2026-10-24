@@ -543,13 +543,13 @@ ColumnLayout {
                 }
                 ActionButton {
                     objectName: "accountingExportPdf"
-                    text: page.t("export_pdf")
+                    text: page.t("stock_export_pdf")
                     enabled: !page.editorState.busy
                     onClicked: page.exportReport("pdf")
                 }
                 ActionButton {
                     objectName: "accountingExportCsv"
-                    text: page.t("export_csv")
+                    text: page.t("stock_export_csv")
                     enabled: !page.editorState.busy
                     onClicked: page.exportReport("csv")
                 }

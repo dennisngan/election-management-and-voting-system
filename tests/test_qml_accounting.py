@@ -38,6 +38,8 @@ def test_counter_uses_visible_sources_and_saves_exact_accounting_in_each_languag
                     "station_id": station_id,
                     "locale": locale,
                     "navigation_label": TRANSLATIONS[locale]["accounting_title"],
+                    "pdf_label": TRANSLATIONS[locale]["stock_export_pdf"],
+                    "csv_label": TRANSLATIONS[locale]["stock_export_csv"],
                 },
                 """
                 assert control('accountingNavigation').property('text') == setup['navigation_label']
@@ -57,6 +59,8 @@ def test_counter_uses_visible_sources_and_saves_exact_accounting_in_each_languag
                 assert editor.property('state')['error'] == ''
                 assert editor.property('state')['selected']['revision'] == 1
                 frame()
+                assert control('accountingExportPdf').property('text') == setup['pdf_label']
+                assert control('accountingExportCsv').property('text') == setup['csv_label']
                 assert control('accounting_observed_counted_quantityValue').property('text') == '—'
                 stock = control('accounting_estimated_box_from_stock_quantityValue')
                 turnout = control('accounting_estimated_box_from_turnout_quantityValue')
