@@ -177,10 +177,10 @@ def scope_options(db: Session, actor: Account, station_id: int) -> dict[str, Any
     sources = []
     for origin_id in sorted(origins):
         box = next(item for item in boxes if item["origin_station_id"] == origin_id)
-        row = accounting_record(db, origin_id)
+        source_row = accounting_record(db, origin_id)
         sources.append({
             "station": box["origin"],
-            "record": record_view(db, row) if row else None,
+            "record": record_view(db, source_row) if source_row else None,
         })
     scopes = list(db.scalars(
         select(CountingScope).where(CountingScope.station_id == station_id)
@@ -259,7 +259,7 @@ def draft_basis(
         estimates[name] = sum(values) if complete_coverage and all(
             value is not None for value in values
         ) else None
-    return jsonable_encoder({
+    result: dict[str, Any] = jsonable_encoder({
         "context": options["context"],
         "box_basis": selected,
         "accounting_basis": accounting,
@@ -267,6 +267,7 @@ def draft_basis(
         "coverage": coverage,
         **estimates,
     })
+    return result
 
 
 def counting_scopes_router(
@@ -283,6 +284,18 @@ def counting_scopes_router(
     @router.get("")
     def read(station_id: int, db: Database, actor: Actor) -> dict[str, Any]:
         return scope_options(db, actor, station_id)
+
+    @router.get("/{scope_id}")
+    def history(
+        station_id: int, scope_id: int, db: Database, actor: Actor,
+    ) -> dict[str, Any]:
+        options = scope_options(db, actor, station_id)
+        scope = scope_at(db, station_id, scope_id)
+        rows = list(db.scalars(select(CountingScopeRevision).where(
+            CountingScopeRevision.scope_id == scope_id
+        ).order_by(CountingScopeRevision.revision.desc()).with_for_update()))
+        views = [scope_view(db, scope, row, options["boxes"]) for row in rows]
+        return {"record": views[0], "history": views}
 
     @router.get("/{scope_id}/revisions/{revision}")
     def revision(

@@ -101,3 +101,6 @@ def test_unreceived_box_is_an_explicit_incomplete_draft_and_cannot_start_countin
         assert submitted.status_code == 409
         assert submitted.json()["detail"]["code"] == "scope_incomplete"
         assert receiver.get(f"{path}/{record['id']}/revisions/1").json() == record
+        history = receiver.get(f"{path}/{record['id']}")
+        assert history.status_code == 200
+        assert history.json() == {"record": record, "history": [record]}
