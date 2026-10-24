@@ -5,6 +5,7 @@ from election.desktop.allocation_translations import ALLOCATION_TRANSLATIONS
 from election.desktop.complaint_period_translations import COMPLAINT_PERIOD_TRANSLATIONS
 from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
 from election.desktop.counter_return_translations import COUNTER_RETURN_TRANSLATIONS
+from election.desktop.counting_scope_translations import COUNTING_SCOPE_TRANSLATIONS
 from election.desktop.fallback_translations import FALLBACK_TRANSLATIONS
 from election.desktop.fallback_turnout_translations import FALLBACK_TURNOUT_TRANSLATIONS
 from election.desktop.special_paper_translations import SPECIAL_PAPER_TRANSLATIONS
@@ -1960,3 +1961,6 @@ for language, fallback_turnout_labels in FALLBACK_TURNOUT_TRANSLATIONS.items():
 
 for language, accounting_labels in ACCOUNTING_TRANSLATIONS.items():
     TRANSLATIONS[language].update(accounting_labels)
+
+for language, counting_scope_labels in COUNTING_SCOPE_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(counting_scope_labels)
