@@ -23,7 +23,9 @@ ColumnLayout {
         && (!selected.id || editorState.editing)
     readonly property bool working: editorState.busy || editorState.refreshing
     property int seriesIndex: 0
-    readonly property var series: editorState.series_reports[seriesIndex] || ({})
+    readonly property int activeSeriesIndex: Math.min(Math.max(seriesIndex, 0),
+        editorState.series_reports.length - 1)
+    readonly property var series: editorState.series_reports[activeSeriesIndex] || ({})
     readonly property var quantityKeys: ["received_quantity", "ordinary_issued_quantity",
         "replacement_issued_quantity", "spoilt_original_quantity", "tendered_issued_quantity",
         "retrieved_refused_quantity", "retrieved_found_quantity", "retrieved_held_quantity",
@@ -240,7 +242,7 @@ ColumnLayout {
                 objectName: "specialSeriesPicker"
                 Layout.fillWidth: true; enabled: !page.working && model.length > 0
                 model: page.editorState.series_reports.map(row => row.series)
-                currentIndex: Math.min(page.seriesIndex, model.length - 1)
+                currentIndex: page.activeSeriesIndex
                 onActivated: page.seriesIndex = currentIndex
                 Accessible.name: page.t("special_series")
                 onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
@@ -263,8 +265,8 @@ ColumnLayout {
                             objectName: "specialCount_" + parent.modelData
                             text: page.series[parent.modelData] || ""
                             readOnly: !page.canEdit; working: page.working
-                            maximumLength: 18
-                            validator: RegularExpressionValidator { regularExpression: /[0-9]{0,18}/ }
+                            maximumLength: 19
+                            validator: RegularExpressionValidator { regularExpression: /[0-9]{0,19}/ }
                             Accessible.name: page.t("special_" + parent.modelData)
                             onTextEdited: page.papers.setSeriesField(page.series.series,
                                 parent.modelData, text)

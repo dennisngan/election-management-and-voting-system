@@ -576,7 +576,10 @@ class SpecialPapersController(QObject):
                 raise ValueError("Select a complete saved P(12) revision")
             rows = []
             for row in self._state["series_reports"]:
-                if not all(re.fullmatch(r"[0-9]{1,18}", row[key]) for key in INPUTS):
+                if not all(
+                    re.fullmatch(r"[0-9]{1,19}", row[key]) and int(row[key]) <= 2**63 - 1
+                    for key in INPUTS
+                ):
                     raise ValueError("Report every count explicitly using ASCII digits")
                 rows.append({"series": row["series"], **{key: int(row[key]) for key in INPUTS}})
             payload = {
