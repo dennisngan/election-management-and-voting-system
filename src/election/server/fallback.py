@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from election.server.stock_time import StockEventTime
 from election.server.turnout_basis import (
     active_fallback_at,
     locked_schedule,
+    recovery_reconciliation,
     stock_snapshot_basis,
     turnout_scope,
 )
@@ -34,12 +35,26 @@ class FallbackCommand(BaseModel):
 
 
 class FallbackDraft(FallbackCommand):
-    kind: Literal["activation"]
+    kind: Literal["activation", "recovery"]
     event_at: StockEventTime
     cumulative_quantity: int = Field(strict=True, ge=0, le=MAX_STOCK_QUANTITY)
     stock_snapshot_id: int = Field(strict=True, gt=0)
     stock_snapshot_revision: int = Field(strict=True, ge=1)
     source_context: str = Field(min_length=1, max_length=2000)
+
+    activation_id: int | None = Field(default=None, strict=True, gt=0)
+    activation_revision: int | None = Field(default=None, strict=True, ge=1)
+    reason: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def recovery_source(self) -> FallbackDraft:
+        if self.kind == "recovery":
+            if (self.activation_id is None or self.activation_revision is None
+                    or not self.reason.strip()):
+                raise ValueError("Select the confirmed activation and explain the recovery")
+        elif self.activation_id is not None or self.activation_revision is not None:
+            raise ValueError("Activation does not select a preceding activation")
+        return self
 
     @field_validator("source_context")
     @classmethod
@@ -152,10 +167,14 @@ def fallback_router(
             ).with_for_update())
             if not verify_password(password_hash, data.password):
                 raise HTTPException(401, detail={"code": "invalid_credentials"})
+        command_data = data.model_dump(mode="json", exclude={"request_id", "password"})
+        if isinstance(data, FallbackDraft) and data.kind == "activation":
+            for key in ("activation_id", "activation_revision", "reason"):
+                command_data.pop(key, None)
         digest = hashlib.sha256(json.dumps({
             "station_id": station_id, "record_id": record_id,
             "actor_id": actor.id, "action": action,
-            "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
+            "data": command_data,
         }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         replay = db.scalar(select(FallbackRequest).where(
             FallbackRequest.request_id == str(data.request_id),
@@ -174,9 +193,24 @@ def fallback_router(
             source = stock_snapshot_basis(
                 db, station_id, data.stock_snapshot_id, data.stock_snapshot_revision, event_at,
             )
+            content: dict[str, Any] = {
+                "cumulative_quantity": data.cumulative_quantity,
+                "source_context": data.source_context, "stock_snapshot": source, "scope": scope,
+            }
+            if data.kind == "recovery":
+                assert data.activation_id is not None and data.activation_revision is not None
+                content.update({
+                    "activation_id": data.activation_id,
+                    "activation_revision": data.activation_revision,
+                    "reconciliation": recovery_reconciliation(
+                        db, station_id, schedule, data.activation_id, data.activation_revision,
+                        event_at, data.stock_snapshot_id, data.stock_snapshot_revision,
+                        data.cumulative_quantity,
+                    ),
+                })
             head = FallbackRecord(
                 station_id=station_id, kind=data.kind, revision=1, approved_revision=None,
-                activation_id=None, created_at=now,
+                activation_id=data.activation_id, created_at=now,
             )
             db.add(head)
             db.flush()
@@ -184,11 +218,9 @@ def fallback_router(
                 record_id=head.id, revision=1, schedule_revision=schedule.revision,
                 event_at=event_at, entered_at=now, actor_id=actor.id, status="draft",
                 stock_snapshot_id=data.stock_snapshot_id,
-                stock_snapshot_revision=data.stock_snapshot_revision, reason="",
+                stock_snapshot_revision=data.stock_snapshot_revision, reason=data.reason,
                 submitted_at=None, submitted_by=None, approved_at=None, approved_by=None,
-                data={"cumulative_quantity": data.cumulative_quantity,
-                      "source_context": data.source_context, "stock_snapshot": source,
-                      "scope": scope},
+                data=content,
             )
             db.add(row)
         else:
@@ -205,6 +237,15 @@ def fallback_router(
             stock_snapshot_basis(
                 db, station_id, row.stock_snapshot_id, row.stock_snapshot_revision, row.event_at,
             )
+            if head.kind == "recovery":
+                assert head.activation_id is not None
+                comparison = recovery_reconciliation(
+                    db, station_id, schedule, head.activation_id, row.data["activation_revision"],
+                    row.event_at, row.stock_snapshot_id, row.stock_snapshot_revision,
+                    row.data["cumulative_quantity"], exclude_record_id=head.id,
+                )
+                if comparison != row.data["reconciliation"]:
+                    raise HTTPException(409, detail={"code": "fallback_review_required"})
             if action == "approve":
                 row.status, row.approved_at, row.approved_by = "approved", now, actor.id
                 head.approved_revision = row.revision

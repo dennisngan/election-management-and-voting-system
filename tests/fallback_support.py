@@ -127,3 +127,61 @@ def confirm_fallback_activation(setup: dict) -> dict:
     assert approved["approved_by"] == setup["supervisor_account"]["id"]
     assert approved["stock_snapshot"] == setup["snapshot"]
     return approved
+
+
+def approved_mixed_period(setup: dict) -> dict:
+    """Approve the literal 115 turnout example using the public ordinary-stock basis."""
+    officer, base = setup["officer"], setup["base"]
+    activation = confirm_fallback_activation(setup)
+    observed = officer.post(base + "/stock-snapshots", json={
+        "request_id": str(uuid4()), "event_at": "2026-11-15T12:00:00+08:00",
+        "counters": [{"counter_id": setup["counter_id"], "ranges": [{
+            "series": "普通系列 A", "serial_from": "000116", "serial_to": "000200",
+        }]}],
+    })
+    assert observed.status_code == 201
+    endpoint = observed.json()
+    assert endpoint["complete"] is True
+    assert endpoint["ordinary_issued_quantity"] == 115
+    assert endpoint["ordinary_remaining_quantity"] == 85
+    assert endpoint["event_at"] == "2026-11-15T04:00:00Z"
+    special = officer.post(base + "/special-papers", json={
+        "request_id": str(uuid4()), "event_at": "2026-11-15T12:00:00+08:00",
+        "stock_snapshot_id": endpoint["id"], "stock_snapshot_revision": 1,
+        "series": [{
+            "series": "普通系列 A", "replacement_issued_quantity": 3,
+            "spoilt_original_quantity": 3, "tendered_issued_quantity": 2,
+            "retrieved_refused_quantity": 0, "retrieved_found_quantity": 0,
+            "retrieved_held_quantity": 0,
+        }],
+    })
+    assert special.status_code == 201
+    assert special.json()["replacement_issued_quantity"] == 3
+    assert special.json()["spoilt_original_quantity"] == 3
+    assert special.json()["tendered_issued_quantity"] == 2
+    assert special.json()["ordinary_issued_quantity"] == 115
+    unchanged = officer.get(base + f"/stock-snapshots/{endpoint['id']}")
+    assert unchanged.status_code == 200 and unchanged.json() == endpoint
+    path = setup["scope"]["path"]
+    submitted = submit_period(
+        officer, path, 2,
+        mode="fallback", fallback_activation_id=activation["id"],
+        fallback_activation_revision=1, stock_snapshot_id=endpoint["id"],
+        stock_snapshot_revision=1, event_at="2026-11-15T12:00:00+08:00",
+        supplied_hourly=None, supplied_cumulative=None,
+        source_context="Normal 11:00-11:20 then ordinary-stock fallback through noon.",
+    )
+    assert submitted["provenance"] == "mixed"
+    approved = approve_period(setup["supervisor"], path, 2)
+    assert approved["status"] == "approved" and approved["revision"] == 1
+    assert approved["derived_cumulative_start"] == 100
+    assert approved["derived_hourly"] == 15
+    assert approved["derived_cumulative_end"] == 115
+    assert approved["source_basis"]["ordinary_issued_since_activation_quantity"] == 5
+    assert approved["source_basis"]["stock_derived_cumulative_quantity"] == 115
+    current = officer.get(path)
+    assert current.status_code == 200
+    assert current.json()["approved_prefix"]["periods"] == 2
+    assert current.json()["approved_prefix"]["cumulative_end"] == 115
+    assert current.json()["items"][1]["record"] == approved
+    return {"activation": activation, "endpoint": endpoint, "approved": approved}

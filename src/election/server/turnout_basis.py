@@ -92,7 +92,7 @@ class FallbackSelection:
 
 
 def confirmed_mode_events(
-    db: Session, station_id: int, end_at: datetime,
+    db: Session, station_id: int, end_at: datetime, *, exclude_record_id: int | None = None,
 ) -> list[tuple[FallbackRecord, FallbackRevision]]:
     query = select(FallbackRecord, FallbackRevision).join(FallbackRevision, and_(
         FallbackRevision.record_id == FallbackRecord.id,
@@ -102,15 +102,17 @@ def confirmed_mode_events(
         FallbackRevision.event_at <= end_at,
         FallbackRevision.status == "approved",
     ).order_by(FallbackRevision.event_at, FallbackRecord.id)
+    if exclude_record_id is not None:
+        query = query.where(FallbackRecord.id != exclude_record_id)
     return [(head, row) for head, row in db.execute(
         query.with_for_update().execution_options(populate_existing=True),
     )]
 
 
 def active_fallback_at(
-    db: Session, station_id: int, at: datetime,
+    db: Session, station_id: int, at: datetime, *, exclude_record_id: int | None = None,
 ) -> tuple[FallbackRecord, FallbackRevision] | None:
-    events = confirmed_mode_events(db, station_id, at)
+    events = confirmed_mode_events(db, station_id, at, exclude_record_id=exclude_record_id)
     return events[-1] if events and events[-1][0].kind == "activation" else None
 
 
@@ -128,9 +130,10 @@ def mode_basis_required(
 def fallback_period_basis(
     db: Session, station_id: int, schedule: ElectionSchedule, period_index: int,
     selection: FallbackSelection, predecessor: TurnoutRecord | None,
+    *, exclude_record_id: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     start_at, end_at = period_bounds(schedule, period_index)
-    active = active_fallback_at(db, station_id, end_at)
+    active = active_fallback_at(db, station_id, end_at, exclude_record_id=exclude_record_id)
     if active is None or active[0].id != selection.activation_id:
         raise HTTPException(409, detail={"code": "fallback_source_conflict"})
     head, activation = active
@@ -197,6 +200,92 @@ def fallback_period_basis(
     return ("mixed" if len(coverage) > 1 else "fallback_stock"), basis
 
 
+def recovery_reconciliation(
+    db: Session, station_id: int, schedule: ElectionSchedule, activation_id: int,
+    activation_revision: int, event_at: datetime, snapshot_id: int, snapshot_revision: int,
+    recovered: int, *, exclude_record_id: int | None = None,
+) -> dict[str, Any]:
+    active = active_fallback_at(db, station_id, event_at, exclude_record_id=exclude_record_id)
+    if active is None or active[0].id != activation_id:
+        raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+    head, activation = active
+    if (
+        head.revision != activation_revision or head.approved_revision != activation_revision
+        or activation.revision != activation_revision
+        or activation.schedule_revision != schedule.revision
+    ):
+        raise HTTPException(409, detail={"code": "fallback_review_required"})
+    original = stock_snapshot_basis(
+        db, station_id, activation.stock_snapshot_id,
+        activation.stock_snapshot_revision, activation.event_at,
+    )
+    if original != activation.data["stock_snapshot"]:
+        raise HTTPException(409, detail={"code": "fallback_review_required"})
+    endpoint = stock_snapshot_basis(db, station_id, snapshot_id, snapshot_revision, event_at)
+    delta = endpoint["ordinary_issued_quantity"] - original["ordinary_issued_quantity"]
+    if delta < 0:
+        raise HTTPException(409, detail={"code": "fallback_stock_regression"})
+    cumulative = activation.data["cumulative_quantity"] + delta
+    if cumulative > MAX_STOCK_QUANTITY:
+        raise HTTPException(422, detail={"code": "turnout_validation"})
+    return {
+        "stock_derived_cumulative_quantity": cumulative,
+        "recovered_cumulative_quantity": recovered, "difference": recovered - cumulative,
+    }
+
+
+def recovery_period_basis(
+    db: Session, station_id: int, schedule: ElectionSchedule, period_index: int,
+    recovery_id: int, recovery_revision: int, predecessor: TurnoutRecord | None,
+) -> tuple[str, dict[str, Any]]:
+    _, end_at = period_bounds(schedule, period_index)
+    events = confirmed_mode_events(db, station_id, end_at)
+    if not events or events[-1][0].id != recovery_id or events[-1][0].kind != "recovery":
+        raise HTTPException(409, detail={"code": "fallback_source_conflict"})
+    head, recovery = events[-1]
+    if (
+        head.revision != recovery_revision or head.approved_revision != recovery_revision
+        or recovery.revision != recovery_revision
+        or recovery.schedule_revision != schedule.revision or recovery.event_at != end_at
+    ):
+        raise HTTPException(409, detail={"code": "fallback_review_required"})
+    assert head.activation_id is not None
+    reconciliation = recovery_reconciliation(
+        db, station_id, schedule, head.activation_id, recovery.data["activation_revision"],
+        recovery.event_at, recovery.stock_snapshot_id, recovery.stock_snapshot_revision,
+        recovery.data["cumulative_quantity"], exclude_record_id=head.id,
+    )
+    if reconciliation != recovery.data["reconciliation"]:
+        raise HTTPException(409, detail={"code": "fallback_review_required"})
+    _, basis = fallback_period_basis(
+        db, station_id, schedule, period_index,
+        FallbackSelection(head.activation_id, recovery.data["activation_revision"],
+                          recovery.stock_snapshot_id, recovery.stock_snapshot_revision),
+        predecessor, exclude_record_id=head.id,
+    )
+    recovered = reconciliation["recovered_cumulative_quantity"]
+    coverage = basis["coverage"]
+    last = coverage[-1]
+    if recovered < last["cumulative_start_quantity"]:
+        raise HTTPException(422, detail={"code": "turnout_validation"})
+    coverage[-1] = {
+        **last, "mode": "reconciled", "cumulative_end_quantity": recovered,
+        "hourly_quantity": recovered - last["cumulative_start_quantity"],
+    }
+    basis.update({
+        "recovery_id": head.id, "recovery_revision": recovery.revision,
+        "recovered_cumulative_quantity": recovered,
+        "reconciliation_difference": reconciliation["difference"],
+        "recovery": {
+            "event_at": as_utc(recovery.event_at),
+            "source_context": recovery.data["source_context"],
+            "reason": recovery.reason, "approved_at": as_utc(recovery.approved_at),
+            "approved_by": recovery.approved_by,
+        },
+    })
+    return "external_reconciled", basis
+
+
 def turnout_basis_current(
     db: Session, row: TurnoutRecord, schedule: ElectionSchedule,
     predecessor: TurnoutRecord | None,
@@ -206,6 +295,12 @@ def turnout_basis_current(
             db, row.station_id, row.start_at, row.end_at,
         )
     try:
+        if "recovery_id" in row.source_basis:
+            provenance, basis = recovery_period_basis(
+                db, row.station_id, schedule, row.period_index,
+                row.source_basis["recovery_id"], row.source_basis["recovery_revision"], predecessor,
+            )
+            return provenance == row.provenance and basis == row.source_basis
         selection = FallbackSelection(
             row.source_basis["activation_id"], row.source_basis["activation_revision"],
             row.source_basis["stock_snapshot_id"], row.source_basis["stock_snapshot_revision"],

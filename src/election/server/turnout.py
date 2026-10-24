@@ -23,6 +23,7 @@ from election.server.turnout_basis import (
     fallback_period_basis,
     locked_schedule,
     mode_basis_required,
+    recovery_period_basis,
     turnout_basis_current,
     turnout_scope,
 )
@@ -44,16 +45,28 @@ class TurnoutDraft(TurnoutCommand):
     source_context: str = Field(default="", max_length=2000)
     event_at: AwareDatetime | None = None
 
-    mode: Literal["normal", "fallback"] = "normal"
+    mode: Literal["normal", "fallback", "recovery"] = "normal"
     fallback_activation_id: int | None = Field(default=None, strict=True, gt=0)
     fallback_activation_revision: int | None = Field(default=None, strict=True, ge=1)
     stock_snapshot_id: int | None = Field(default=None, strict=True, gt=0)
     stock_snapshot_revision: int | None = Field(default=None, strict=True, ge=1)
 
+    fallback_recovery_id: int | None = Field(default=None, strict=True, gt=0)
+    fallback_recovery_revision: int | None = Field(default=None, strict=True, ge=1)
+
     @model_validator(mode="after")
     def consistent_source_selection(self) -> TurnoutDraft:
         sources = (self.fallback_activation_id, self.fallback_activation_revision,
                    self.stock_snapshot_id, self.stock_snapshot_revision)
+        recovery = (self.fallback_recovery_id, self.fallback_recovery_revision)
+        if self.mode == "recovery":
+            if (any(value is None for value in recovery)
+                    or any(value is not None for value in sources)):
+                raise ValueError("Select the confirmed recovery revision")
+            if self.supplied_hourly is not None or self.supplied_cumulative is not None:
+                raise ValueError("Recovery uses the confirmed external cumulative total")
+        elif any(value is not None for value in recovery):
+            raise ValueError("Recovery identifiers require recovery mode")
         if self.mode == "fallback":
             if any(value is None for value in sources):
                 raise ValueError("Select the confirmed activation and endpoint P(12) revision")
@@ -329,7 +342,8 @@ def turnout_router(
         if isinstance(data, TurnoutDraft) and data.mode == "normal":
             # Preserve identities issued by the normal-only version across this migration.
             for key in ("mode", "fallback_activation_id", "fallback_activation_revision",
-                        "stock_snapshot_id", "stock_snapshot_revision"):
+                        "stock_snapshot_id", "stock_snapshot_revision",
+                        "fallback_recovery_id", "fallback_recovery_revision"):
                 command_data.pop(key, None)
         digest = hashlib.sha256(
             json.dumps(
@@ -373,23 +387,31 @@ def turnout_router(
             elif current and current.status != "draft":
                 raise HTTPException(409, detail={"code": "turnout_state_conflict"})
             provenance, source_basis = "external_manual", None
-            if data.mode == "fallback":
+            if data.mode in ("fallback", "recovery"):
                 _, valid = approved_prefix(records, schedule, db)
                 predecessor = records.get(index - 1) if index > 1 else None
                 if index > 1 and (predecessor is None or predecessor.id not in valid):
                     raise HTTPException(409, detail={"code": "turnout_previous_period_required"})
-                assert data.fallback_activation_id is not None
-                assert data.fallback_activation_revision is not None
-                assert data.stock_snapshot_id is not None
-                assert data.stock_snapshot_revision is not None
-                provenance, source_basis = fallback_period_basis(
-                    db, station_id, schedule, index,
-                    FallbackSelection(
-                        data.fallback_activation_id, data.fallback_activation_revision,
-                        data.stock_snapshot_id, data.stock_snapshot_revision,
-                    ),
-                    predecessor,
-                )
+                if data.mode == "recovery":
+                    assert data.fallback_recovery_id is not None
+                    assert data.fallback_recovery_revision is not None
+                    provenance, source_basis = recovery_period_basis(
+                        db, station_id, schedule, index, data.fallback_recovery_id,
+                        data.fallback_recovery_revision, predecessor,
+                    )
+                else:
+                    assert data.fallback_activation_id is not None
+                    assert data.fallback_activation_revision is not None
+                    assert data.stock_snapshot_id is not None
+                    assert data.stock_snapshot_revision is not None
+                    provenance, source_basis = fallback_period_basis(
+                        db, station_id, schedule, index,
+                        FallbackSelection(
+                            data.fallback_activation_id, data.fallback_activation_revision,
+                            data.stock_snapshot_id, data.stock_snapshot_revision,
+                        ),
+                        predecessor,
+                    )
             elif mode_basis_required(db, station_id, start, end):
                 raise HTTPException(409, detail={"code": "fallback_source_required"})
             row = TurnoutRecord(
@@ -458,7 +480,10 @@ def turnout_router(
                 baseline = predecessor.derived_cumulative_end if predecessor else 0
                 assert baseline is not None
                 hourly = (
-                    row.source_basis["stock_derived_cumulative_quantity"] - baseline
+                    row.source_basis.get(
+                        "recovered_cumulative_quantity",
+                        row.source_basis["stock_derived_cumulative_quantity"],
+                    ) - baseline
                     if row.source_basis is not None else row.supplied_hourly
                 )
                 if hourly is None:
