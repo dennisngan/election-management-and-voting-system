@@ -165,7 +165,13 @@ def history_pdf(
             section_heading = paragraph(section.title, heading)
             # Untitled continuation tables retain their existing split placement.
             section_heading.keepWithNext = bool(section.title)
-            story += [Spacer(1, 14), section_heading, table]
+            if section.title:
+                # Heading spacing vanishes at a fresh frame. A standalone spacer
+                # can consume that frame and push the kept table to another page.
+                section_heading.spaceBefore = 14
+            else:
+                story.append(Spacer(1, 14))
+            story += [section_heading, table]
             if section.empty_message:
                 story += [Spacer(1, 8), paragraph(section.empty_message)]
 
