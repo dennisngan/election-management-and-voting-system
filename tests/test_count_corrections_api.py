@@ -182,17 +182,11 @@ def test_f2_correction_reconciles_outcomes_then_requires_renewed_review_and_sele
             options,
             expected_revision=4,
             determination_started_at=start,
-            accepted_votes=[{"candidate_id": options["candidates"][0]["id"], "quantity": 0}],
-            rejected_papers=[
-                {
-                    "reason_id": reason["id"],
-                    "reason_revision": reason["revision"],
-                    "quantity": 1,
-                    "explanation": "",
-                }
-            ],
             amendment_reason="The original rejection was read from the marked paper again.",
         )
+        next(
+            row for row in corrected_command["rejected_papers"] if row["reason_id"] == reason["id"]
+        )["quantity"] = 1
         corrected_command["request_id"] = str(uuid4())
         corrected = setup["counter"].post(target + "/amend-f2", json=corrected_command)
         assert corrected.status_code == 200, corrected.text

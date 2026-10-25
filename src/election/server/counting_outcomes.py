@@ -22,6 +22,7 @@ from election.server.counting_rounds import (
     round_at,
     round_context,
     round_view,
+    selection_context,
 )
 from election.server.counting_totals import f2_summary
 from election.server.lifecycle_models import ActiveElection
@@ -263,6 +264,8 @@ def counting_outcomes_router(
         )
         db.add(row)
         db.flush()
+        if correction:
+            options.update(selection_context(db, scope_id, options))
         result = round_view(db, round, row, options)
         db.add(
             CountRoundRequest(

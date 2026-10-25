@@ -557,6 +557,8 @@ def counting_rounds_router(
         )
         db.add(row)
         db.flush()
+        if correction:
+            options.update(selection_context(db, scope_id, options))
         result = round_view(db, round, row, options)
         db.add(
             CountRoundRequest(
