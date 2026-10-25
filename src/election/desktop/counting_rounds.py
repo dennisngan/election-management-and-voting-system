@@ -138,6 +138,9 @@ class CountingRoundsController(QObject):
             self._generation += 1
             self._state["refreshing"] = False
         generation = self._generation
+        uncertain_credential_retry = bool(
+            self._state["uncertain_save"] and payload and "password" in payload
+        )
         activity = "refreshing" if background else "busy"
         self._state[activity] = True
         self.stateChanged.emit()
@@ -166,8 +169,11 @@ class CountingRoundsController(QObject):
                     error=code, error_origin="write" if method != "GET" else "read", notice=""
                 )
                 if method != "GET":
-                    self._state["uncertain_save"] = code in NETWORK_ERRORS
-                    if code not in NETWORK_ERRORS:
+                    remains_uncertain = code in NETWORK_ERRORS or (
+                        uncertain_credential_retry and code == "invalid_credentials"
+                    )
+                    self._state["uncertain_save"] = remains_uncertain
+                    if not remains_uncertain:
                         self._pending = None
             self.stateChanged.emit()
 
