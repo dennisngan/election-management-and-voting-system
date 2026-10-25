@@ -64,6 +64,8 @@ def test_f1_update_requires_explicit_f2_discard_and_preserves_prior_history(
         f2 = complete_f2_command(
             options,
             determination_started_at="2026-11-15T23:18:12.123456+08:00",
+            accepted_votes=[],
+            rejected_papers=[],
         )
         started = client.put(path + f"/{f1['id']}/f2", json=f2)
         assert started.status_code == 200, started.text
