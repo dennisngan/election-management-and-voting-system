@@ -5,6 +5,7 @@ from election.desktop.allocation_translations import ALLOCATION_TRANSLATIONS
 from election.desktop.box_translations import BOX_EVENT_WORDS
 from election.desktop.complaint_period_translations import COMPLAINT_PERIOD_TRANSLATIONS
 from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
+from election.desktop.constituency_result_translations import CONSTITUENCY_RESULT_TRANSLATIONS
 from election.desktop.counter_return_translations import COUNTER_RETURN_TRANSLATIONS
 from election.desktop.counting_outcome_translations import COUNT_OUTCOME_TRANSLATIONS
 from election.desktop.counting_round_translations import COUNTING_ROUND_TRANSLATIONS
@@ -1980,3 +1981,6 @@ for language, outcome_labels in COUNT_OUTCOME_TRANSLATIONS.items():
 
 for language, event_labels in BOX_EVENT_WORDS.items():
     TRANSLATIONS[language].update(event_labels)
+
+for language, result_labels in CONSTITUENCY_RESULT_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(result_labels)

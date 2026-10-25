@@ -72,7 +72,7 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
             click('constituencyResultDiscard')
             click_confirmation(
                 control('constituencyResultDiscardDialog'),
-                controller.texts['constituency_result_discard_accept'],
+                controller.texts['constituency_results_confirm_discard'],
             )
             wait(lambda: results.property('state')['dirty'] is False)
             discarded = results.property('state')
@@ -85,7 +85,7 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
             enter('constituencyResultsPassword', setup['password'])
             click_confirmation(
                 control('constituencyResultsPasswordDialog'),
-                controller.texts['constituency_result_password_confirm'],
+                controller.texts['constituency_results_confirm'],
             )
             wait(lambda: not results.property('state')['busy'])
             resolved = results.property('state')
