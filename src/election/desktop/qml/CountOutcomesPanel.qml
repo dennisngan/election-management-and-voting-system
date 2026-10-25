@@ -564,6 +564,8 @@ ColumnLayout {
         focus: true
         anchors.centerIn: Overlay.overlay
         width: Math.min(460, Overlay.overlay.width - 40)
+        // Keep intrinsic sizing at the explicit width to avoid heading feedback.
+        implicitWidth: Math.max(0, width)
         title: panel.t(pendingWorkflow === "approve" ? "f2_approve_dialog" : "f2_select_dialog")
         header: Label {
             text: workflowDialog.title
