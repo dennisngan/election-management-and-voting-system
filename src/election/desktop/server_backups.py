@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
+from election.desktop.event_times import format_event_time
 from election.desktop.exact_numbers import qt_state
 
 AuthorizedRequest = Callable[
@@ -253,6 +254,10 @@ class ServerBackupsController(QObject):
             self.stateChanged.emit()
 
         self._request("/api/backups", "POST", {"request_id": request_id}, saved, failed)
+
+    @Slot(str, result=str)
+    def formatTime(self, value: str) -> str:
+        return format_event_time(value)
 
     @Slot(result=bool)
     def checkPendingOutcome(self) -> bool:

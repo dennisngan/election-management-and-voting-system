@@ -19,6 +19,16 @@ ColumnLayout {
     spacing: 20
 
     function t(key) { return words[key] || key }
+    function messageText(code) {
+        var labels = {
+            backup_succeeded: "server_backup_succeeded",
+            backup_failed: "server_backup_failed",
+            backup_running: "server_backup_running_unconfirmed",
+            backup_running_unconfirmed: "server_backup_running_unconfirmed",
+            administrator_required: "server_backup_administrator_required"
+        }
+        return t(labels[code] || code)
+    }
     function statusText(status) {
         if (status === "succeeded") return t("server_backup_status_succeeded")
         if (status === "failed") return t("server_backup_status_failed")
@@ -216,7 +226,7 @@ ColumnLayout {
             Caption {
                 objectName: "serverBackupStatusMessage"
                 color: page.editorState.error ? "#a13b30" : "#247355"
-                text: page.t(page.editorState.error || page.editorState.notice)
+                text: page.messageText(page.editorState.error || page.editorState.notice)
             }
         }
     }
@@ -296,19 +306,19 @@ ColumnLayout {
                             }
                             Detail {
                                 label: page.t("server_backup_requested_at")
-                                value: page.timeText(jobCard.modelData.requested_at)
+                                value: jobCard.modelData.requested_at ? page.serverBackups.formatTime(jobCard.modelData.requested_at) : page.t("server_backup_not_recorded")
                             }
                             Detail {
                                 label: page.t("server_backup_completed_at")
-                                value: page.timeText(jobCard.modelData.completed_at)
+                                value: jobCard.modelData.completed_at ? page.serverBackups.formatTime(jobCard.modelData.completed_at) : page.t("server_backup_not_recorded")
                             }
                             Detail {
                                 label: page.t("server_backup_cutoff_start")
-                                value: page.timeText(jobCard.modelData.cutoff_start)
+                                value: jobCard.modelData.cutoff_start ? page.serverBackups.formatTime(jobCard.modelData.cutoff_start) : page.t("server_backup_not_recorded")
                             }
                             Detail {
                                 label: page.t("server_backup_cutoff_end")
-                                value: page.timeText(jobCard.modelData.cutoff_end)
+                                value: jobCard.modelData.cutoff_end ? page.serverBackups.formatTime(jobCard.modelData.cutoff_end) : page.t("server_backup_not_recorded")
                             }
                             Detail {
                                 label: page.t("server_backup_size_bytes")

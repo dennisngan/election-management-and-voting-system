@@ -294,6 +294,15 @@ ApplicationWindow {
                     }
                 }
                 Button {
+                    objectName: "serverBackupsNavigation"
+                    text: window.t("server_backups_navigation"); Layout.fillWidth: true
+                    visible: window.administrator
+                    highlighted: window.currentPage === "serverBackups"; flat: true
+                    Material.background: window.currentPage === "serverBackups" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    onClicked: { window.currentPage = "serverBackups"; controller.serverBackups.open() }
+                }
+                Button {
                     text: window.t("staff_accounts"); Layout.fillWidth: true
                     visible: window.administrator
                     highlighted: window.currentPage === "staff"; flat: true
@@ -830,6 +839,15 @@ ApplicationWindow {
                     config: controller.configuration
                     words: window.words
                     stationMode: window.currentPage === "stations"
+                    onReveal: control => window.revealField(control)
+                }
+                ServerBackupsPage {
+                    visible: window.state.phase === "workspace" && window.currentPage === "serverBackups" && window.administrator
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
+                    serverBackups: controller.serverBackups
+                    words: window.words
+                    locale: window.state.locale
                     onReveal: control => window.revealField(control)
                 }
                 StaffPage {
