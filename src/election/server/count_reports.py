@@ -175,11 +175,16 @@ def _f2_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTa
     f2 = record.get("f2")
     if f2 is None:
         return [_table(labels["f2_section"], [[labels["form"], labels["not_recorded"]]], labels)]
+    f2_metadata = {
+        **f2,
+        "accepted_questionable_quantity": record.get("accepted_questionable_quantity"),
+        "rejected_questionable_quantity": record.get("rejected_questionable_quantity"),
+    }
     tables = [
         _table(
             labels["f2_section"],
             _pairs(
-                f2,
+                f2_metadata,
                 (
                     ("f2_event_at", "event_at"),
                     ("f2_entered_at", "entered_at"),

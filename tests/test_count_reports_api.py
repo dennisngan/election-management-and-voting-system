@@ -1,6 +1,7 @@
 """Selected-revision F2/F3/F4/count reports use the frozen count projection."""
 
-from io import BytesIO
+import csv
+from io import BytesIO, StringIO
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -106,6 +107,13 @@ def test_count_report_route_reads_the_exact_composite_revision(
         assert f2_report.json()["record"] == report["record"]
         assert "F2 Questionable Paper Determination" in f2_report.json()["preview_lines"]
         assert "Completed F2 observations" in "\n".join(f2_report.json()["preview_lines"])
+        f2_section = next(
+            table
+            for table in f2_report.json()["tables"]
+            if table["title"] == "F2 Questionable Paper Determination"
+        )
+        assert ["Accepted questionable papers total", "2"] in f2_section["rows"]
+        assert ["Rejected questionable papers total", "1"] in f2_section["rows"]
 
         f3_report = client.get(
             path + f"/{f1.json()['id']}/revisions/2/f3", params={"locale": "en"}
@@ -149,6 +157,12 @@ def test_count_report_route_reads_the_exact_composite_revision(
             )
             assert csv_response.status_code == 200, csv_response.text
             assert csv_response.content.startswith(b"\xef\xbb\xbf")
+            csv_rows = list(
+                csv.reader(StringIO(csv_response.content.decode("utf-8-sig")))
+            )
+            if form in ("f2", "count"):
+                assert ["Accepted questionable papers total", "2"] in csv_rows
+                assert ["Rejected questionable papers total", "1"] in csv_rows
             pdf_response = client.get(
                 path + f"/{f1.json()['id']}/revisions/2/{form}.pdf",
                 params={"locale": "en"},
@@ -160,6 +174,9 @@ def test_count_report_route_reads_the_exact_composite_revision(
             if form in ("f2", "f3", "count"):
                 assert b"Void for uncertainty" in csv_response.content
                 assert "Void for uncertainty" in pdf_text
+            if form in ("f2", "count"):
+                assert "Accepted questionable papers total" in pdf_text
+                assert "Rejected questionable papers total" in pdf_text
             if form == "f4":
                 assert "F4 final candidate votes" in pdf_text
 
