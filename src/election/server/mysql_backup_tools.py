@@ -369,8 +369,6 @@ def _container_restore_options(
                 container,
                 "mktemp",
                 "-d",
-                "-m",
-                "700",
                 "/tmp/.election-mysql-restore.XXXXXXXX",
             ],
             stdin=subprocess.DEVNULL,
