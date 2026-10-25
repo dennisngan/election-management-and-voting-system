@@ -245,6 +245,17 @@ def box_snapshot(db: Session, actor: Account, station_id: int) -> dict[str, Any]
     }
 
 
+def box_timeline_snapshot(db: Session, actor: Account, station_id: int) -> dict[str, Any]:
+    # Count context uses the physical-box snapshot, so enrich only at this outer
+    # read boundary to avoid recursively asking a timeline for its own sources.
+    from election.server.counting_round_events import round_events
+    from election.server.turnout_basis import turnout_scope
+
+    turnout_scope(db, actor, station_id)
+    snapshot = box_snapshot(db, actor, station_id)
+    return {**snapshot, "count_events": round_events(db, actor, station_id)}
+
+
 def box_router(
     database: Callable[[], Generator[Session]],
     ready_account: Callable[..., Account],
@@ -324,7 +335,7 @@ def box_router(
 
     @router.get("")
     def read_boxes(station_id: int, db: Database, actor: Ready) -> dict[str, Any]:
-        return box_snapshot(db, actor, station_id)
+        return box_timeline_snapshot(db, actor, station_id)
 
     @router.post("", status_code=201)
     def prepare_box(

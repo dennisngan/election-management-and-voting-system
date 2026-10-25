@@ -13,7 +13,7 @@ from election.server.boxes import (
     MILESTONE_KINDS,
     box_event_view,
     box_events,
-    box_snapshot,
+    box_timeline_snapshot,
 )
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
@@ -303,9 +303,7 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
                 recorded_time(row["entered_at"]),
                 str(row["actor_id"]),
                 boxes[row["box_id"]]["box_reference"] if row["box_id"] else labels["none"],
-                station_name(boxes[row["box_id"]]["origin"])
-                if row["box_id"]
-                else labels["none"],
+                station_name(boxes[row["box_id"]]["origin"]) if row["box_id"] else labels["none"],
                 row["reason"] or labels["none"],
             ]
             for row in report["milestone_history"]
@@ -400,7 +398,7 @@ def box_reports_router(
     def statement(
         station_id: int, db: Database, actor: Ready, locale: ReportLocale = "tc"
     ) -> dict[str, Any]:
-        snapshot = box_snapshot(db, actor, station_id)
+        snapshot = box_timeline_snapshot(db, actor, station_id)
         items = snapshot["items"]
         report = {
             "scope": snapshot["context"],
@@ -412,6 +410,7 @@ def box_reports_router(
             "milestone_history": snapshot["milestone_history"],
             "counting_applicable": snapshot["counting_applicable"],
             "count_completion": snapshot["count_completion"],
+            "count_events": snapshot["count_events"],
             "locale": locale,
             "title": LABELS[locale]["title"],
             "labels": LABELS[locale],
