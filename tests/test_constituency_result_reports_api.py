@@ -41,6 +41,27 @@ def test_statement_endpoint_reads_a_complete_public_result(
         assert [row["quantity"] for row in record["candidate_totals"]] == [0, 0]
         assert len(record["contributions"]) == 2
         assert all(row["frozen_source_context"] for row in record["contributions"])
+        labels = statement.json()["labels"]
+        accounting_tables = [
+            table
+            for table in statement.json()["tables"]
+            if table["title"] == labels["accounting_source"]
+        ]
+        accounting_rows = [row for table in accounting_tables for row in table["rows"][1:]]
+        source_records = [
+            source_record
+            for contribution in record["contributions"]
+            for source_record in contribution["frozen_source_context"]["accounting_basis"]
+        ]
+        assert source_records
+        for source_record in source_records:
+            expected_status = labels.get(source_record["status"], source_record["status"])
+            assert any(
+                row[1] == str(source_record["id"])
+                and row[2] == str(source_record["revision"])
+                and row[3] == expected_status
+                for row in accounting_rows
+            )
         for locale, title in (
             ("tc", "選區選舉結果報表"),
             ("sc", "选区选举结果报表"),

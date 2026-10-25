@@ -37,7 +37,7 @@ def _blockers(rows: list[dict[str, Any]], labels: dict[str, str]) -> str:
         if row.get("station_id") is not None:
             details.append(f"{labels['station_id']} {row['station_id']}")
         if row.get("reason_id") is not None:
-            details.append(f"{labels['candidate_id']} {row['reason_id']}")
+            details.append(f"{labels['reason_id']} {row['reason_id']}")
         if details:
             label += " · " + ", ".join(details)
         rendered.append(label)
@@ -126,11 +126,11 @@ def _contribution_tables(
     ]
     accounting = source.get("accounting_basis", [])
     for item in accounting:
-        record = item.get("record") or {}
+        record = item
         summary = record.get("summary") or {}
         source_rows.append(
             [
-                _station_label(item.get("station"), labels),
+                _station_label(record.get("context", {}).get("station"), labels),
                 _value(record.get("id"), labels),
                 _value(record.get("revision"), labels),
                 labels.get(record.get("status", ""), record.get("status", labels["not_recorded"])),
