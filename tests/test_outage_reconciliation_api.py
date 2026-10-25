@@ -136,4 +136,5 @@ def test_paper_count_submission_reenters_once_and_supervisor_reconciles(
         assert reconciled.json()["record"]["reconciliation"]["valid"] is True
         current_count = counter.get(round_target).json()["record"]
         assert current_count["status"] == "submitted"
-        assert current_count["approved_at"] is None
+        assert current_count["approval_valid"] is False
+        assert current_count.get("approved_at") is None
