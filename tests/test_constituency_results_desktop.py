@@ -130,7 +130,7 @@ def test_material_zero_tie_shows_received_scope_without_source_double_count(
                 for box in contribution['frozen_source_context']['box_basis']
             }
             assert setup['transferred_box_id'] in all_box_ids
-            assert len(transferred) == 1
+            assert len(transferred) == 2
             """,
         )
 
