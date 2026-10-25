@@ -225,7 +225,7 @@ def test_stale_selected_count_requires_refresh_basis_and_f1_correction_is_cancel
             assert corrected["selected"]["round_number"] == 1
             assert corrected["selected"]["revision"] == 5
             assert corrected["selected"]["status"] == "draft"
-            assert corrected["selected"]["scope_revision"] == 2
+            assert corrected["selected"]["scope_revision"] == next_successor["revision"]
             assert corrected["selected"]["source_current"] is True
             assert corrected["selected"]["f2"] is None
             assert corrected["selected"]["approval_valid"] is False
