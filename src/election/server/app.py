@@ -40,6 +40,7 @@ from election.server.models import Account, AuditEvent, LoginSession
 from election.server.polling import polling_router
 from election.server.queue import queue_router
 from election.server.queue_reports import queue_reports_router
+from election.server.request_outcomes import request_outcomes_router
 from election.server.security import hash_password, token_digest, verify_password
 from election.server.special_paper_reports import special_paper_reports_router
 from election.server.special_papers import special_paper_router
@@ -179,6 +180,7 @@ def create_app(
     app.include_router(counting_rounds_router(database, ready_account, timestamp))
     app.include_router(counting_outcomes_router(database, ready_account, timestamp))
     app.include_router(counting_workflow_router(database, ready_account, timestamp))
+    app.include_router(request_outcomes_router(database, ready_account, timestamp))
     app.include_router(f1_reports_router(database, ready_account, timestamp))
     app.include_router(count_reports_router(database, ready_account, timestamp))
     app.include_router(counting_scope_reports_router(database, ready_account, timestamp))
