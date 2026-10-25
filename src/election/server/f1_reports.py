@@ -15,6 +15,7 @@ from election.server.counting_rounds import round_at, round_context, round_view
 from election.server.f1_labels import LABELS
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
+from election.server.physical_decision_reports import physical_tables
 from election.server.stock_reports import ReportLocale
 from election.server.turnout_reports import hong_kong_time
 
@@ -48,120 +49,6 @@ def _pairs(data: dict[str, Any], keys: tuple[str, ...], labels: dict[str, str]) 
 
 def _table(title: str, rows: list[list[str]], labels: dict[str, str]) -> HistoryTable:
     return HistoryTable(title, [[labels["field"], labels["value"]], *rows], (0.40, 0.60))
-
-
-def _physical_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]:
-    tables: list[HistoryTable] = []
-
-    def decision_rows(decision: dict[str, Any]) -> list[list[str]]:
-        fields = (
-            ("decision_revision", "revision"),
-            ("reviewed_count_revision", "reviewed_revision"),
-            ("reviewed_count_revision_id", "reviewed_revision_id"),
-            ("scope_revision", "scope_revision"),
-            ("decision_actor", "actor_id"),
-            ("accepted_at", "accepted_at"),
-            ("acceptance_reason", "reason"),
-            ("expected_quantity", "expected_quantity"),
-            ("actual_quantity", "actual_quantity"),
-            ("difference_quantity", "difference_quantity"),
-            ("applies_to_revision", "applies_to_revision"),
-            ("decision_validity", "valid"),
-            ("decision_is_current", "is_current"),
-            ("fingerprint", "fingerprint"),
-        )
-        return [[labels[label], _value(key, decision.get(key), labels)] for label, key in fields]
-
-    for decision in record.get("physical_decisions", []):
-        source = labels.get("source_" + decision["source"], decision["source"])
-        tables.append(
-            _table(
-                labels["physical_decision_history"] + " · " + source,
-                decision_rows(decision),
-                labels,
-            )
-        )
-    for decision in record.get("approved_physical_decisions", []):
-        source = labels.get("source_" + decision["source"], decision["source"])
-        tables.append(
-            _table(
-                labels["physical_decision_approved"] + " · " + source,
-                decision_rows(decision),
-                labels,
-            )
-        )
-    for comparison in record.get("physical_comparisons", []):
-        source = labels.get("source_" + comparison["source"], comparison["source"])
-        rows = [
-            [labels["source"], source],
-            [
-                labels["expected_quantity"],
-                _value("expected_quantity", comparison.get("expected_quantity"), labels),
-            ],
-            [
-                labels["actual_quantity"],
-                _value("actual_quantity", comparison.get("actual_quantity"), labels),
-            ],
-            [
-                labels["difference_quantity"],
-                _value("difference_quantity", comparison.get("difference_quantity"), labels),
-            ],
-            [
-                labels["comparison_status"],
-                _value("comparison_status", comparison.get("status"), labels),
-            ],
-        ]
-        acceptance = comparison.get("acceptance")
-        if acceptance:
-            rows.extend(
-                [
-                    [
-                        labels["decision_actor"],
-                        _value("actor_id", acceptance.get("actor_id"), labels),
-                    ],
-                    [
-                        labels["accepted_at"],
-                        _value("accepted_at", acceptance.get("accepted_at"), labels),
-                    ],
-                    [
-                        labels["acceptance_reason"],
-                        _value("reason", acceptance.get("reason"), labels),
-                    ],
-                    [
-                        labels["reviewed_count_revision"],
-                        _value("reviewed_revision", acceptance.get("reviewed_revision"), labels),
-                    ],
-                ]
-            )
-        tables.append(_table(labels["physical_comparisons"] + " · " + source, rows, labels))
-    for comparison in record.get("reviewed_physical_comparisons", []):
-        source = labels.get("source_" + comparison["source"], comparison["source"])
-        tables.append(
-            _table(
-                labels["physical_comparison_reviewed"] + " · " + source,
-                _pairs(
-                    {**comparison, "source": source},
-                    (
-                        "source",
-                        "expected_quantity",
-                        "actual_quantity",
-                        "difference_quantity",
-                        "status",
-                    ),
-                    {**labels, "status": labels["comparison_status"]},
-                ),
-                labels,
-            )
-        )
-    if not tables:
-        tables.append(
-            _table(
-                labels["physical_decision_history"],
-                [[labels["form"], labels["not_recorded"]]],
-                labels,
-            )
-        )
-    return tables
 
 
 def _station(station: dict[str, Any]) -> str:
@@ -235,7 +122,7 @@ def _tables(report: dict[str, Any]) -> list[HistoryTable]:
             labels,
         )
     ]
-    tables.extend(_physical_tables(record, labels))
+    tables.extend(physical_tables(record, labels, include_empty_placeholders=False))
     f1_blockers = record.get("f1_blockers", record["blockers"])
     blockers = [
         [
