@@ -35,7 +35,7 @@ _LABELS: dict[str, tuple[str, str, str]] = {
     ),
     "f1_round": ("點票輪次", "点票轮次", "Count round"),
     "f1_initial_round": ("首次點票草稿", "首次点票草稿", "Initial round draft"),
-    "f1_history": ("保留的草稿版本", "保留的草稿版本", "Preserved draft revisions"),
+    "f1_history": ("保留的點票版本", "保留的点票版本", "Preserved count revisions"),
     "f1_no_round": (
         "此範圍尚無 F1 草稿。空白數量代表尚未觀察，不代表零。",
         "此范围尚无 F1 草稿。空白数量代表尚未观察，不代表零。",
@@ -109,7 +109,7 @@ _LABELS: dict[str, tuple[str, str, str]] = {
     ),
     "f1_save": ("儲存 F1 草稿", "保存 F1 草稿", "Save F1 draft"),
     "f1_saved": ("F1 草稿已儲存。", "F1 草稿已保存。", "F1 draft saved."),
-    "f1_reload": ("重新載入已儲存草稿", "重新载入已保存草稿", "Reload saved draft"),
+    "f1_reload": ("重新載入已儲存點票", "重新载入已保存点票", "Reload saved count"),
     "f1_discard": (
         "捨棄未儲存的 F1 輸入並重新載入目前草稿？",
         "丢弃未保存的 F1 输入并重新载入当前草稿？",
@@ -130,9 +130,9 @@ _LABELS: dict[str, tuple[str, str, str]] = {
         "Observed actual counted papers",
     ),
     "f1_complete": (
-        "F1 所需數字齊全且算術相符；仍為點票草稿。",
-        "F1 所需数字齐全且算术相符；仍为点票草稿。",
-        "F1 inputs are complete and balanced; this remains a count draft.",
+        "F1 所需數字齊全且算術相符。",
+        "F1 所需数字齐全且算术相符。",
+        "F1 inputs are complete and balanced.",
     ),
     "f1_incomplete": (
         "F1 尚有未觀察數字。請保留空白，待觀察後補錄。",
