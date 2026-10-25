@@ -60,6 +60,7 @@ class F1Draft(BaseModel):
     notes: str = Field(default="", max_length=2000)
     amendment_reason: str = Field(default="", max_length=2000)
     discard_f2: bool = Field(default=False, strict=True)
+    refresh_basis: bool = Field(default=False, strict=True)
 
     @field_validator("event_at")
     @classmethod
@@ -462,6 +463,8 @@ def counting_rounds_router(
         db: Session,
         actor: Account,
         response: Response,
+        *,
+        correction: bool = False,
     ) -> dict[str, Any]:
         if actor.role != "counting_officer":
             raise HTTPException(403, detail={"code": "counting_officer_required"})
@@ -471,10 +474,14 @@ def counting_rounds_router(
         options = round_context(db, actor, station_id, scope_id)
         digest_data = data.model_dump(
             mode="json",
-            exclude={"request_id", "discard_f2"},
+            exclude={"request_id", "discard_f2", "refresh_basis"},
         )
         if data.discard_f2:
             digest_data["discard_f2"] = True
+        if data.refresh_basis:
+            digest_data["refresh_basis"] = True
+        if correction:
+            digest_data["action"] = "amend-f1"
         digest = hashlib.sha256(
             json.dumps(
                 {
@@ -509,10 +516,15 @@ def counting_rounds_router(
         current = latest_round_revision(db, round.id) if round else None
         if data.expected_revision != (current.revision if current else 0):
             raise HTTPException(409, detail={"code": "revision_conflict"})
-        if current and current.data["scope_revision"] != data.scope_revision:
-            raise HTTPException(409, detail={"code": "count_round_basis_stale"})
-        if current and current.status != "draft":
+        if correction and not data.amendment_reason.strip():
+            raise HTTPException(422, detail={"code": "count_amendment_reason_required"})
+        if current and round and not round_view(db, round, current, options)["source_current"]:
+            if not (correction and data.refresh_basis):
+                raise HTTPException(409, detail={"code": "count_round_basis_stale"})
+        if current and current.status != "draft" and not correction:
             raise HTTPException(409, detail={"code": "count_round_read_only"})
+        if data.refresh_basis and not correction:
+            raise HTTPException(409, detail={"code": "count_explicit_correction_required"})
         if current and current.data.get("f2") is not None and not data.discard_f2:
             raise HTTPException(409, detail={"code": "f2_discard_required"})
         event_at, now = data.event_at.replace(tzinfo=None), timestamp()
@@ -558,13 +570,20 @@ def counting_rounds_router(
         db.add(
             AuditEvent(
                 actor_id=actor.id,
-                action="f1_draft_saved",
+                action="f1_corrected" if correction else "f1_draft_saved",
                 occurred_at=now,
                 details={
                     "station_id": station_id,
                     "scope_id": scope_id,
                     "round_id": round.id,
                     "revision": row.revision,
+                    **(
+                        {
+                            "reason": data.amendment_reason,
+                            "previous_revision": data.expected_revision,
+                            "refresh_basis": data.refresh_basis,
+                        } if correction else {}
+                    ),
                 },
             )
         )
@@ -593,5 +612,17 @@ def counting_rounds_router(
         response: Response,
     ) -> dict[str, Any]:
         return save(station_id, scope_id, round_id, data, db, actor, response)
+
+    @router.post("/{round_id}/amend-f1")
+    def correct_f1(
+        station_id: int,
+        scope_id: int,
+        round_id: int,
+        data: F1Draft,
+        db: Database,
+        actor: Actor,
+        response: Response,
+    ) -> dict[str, Any]:
+        return save(station_id, scope_id, round_id, data, db, actor, response, correction=True)
 
     return router
