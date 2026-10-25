@@ -394,7 +394,7 @@ def test_changed_box_basis_invalidates_resolution_and_rejects_old_digest(
         assert decision.status_code == 200, decision.text
         saved = decision.json()["tie_resolution"]
         box = setup["boxes"]["local_n1"]
-        corrected = setup["clients"]["polling"].post(
+        corrected = setup["clients"]["receiveronly"].post(
             setup["paths"]["n1_boxes"] + f"/{box['id']}/receipt",
             json=event_command(
                 box["revision"],
