@@ -153,6 +153,7 @@ def backups_router(
             row.size_bytes = artifact.stat().st_size
             row.manifest_data = {
                 "format": "election-mysql-backup-v1",
+                "status": "complete",
                 "backup_id": row.id,
                 "request_id": row.request_id,
                 "artifact": artifact.name,
