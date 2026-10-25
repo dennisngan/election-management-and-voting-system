@@ -52,6 +52,7 @@ class F1Draft(BaseModel):
     actual_counted_quantity: Quantity | None = None
     notes: str = Field(default="", max_length=2000)
     amendment_reason: str = Field(default="", max_length=2000)
+    discard_f2: bool = Field(default=False, strict=True)
 
     @field_validator("event_at")
     @classmethod
@@ -387,6 +388,12 @@ def counting_rounds_router(
         db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
         turnout_scope(db, actor, station_id, writable=True)
         options = round_context(db, actor, station_id, scope_id)
+        digest_data = data.model_dump(
+            mode="json",
+            exclude={"request_id", "discard_f2"},
+        )
+        if data.discard_f2:
+            digest_data["discard_f2"] = True
         digest = hashlib.sha256(
             json.dumps(
                 {
@@ -394,7 +401,7 @@ def counting_rounds_router(
                     "scope_id": scope_id,
                     "round_id": round_id,
                     "actor_id": actor.id,
-                    "data": data.model_dump(mode="json", exclude={"request_id"}),
+                    "data": digest_data,
                 },
                 sort_keys=True,
                 ensure_ascii=False,
@@ -423,6 +430,10 @@ def counting_rounds_router(
             raise HTTPException(409, detail={"code": "revision_conflict"})
         if current and current.data["scope_revision"] != data.scope_revision:
             raise HTTPException(409, detail={"code": "count_round_basis_stale"})
+        if current and current.status != "draft":
+            raise HTTPException(409, detail={"code": "count_round_read_only"})
+        if current and current.data.get("f2") is not None and not data.discard_f2:
+            raise HTTPException(409, detail={"code": "f2_discard_required"})
         event_at, now = data.event_at.replace(tzinfo=None), timestamp()
         if event_at > now:
             raise HTTPException(422, detail={"code": "event_time_in_future"})
