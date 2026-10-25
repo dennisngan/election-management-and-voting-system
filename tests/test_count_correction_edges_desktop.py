@@ -73,12 +73,11 @@ def _revise_ready_scope(setup: dict) -> dict:
         path,
         json={
             "request_id": str(uuid4()),
-            "expected_revision": 1,
+            "expected_revision": scope["revision"],
             "reference": scope["reference"],
             "event_at": scope["event_at"],
             "box_revisions": [
-                {"box_id": row["id"], "revision": row["revision"]}
-                for row in scope["box_basis"]
+                {"box_id": row["id"], "revision": row["revision"]} for row in scope["box_basis"]
             ],
             "accounting_revisions": [
                 {"station_id": row["station_id"], "revision": row["revision"]}
@@ -89,13 +88,15 @@ def _revise_ready_scope(setup: dict) -> dict:
         },
     )
     assert revised.status_code == 200, revised.text
-    assert revised.json()["revision"] == 2 and revised.json()["status"] == "draft"
+    assert revised.json()["revision"] == scope["revision"] + 1
+    assert revised.json()["status"] == "draft"
     submitted = peer.post(
         path + "/submit",
-        json={"request_id": str(uuid4()), "expected_revision": 2},
+        json={"request_id": str(uuid4()), "expected_revision": revised.json()["revision"]},
     )
     assert submitted.status_code == 200, submitted.text
     assert submitted.json()["count_ready"] is True
+    setup["scope"] = submitted.json()
     return submitted.json()
 
 
@@ -134,6 +135,14 @@ def test_stale_selected_count_requires_refresh_basis_and_f1_correction_is_cancel
             assert stale["selected"]["selected"] is False
             assert stale["selected"]["selection"]["valid"] is False
 
+            # A foreground reload acknowledges the ready scope successor. The
+            # matching automatic refresh must not mark that same basis newer.
+            editor.refresh()
+            wait_for_editor_idle(qt_app, editor)
+            acknowledged = editor.property("state")
+            assert acknowledged["latest_scope"]["revision"] == successor["revision"]
+            assert acknowledged["newer_revision"] is False
+
             editor.startCorrection("f1", False)
             rejected = editor.property("state")
             assert rejected["error"] == "count_round_basis_stale"
@@ -149,8 +158,7 @@ def test_stale_selected_count_requires_refresh_basis_and_f1_correction_is_cancel
             assert refreshed["scope"]["revision"] == 2
             assert refreshed["edit_scope_revision"] == 2
             assert {
-                (row["candidate_id"], row["revision"])
-                for row in refreshed["candidate_inputs"]
+                (row["candidate_id"], row["revision"]) for row in refreshed["candidate_inputs"]
             } == {(row["id"], row["revision"]) for row in refreshed["candidates"]}
 
             editor.setField("amendment_reason", "  ")
@@ -168,6 +176,41 @@ def test_stale_selected_count_requires_refresh_basis_and_f1_correction_is_cancel
             assert cancelled["dirty"] is False
             assert cancelled["forms"] == original_forms
             assert https_server.request_count("POST", target + "/amend-f1") == requests_before_blank
+
+            editor.refresh()
+            wait_for_editor_idle(qt_app, editor)
+            assert editor.property("state")["newer_revision"] is False
+            editor.startCorrection("f1", True)
+            repeated = editor.property("state")
+            assert repeated["correction_stage"] == "f1"
+            assert repeated["scope"]["revision"] == successor["revision"]
+            editor.cancelCorrection()
+
+            next_successor = _revise_ready_scope(setup)
+            assert next_successor["revision"] == successor["revision"] + 1
+            editor.refresh()
+            wait_for_editor_idle(qt_app, editor)
+            peer_changed = editor.property("state")
+            assert peer_changed["latest_scope"]["revision"] == next_successor["revision"]
+            assert peer_changed["newer_revision"] is True
+            editor.startCorrection("f1", True)
+            blocked = editor.property("state")
+            assert blocked["error"] == "revision_conflict"
+            assert blocked["correction_stage"] == ""
+            assert blocked["dirty"] is False
+
+            assert editor.reload() is True
+            wait_for_editor_idle(qt_app, editor)
+            reloaded = editor.property("state")
+            assert reloaded["latest_scope"]["revision"] == next_successor["revision"]
+            assert reloaded["newer_revision"] is False
+            assert reloaded["selected"]["scope_revision"] == 1
+            assert reloaded["selected"]["selection"]["valid"] is False
+            editor.startCorrection("f1", True)
+            after_reload = editor.property("state")
+            assert after_reload["correction_stage"] == "f1"
+            assert after_reload["scope"]["revision"] == next_successor["revision"]
+            editor.cancelCorrection()
 
             editor.startCorrection("f1", True)
             editor.setField(
@@ -187,8 +230,9 @@ def test_stale_selected_count_requires_refresh_basis_and_f1_correction_is_cancel
             assert corrected["selected"]["f2"] is None
             assert corrected["selected"]["approval_valid"] is False
             assert corrected["selected"]["selected"] is False
-            assert corrected["selected"]["selection"]["round_revision_id"] == (
-                old_selection["round_revision_id"]
+            assert (
+                corrected["selected"]["selection"]["round_revision_id"]
+                == (old_selection["round_revision_id"])
             )
             assert corrected["selected"]["selection"]["valid"] is False
             assert https_server.request_count("POST", target + "/amend-f1") == 1
@@ -231,19 +275,22 @@ def test_supervisor_decision_refresh_updates_same_round_and_preserves_dirty_corr
         assert submitted.status_code == 200, submitted.text
         assert submitted.json()["revision"] == 3 and submitted.json()["status"] == "submitted"
 
-        with f1_editor(
-            https_server,
-            qt_app,
-            setup["accounts"]["receiveronly"],
-            setup["stations"]["N1"]["id"],
-            setup["scope"]["id"],
-        ) as (_, dirty_editor), f1_editor(
-            https_server,
-            qt_app,
-            setup["accounts"]["bothcounting"],
-            setup["stations"]["N1"]["id"],
-            setup["scope"]["id"],
-        ) as (_, observer_editor):
+        with (
+            f1_editor(
+                https_server,
+                qt_app,
+                setup["accounts"]["receiveronly"],
+                setup["stations"]["N1"]["id"],
+                setup["scope"]["id"],
+            ) as (_, dirty_editor),
+            f1_editor(
+                https_server,
+                qt_app,
+                setup["accounts"]["bothcounting"],
+                setup["stations"]["N1"]["id"],
+                setup["scope"]["id"],
+            ) as (_, observer_editor),
+        ):
             for editor, note in (
                 (dirty_editor, "Unsaved correction from editor one."),
                 (observer_editor, "Unsaved correction from editor two."),
