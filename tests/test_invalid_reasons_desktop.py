@@ -341,3 +341,111 @@ def test_refresh_keeps_intentionally_selected_history_and_allows_return_to_head(
         assert control('invalidReasonLabelEn').property('readOnly') is False
         """,
     )
+
+
+def test_historical_refresh_adds_peer_revision_without_making_intermediate_revision_current(
+    admin: TestClient,
+    desktop: DesktopController,
+    https_server: HttpsServer,
+    account: dict[str, str],
+    qt_app: QCoreApplication,
+) -> None:
+    election = create_election(admin)
+    path = f"/api/elections/{election['id']}/invalid-ballot-reasons"
+    original = admin.get(path).json()["items"][0]
+    revision_two = admin.put(
+        path + f"/{original['id']}",
+        json={
+            "request_id": str(uuid4()),
+            "expected_revision": 1,
+            "label_tc": "第二版本繁體顯示",
+            "label_sc": "第二版本简体显示",
+            "label_en": "Second revision display",
+            "enabled": True,
+            "explanation_required": False,
+        },
+    )
+    assert revision_two.status_code == 200, revision_two.text
+    ready_setup(desktop, https_server, account, qt_app)
+    run_workspace_qml(
+        {
+            "server": https_server.url,
+            "username": account["username"],
+            "password": PERSONAL_PASSWORD,
+            "station_id": 0,
+            "election_id": election["id"],
+            "reason_id": original["id"],
+            "locale": "en",
+            "ca_file": str(TLS_DIRECTORY / "ca.pem"),
+            "catalog_path": path,
+        },
+        """
+        import httpx
+        import ssl
+        from uuid import uuid4
+
+        click('invalidReasonsNavigation')
+        catalog = controller.property('invalidReasons')
+        wait(lambda: not catalog.property('state')['refreshing'])
+        frame()
+        choose('invalidReasonElection', next(index for index, row in enumerate(
+            catalog.property('state')['elections']) if row['id'] == setup['election_id']))
+        wait(lambda: not catalog.property('state')['busy'])
+        choose('invalidReasonPicker', next(index for index, row in enumerate(
+            catalog.property('state')['items']) if row['id'] == setup['reason_id']))
+        wait(lambda: not any(catalog.property('state')[key]
+            for key in ('busy', 'refreshing')))
+        assert [row['revision'] for row in catalog.property('state')['history']] == [2, 1]
+        choose('invalidReasonHistory', 1)
+        wait(lambda: catalog.property('state')['selected']['revision'] == 1)
+        assert catalog.property('state')['historical'] is True
+
+        with httpx.Client(
+            base_url=setup['server'],
+            verify=ssl.create_default_context(cafile=setup['ca_file']),
+        ) as peer:
+            login = peer.post('/api/auth/login', json={
+                'username': setup['username'], 'password': setup['password']})
+            assert login.status_code == 200
+            peer.headers['Authorization'] = 'Bearer ' + login.json()['token']
+            revision_three = peer.put(
+                setup['catalog_path'] + '/' + str(setup['reason_id']),
+                json={
+                    'request_id': str(uuid4()),
+                    'expected_revision': 2,
+                    'label_tc': '第三版本繁體顯示',
+                    'label_sc': '第三版本简体显示',
+                    'label_en': 'Third revision display',
+                    'enabled': True,
+                    'explanation_required': False,
+                },
+            )
+            assert revision_three.status_code == 200, revision_three.text
+
+        catalog.refresh()
+        wait(lambda: not any(catalog.property('state')[key]
+            for key in ('busy', 'refreshing')))
+        refreshed = catalog.property('state')
+        assert refreshed['selected']['revision'] == 1
+        assert refreshed['historical'] is True
+        assert refreshed['newer_revision'] is False
+        assert [row['revision'] for row in refreshed['history']] == [3, 2, 1]
+
+        choose('invalidReasonHistory', 1)
+        wait(lambda: catalog.property('state')['selected']['revision'] == 2)
+        intermediate = catalog.property('state')
+        assert intermediate['historical'] is True
+        assert intermediate['newer_revision'] is False
+        assert control('invalidReasonLabelEn').property('readOnly') is True
+        assert control('invalidReasonSave').property('enabled') is False
+
+        choose('invalidReasonHistory', 0)
+        wait(lambda: catalog.property('state')['selected']['revision'] == 3)
+        current = catalog.property('state')
+        assert current['historical'] is False
+        assert current['newer_revision'] is False
+        assert control('invalidReasonLabelEn').property('readOnly') is False
+        enter('invalidReasonLabelEn', 'Editable current head')
+        assert control('invalidReasonSave').property('enabled') is True
+        """,
+    )

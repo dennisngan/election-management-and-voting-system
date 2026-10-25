@@ -154,7 +154,60 @@ class InvalidReasonsController(QObject):
         self._state["newer_revision"] = bool(
             selected and not self._state["historical"] and latest != selected
         )
+        if selected and self._state["historical"]:
+            self._refresh_historical_history(selected["id"], selected["revision"])
         return True
+
+    def _refresh_historical_history(self, reason_id: int, revision: int) -> None:
+        generation = self._generation
+
+        def still_selected() -> bool:
+            selected = self._state["selected"]
+            return bool(
+                generation == self._generation
+                and self._state["historical"]
+                and selected.get("id") == reason_id
+                and selected.get("revision") == revision
+            )
+
+        def loaded(data: dict[str, Any]) -> None:
+            if not still_selected():
+                return
+            row, history = data.get("record"), data.get("history")
+            if (
+                not isinstance(row, dict)
+                or not self._valid_row(row)
+                or row.get("id") != reason_id
+                or not isinstance(history, list)
+                or not all(
+                    isinstance(entry, dict)
+                    and self._valid_row(entry)
+                    and entry.get("id") == reason_id
+                    for entry in history
+                )
+                or not any(entry["revision"] == revision for entry in history)
+            ):
+                self._error("request_failed")
+                return
+            catalog_head = next(
+                (item for item in self._state["items"] if item["id"] == reason_id), None
+            )
+            if catalog_head is not None and row["revision"] < catalog_head["revision"]:
+                self._send(
+                    f"{self._path()}/{reason_id}", "GET", None, loaded, background=True
+                )
+                return
+            self._state["history"] = deepcopy(history)
+            self._state["historical"] = revision != row["revision"]
+            self._state["newer_revision"] = False
+            if catalog_head is None or row["revision"] > catalog_head["revision"]:
+                self._state["items"] = [
+                    row if item["id"] == reason_id else item for item in self._state["items"]
+                ]
+
+        self._send(
+            f"{self._path()}/{reason_id}", "GET", None, loaded, background=True
+        )
 
     def _accept(self, row: dict[str, Any], *, historical: bool = False) -> None:
         self._state.update(
