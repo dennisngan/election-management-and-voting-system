@@ -59,6 +59,10 @@ def test_dirty_tie_review_tracks_same_digest_decision_and_discards_explicitly(
 
             results = controller.property('constituencyResults')
             assert results is not None
+            results.refresh()
+            unopened = results.property('state')
+            assert unopened['busy'] is False and unopened['refreshing'] is False
+            assert unopened['result'] == {}
             prior_refresh = controller.property('state')['last_refresh']
             controller.refresh()
             wait(lambda: controller.property('state')['last_refresh'] != prior_refresh)
@@ -123,7 +127,8 @@ def test_dirty_tie_review_tracks_same_digest_decision_and_discards_explicitly(
             assert reloaded['result']['tie_resolution']['revision'] == 1
             """,
         )
-        assert https_server.request_count("GET", result_path) == 2
+        # The only result reads are the explicit open, peer-change refresh, and discard reload.
+        assert https_server.request_count("GET", result_path) == 3
 
 
 def test_dropped_tie_response_retries_original_receipt_with_fresh_password(
