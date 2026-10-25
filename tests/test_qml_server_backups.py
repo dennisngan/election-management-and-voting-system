@@ -93,13 +93,15 @@ def test_admin_creates_backup_and_reviews_translated_server_metadata(
         controller.setLocale('en')
         frame()
         focus('serverBackupCreate')
+        prior_jobs = controller.property('serverBackups').property('state')['jobs']
+        prior_ids = {row['id'] for row in prior_jobs}
         click('serverBackupCreate')
         page = controller.property('serverBackups')
         wait(lambda: any(
-            row['status'] in ('succeeded', 'failed') for row in page.property('state')['jobs']))
-        jobs = page.property('state')['jobs']
-        job = jobs[0]
-        assert job['status'] == 'succeeded'
+            row['id'] not in prior_ids and row['status'] in ('succeeded', 'failed')
+            for row in page.property('state')['jobs']))
+        job = next(row for row in page.property('state')['jobs'] if row['id'] not in prior_ids)
+        assert job['status'] == 'succeeded', job
         assert job['size_bytes'] > 0
         assert re.fullmatch(r'[0-9a-f]{64}', job['sha256'])
         assert job['cutoff_start'] and job['cutoff_end']
@@ -146,7 +148,13 @@ def test_material_outcome_check_resolves_committed_backup_after_lost_tls_reply(
             "password": account["password"],
             "station_id": 0,
             "locale": "en",
-            "labels": {"en": {"navigation": "Server backups", "title": "Server backups"}},
+            "labels": {
+                "en": {
+                    "navigation": "Server backups",
+                    "title": "Server backups",
+                    "check": "Check request outcome",
+                },
+            },
         },
         """
         click('serverBackupsNavigation')
@@ -178,4 +186,4 @@ def test_material_outcome_check_resolves_committed_backup_after_lost_tls_reply(
     assert response.status_code == 200, response.text
     new_jobs = [row for row in response.json()["backups"] if row["id"] not in before]
     assert len(new_jobs) == 1
-    assert new_jobs[0]["status"] == "succeeded"
+    assert new_jobs[0]["status"] == "succeeded", new_jobs[0]
