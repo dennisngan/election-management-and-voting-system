@@ -23,7 +23,8 @@ ColumnLayout {
     readonly property var constituency: resultContext.constituency || ({})
     readonly property var candidateTotals: result.candidate_totals || []
     readonly property var tieRows: page.tieCandidateRows()
-    readonly property bool working: !!editorState.busy || !!editorState.refreshing
+    readonly property bool working: !!editorState.busy
+    readonly property bool loading: page.working || !!editorState.refreshing
     readonly property bool uncertain: !!editorState.uncertain_save
     readonly property bool stale: !!editorState.newer_basis
     readonly property bool supervisor: editorState.role === "supervisor"
@@ -97,8 +98,8 @@ ColumnLayout {
         pendingLocale = locale
         exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
         exportDialog.defaultSuffix = format
-        exportDialog.selectedFile = exportDialog.currentFolder.toString()
-            + "/constituency-" + constituency.id + "-results-" + locale + "." + format
+        exportDialog.selectedFile = Qt.resolvedUrl(exportDialog.currentFolder.toString()
+            + "/constituency-" + constituency.id + "-results-" + locale + "." + format)
         exportDialog.open()
     }
     function moveFocus(control, forward) {
@@ -154,7 +155,7 @@ ColumnLayout {
             font.pixelSize: 28
         }
         BusyIndicator {
-            running: page.working
+            running: page.loading
             visible: running
             implicitWidth: 28
             implicitHeight: 28
@@ -165,8 +166,8 @@ ColumnLayout {
             text: page.t("constituency_results_refresh")
             flat: true
             highlighted: false
-            working: page.working
-            enabled: !page.working
+            working: page.loading
+            enabled: !page.loading
             onClicked: page.results.refresh()
             onReveal: control => page.reveal(control)
         }
@@ -312,6 +313,7 @@ ColumnLayout {
                 model: page.result.pending || []
                 delegate: FormCaption {
                     required property var modelData
+                    required property int index
                     objectName: "constituencyResultPending_" + index
                     Layout.fillWidth: true
                     text: page.pendingLabel(modelData)
@@ -457,6 +459,8 @@ ColumnLayout {
                 Layout.fillWidth: true
                 model: page.tieRows
                 textRole: "label"
+                displayText: currentIndex >= 0 ? currentText
+                    : page.t("constituency_results_choose_candidate")
                 currentIndex: page.selectedCandidateIndex()
                 enabled: page.canEdit
                 Accessible.name: page.t("constituency_results_choose_candidate")
@@ -480,7 +484,7 @@ ColumnLayout {
                 enabled: page.canEdit
                 readOnly: !enabled
                 Accessible.name: page.t("constituency_results_reason_required")
-                onTextEdited: page.results.setResolutionReason(text)
+                onTextChanged: if (activeFocus) page.results.setResolutionReason(text)
                 onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
                     if (tieReasonField.activeFocus) page.reveal(tieReasonField)
                 })
@@ -511,7 +515,7 @@ ColumnLayout {
                     onClicked: passwordDialog.open()
                 }
                 Action {
-                    objectName: "constituencyResultsDiscard"
+                    objectName: "constituencyResultDiscard"
                     visible: !!page.editorState.dirty && !page.uncertain
                     text: page.t("constituency_results_discard")
                     highlighted: false
