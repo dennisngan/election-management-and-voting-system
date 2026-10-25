@@ -1,6 +1,7 @@
 """Restore a verified server snapshot into an explicitly separate disposable test schema."""
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -15,7 +16,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import create_engine, delete, inspect, text
+from sqlalchemy import Connection, create_engine, delete, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -32,7 +33,22 @@ class RestoreSettings(BaseSettings):
 
 
 class RestoreError(RuntimeError):
-    pass
+    def __init__(self, code: str, *, phase: str | None = None) -> None:
+        self.code, self.phase = code, phase
+        super().__init__(code)
+
+
+def _warning(code: str, record: dict[str, Any]) -> None:
+    print(
+        json.dumps(
+            {
+                "status": record["status"],
+                "warning_code": code,
+                "operation_id": record["operation_id"],
+            }
+        ),
+        file=sys.stderr,
+    )
 
 
 def _private_file(path: Path) -> Path:
@@ -105,10 +121,17 @@ def restore(manifest_path: Path, target_schema: str, container: str | None) -> d
         "manifest_sha256": _file_hash(manifest_path),
         "started_at": datetime.now(UTC).isoformat(),
         "status": "started",
+        "phase": "validated",
     }
     try:
         target_engine = create_engine(target_url)
+        guard: Connection | None = None
+        lock_name = "election-backup-" + hashlib.sha256(target_schema.encode()).hexdigest()[:40]
         try:
+            guard = target_engine.connect()
+            acquired = guard.scalar(text("SELECT GET_LOCK(:name, 0)"), {"name": lock_name})
+            if acquired != 1:
+                raise RestoreError("restore_target_busy")
             # Connecting by an explicit existing database also refuses absent schemas.
             with target_engine.connect() as connection:
                 connection.execute(text("SELECT 1"))
@@ -124,16 +147,20 @@ def restore(manifest_path: Path, target_schema: str, container: str | None) -> d
             )
             record["prior_target_artifact"] = prior.name
             record["prior_target_sha256"] = _file_hash(prior)
+            record["phase"] = "target_preserved"
             _private_manifest(directory / (operation_id + ".started.json"), record)
+            record["phase"] = "importing"
             record["restore_client_version"] = restore_mysql(
                 settings.restore_database_url, artifact, container=container
             )
+            record["phase"] = "imported"
             with target_engine.connect() as connection:
                 restored = sorted(
                     connection.scalars(text("SELECT version_num FROM alembic_version"))
                 )
             if restored != expected_revisions:
                 raise RestoreError("restored_schema_version_mismatch")
+            record["phase"] = "schema_verified"
             with Session(target_engine) as db:
                 db.execute(delete(LoginSession))
                 db.add(
@@ -153,29 +180,39 @@ def restore(manifest_path: Path, target_schema: str, container: str | None) -> d
                 db.commit()
             record.update(
                 status="succeeded",
+                phase="recovered",
                 restored_schema_revisions=restored,
                 copied_sessions_invalidated=True,
             )
         finally:
+            if guard is not None:
+                try:
+                    guard.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name})
+                    guard.close()
+                except SQLAlchemyError:
+                    _warning("restore_database_lease_cleanup_unavailable", record)
             target_engine.dispose()
     except (BackupToolError, RestoreError, OSError, SQLAlchemyError) as error:
-        record.update(
-            status="failed",
-            error_code=(
-                error.code
-                if isinstance(error, BackupToolError)
-                else str(error)
-                if isinstance(error, RestoreError)
-                else "restore_io_or_database_failed"
-            ),
+        code = (
+            error.code
+            if isinstance(error, (BackupToolError, RestoreError))
+            else "restore_io_or_database_failed"
         )
-        raise
+        incomplete = record["phase"] in ("importing", "imported", "schema_verified")
+        record.update(status="incomplete" if incomplete else "failed", error_code=code)
+        raise RestoreError(code, phase=record["phase"]) from None
     finally:
         record["finished_at"] = datetime.now(UTC).isoformat()
         try:
             _private_manifest(directory / (operation_id + ".result.json"), record)
-        finally:
-            lock.unlink()
+        except OSError:
+            # The data/audit commit is already acknowledged. A local receipt
+            # failure must not turn confirmed recovery into a reported failure.
+            _warning("restore_result_manifest_unavailable", record)
+        try:
+            lock.unlink(missing_ok=True)
+        except OSError:
+            _warning("restore_lease_cleanup_unavailable", record)
     return {
         "status": "succeeded",
         "source_schema": manifest["source_schema"],
@@ -204,12 +241,21 @@ def main() -> int:
     ) as error:
         code = (
             error.code
-            if isinstance(error, BackupToolError)
-            else str(error)
-            if isinstance(error, RestoreError)
+            if isinstance(error, (BackupToolError, RestoreError))
             else "restore_configuration_or_data_invalid"
         )
-        print(json.dumps({"status": "failed", "error_code": code}), file=sys.stderr)
+        phase = error.phase if isinstance(error, RestoreError) else None
+        incomplete = phase in ("importing", "imported", "schema_verified")
+        print(
+            json.dumps(
+                {
+                    "status": "incomplete" if incomplete else "failed",
+                    "error_code": code,
+                    **({"phase": phase} if phase else {}),
+                }
+            ),
+            file=sys.stderr,
+        )
         return 1
     print(json.dumps(result))
     return 0
