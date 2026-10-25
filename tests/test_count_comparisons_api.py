@@ -124,7 +124,7 @@ def test_large_positive_physical_difference_stays_exact_through_round_readback(
         f2_command = complete_f2_command(options)
         f2 = client.put(path + f"/{f1.json()['id']}/f2", json=f2_command)
         assert f2.status_code == 200, f2.text
-        expected_difference = actual - 5
+        expected_difference = 900719925474099312340
         stock = next(
             row for row in f2.json()["physical_comparisons"] if row["source"] == "stock"
         )

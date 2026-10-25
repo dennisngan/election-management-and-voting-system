@@ -22,7 +22,7 @@ from election.server.counting_round_models import (
     CountRoundSelection,
 )
 from election.server.counting_scopes import scope_at, scope_options
-from election.server.counting_totals import physical_approval_blockers
+from election.server.counting_totals import physical_approval_blockers, physical_comparisons
 from election.server.invalid_ballot_reasons import invalid_reason_rows
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
@@ -195,6 +195,13 @@ def round_view(
         "is_current": bool(head and head.id == row.id),
         "source_current": source_current,
         "blockers": blockers,
+        "f2": row.data.get("f2"),
+        "f2_complete": row.data.get("f2_complete", False),
+        "count_inputs_complete": row.data.get("count_inputs_complete", False),
+        "count_complete": row.data.get("completed_at") is not None,
+        "physical_comparisons": row.data.get(
+            "physical_comparisons", physical_comparisons(row.data)
+        ),
         "completed_at": row.data.get("completed_at"),
         "approval_blockers": approval_blockers,
         "approval_valid": bool(
