@@ -171,7 +171,12 @@ def _invalid_reason_table(
     )
 
 
-def _f2_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]:
+def _f2_tables(
+    record: dict[str, Any],
+    labels: dict[str, str],
+    *,
+    include_outcomes: bool = True,
+) -> list[HistoryTable]:
     f2 = record.get("f2")
     if f2 is None:
         return [_table(labels["f2_section"], [[labels["form"], labels["not_recorded"]]], labels)]
@@ -186,23 +191,25 @@ def _f2_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTa
         if record["questionable_quantity"] == 0 and determination_start is None
         else _value("determination_started_at", determination_start, labels)
     )
+    metadata_fields = [
+        ("f2_event_at", "event_at"),
+        ("f2_entered_at", "entered_at"),
+        ("f2_actor_id", "actor_id"),
+        ("determination_started_at", "determination_start_display"),
+        ("f2_notes", "notes"),
+        ("f2_amendment_reason", "amendment_reason"),
+    ]
+    if include_outcomes:
+        metadata_fields.extend(
+            [
+                ("accepted_questionable_quantity", "accepted_questionable_quantity"),
+                ("rejected_questionable_quantity", "rejected_questionable_quantity"),
+            ]
+        )
     tables = [
         _table(
             labels["f2_section"],
-            _pairs(
-                f2_metadata,
-                (
-                    ("f2_event_at", "event_at"),
-                    ("f2_entered_at", "entered_at"),
-                    ("f2_actor_id", "actor_id"),
-                    ("determination_started_at", "determination_start_display"),
-                    ("f2_notes", "notes"),
-                    ("f2_amendment_reason", "amendment_reason"),
-                    ("accepted_questionable_quantity", "accepted_questionable_quantity"),
-                    ("rejected_questionable_quantity", "rejected_questionable_quantity"),
-                ),
-                labels,
-            ),
+            _pairs(f2_metadata, tuple(metadata_fields), labels),
             labels,
         )
     ]
@@ -225,29 +232,30 @@ def _f2_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTa
                 labels,
             )
         )
-    for candidate in f2["accepted_votes"]:
-        fields = {**candidate, "candidate_name": candidate["name"]}
-        tables.append(
-            _table(
-                labels["f2_accepted_votes"] + " · " + str(candidate["ballot_number"]),
-                _pairs(
-                    fields,
-                    (
-                        ("candidate_id", "candidate_id"),
-                        ("candidate_revision", "candidate_revision"),
-                        ("ballot_number", "ballot_number"),
-                        ("candidate_name", "candidate_name"),
-                        ("accepted_quantity", "quantity"),
+    if include_outcomes:
+        for candidate in f2["accepted_votes"]:
+            candidate_fields = {**candidate, "candidate_name": candidate["name"]}
+            tables.append(
+                _table(
+                    labels["f2_accepted_votes"] + " · " + str(candidate["ballot_number"]),
+                    _pairs(
+                        candidate_fields,
+                        (
+                            ("candidate_id", "candidate_id"),
+                            ("candidate_revision", "candidate_revision"),
+                            ("ballot_number", "ballot_number"),
+                            ("candidate_name", "candidate_name"),
+                            ("accepted_quantity", "quantity"),
+                        ),
+                        labels,
                     ),
                     labels,
-                ),
-                labels,
+                )
             )
+        tables.extend(
+            _invalid_reason_table(reason, labels["f2_source"], labels)
+            for reason in f2["rejected_papers"]
         )
-    tables.extend(
-        _invalid_reason_table(reason, labels["f2_source"], labels)
-        for reason in f2["rejected_papers"]
-    )
     return tables
 
 
@@ -540,8 +548,9 @@ def _comparison_tables(record: dict[str, Any], labels: dict[str, str]) -> list[H
 def _tables(report: dict[str, Any]) -> list[HistoryTable]:
     record, labels, form = report["record"], report["labels"], report["form"]
     tables = [_summary(record, labels)]
-    if form in ("f2", "count"):
-        tables.extend(_f2_tables(record, labels))
+    tables.extend(
+        _f2_tables(record, labels, include_outcomes=form in ("f2", "count"))
+    )
     if form in ("f3", "count"):
         tables.extend(_f3_tables(record, labels))
     if form in ("f4", "count"):

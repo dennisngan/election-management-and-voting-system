@@ -355,3 +355,192 @@ def test_count_report_preserves_submitted_approved_and_selected_revision_state(
         preview = "\n".join(report["preview_lines"])
         assert "Count record status · Approved" in preview
         assert "No approved result has been explicitly selected" not in preview
+
+
+def test_every_count_report_preserves_f1_f2_timing_and_origin_metadata(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        counter, path = setup["counter"], setup["rounds_path"]
+        options = counter.get(path).json()
+        f1_command = complete_f1_command(
+            options,
+            event_at="2026-11-15T23:15:12.123456+08:00",
+            questionable_quantity=3,
+            actual_counted_quantity=5,
+            notes="Original F1 observation notes",
+            amendment_reason="Original F1 amendment context",
+        )
+        f1_command["candidate_votes"][0]["quantity"] = 2
+        f1 = counter.post(path, json=f1_command)
+        assert f1.status_code == 201, f1.text
+        round_id = f1.json()["id"]
+        round_path = path + f"/{round_id}"
+
+        f2_command = complete_f2_command(
+            options,
+            event_at="2026-11-15T23:20:17.654321+08:00",
+            determination_started_at="2026-11-15T23:19:00.654321+08:00",
+            notes="Initial F2 observation notes",
+        )
+        f2_command["accepted_votes"][0]["quantity"] = 2
+        uncertainty = next(
+            row for row in options["f2_invalid_reasons"] if row["code"] == "gc-f2-k"
+        )
+        next(
+            row for row in f2_command["rejected_papers"]
+            if row["reason_id"] == uncertainty["id"]
+        )["quantity"] = 1
+        first_f2 = counter.put(round_path + "/f2", json=f2_command)
+        assert first_f2.status_code == 200, first_f2.text
+        assert first_f2.json()["revision"] == 2
+
+        amended_f2 = complete_f2_command(
+            options,
+            expected_revision=2,
+            event_at="2026-11-15T23:21:17.654321+08:00",
+            determination_started_at="2026-11-15T23:18:30.123456+08:00",
+            notes="Current F2 observation notes",
+            amendment_reason="Corrected from the signed determination log",
+        )
+        amended_f2["accepted_votes"][0]["quantity"] = 2
+        next(
+            row for row in amended_f2["rejected_papers"]
+            if row["reason_id"] == uncertainty["id"]
+        )["quantity"] = 1
+        saved_f2 = counter.put(round_path + "/f2", json=amended_f2)
+        assert saved_f2.status_code == 200, saved_f2.text
+        assert saved_f2.json()["revision"] == 3
+
+        scope_revision = setup["scope"]["revision"]
+        submitted = counter.post(
+            round_path + "/submit",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 3,
+                "scope_revision": scope_revision,
+            },
+        )
+        assert submitted.status_code == 200, submitted.text
+        supervisor = setup["clients"]["supervisor"]
+        approved = supervisor.post(
+            round_path + "/approve",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 4,
+                "scope_revision": scope_revision,
+                "password": READY_PASSWORD,
+            },
+        )
+        assert approved.status_code == 200, approved.text
+        selected = supervisor.post(
+            round_path + "/select",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 5,
+                "scope_revision": scope_revision,
+                "expected_selection_revision": 0,
+                "password": READY_PASSWORD,
+            },
+        )
+        assert selected.status_code == 200, selected.text
+
+        revision_path = path + f"/{round_id}/revisions/5"
+        expected_event_at = "2026-11-15 23:21:17.654321 HKT"
+        expected_start_at = "2026-11-15 23:18:30.123456 HKT"
+        for locale in ("tc", "sc", "en"):
+            for form in ("f2", "f3", "f4", "count"):
+                response = supervisor.get(
+                    revision_path + f"/{form}", params={"locale": locale}
+                )
+                assert response.status_code == 200, response.text
+                report = response.json()
+                record, labels = report["record"], report["labels"]
+                assert record["status"] == "approved"
+                assert record["selected"] is True
+                assert record["selection"]["round_revision"] == 5
+
+                metadata = report["metadata"]
+                assert [labels["f1_event_at"], "2026-11-15 23:15:12.123456 HKT"] in metadata
+                assert [labels["f1_notes"], "Original F1 observation notes"] in metadata
+                assert [labels["f1_amendment_reason"], "Original F1 amendment context"] in metadata
+                assert any(
+                    row[0] == labels["f1_entered_at"] and row[1] != labels["not_recorded"]
+                    for row in metadata
+                )
+                assert any(
+                    row[0] == labels["f1_actor_id"] and row[1] != labels["not_recorded"]
+                    for row in metadata
+                )
+
+                f2_sections = [
+                    table for table in report["tables"]
+                    if table["title"] == labels["f2_section"]
+                ]
+                assert len(f2_sections) == 1, (
+                    f"{locale}/{form}: expected one F2 metadata section, got "
+                    f"{[table['title'] for table in report['tables']]}"
+                )
+                f2_rows = f2_sections[0]["rows"]
+                assert [labels["f2_event_at"], expected_event_at] in f2_rows
+                assert [labels["f2_notes"], "Current F2 observation notes"] in f2_rows
+                assert [
+                    labels["f2_amendment_reason"],
+                    "Corrected from the signed determination log",
+                ] in f2_rows
+                assert any(
+                    row[0] == labels["f2_entered_at"] and row[1] != labels["not_recorded"]
+                    for row in f2_rows
+                )
+                assert [labels["f2_actor_id"], str(record["f2"]["actor_id"])] in f2_rows
+                assert [labels["determination_started_at"], expected_start_at] in f2_rows
+
+                if form in ("f3", "f4"):
+                    assert not any(
+                        row[0] in {
+                            labels["accepted_questionable_quantity"],
+                            labels["rejected_questionable_quantity"],
+                        }
+                        for row in f2_rows
+                    )
+
+                origin_sections = [
+                    table for table in report["tables"]
+                    if table["title"] == labels["determination_event"]
+                ]
+                assert len(origin_sections) == 1
+                assert [labels["origin_revision"], "3"] in origin_sections[0]["rows"]
+                assert [labels["f2_event_at"], expected_start_at] in origin_sections[0]["rows"]
+
+                csv_response = supervisor.get(
+                    revision_path + f"/{form}.csv", params={"locale": locale}
+                )
+                assert csv_response.status_code == 200, csv_response.text
+                csv_rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
+                assert [labels["f2_event_at"], expected_event_at] in csv_rows
+                assert [labels["f2_notes"], "Current F2 observation notes"] in csv_rows
+                assert [
+                    labels["f2_amendment_reason"],
+                    "Corrected from the signed determination log",
+                ] in csv_rows
+                assert [labels["determination_started_at"], expected_start_at] in csv_rows
+                assert [labels["origin_revision"], "3"] in csv_rows
+
+                pdf_response = supervisor.get(
+                    revision_path + f"/{form}.pdf", params={"locale": locale}
+                )
+                assert pdf_response.status_code == 200, pdf_response.text
+                pdf_text = "\n".join(
+                    page.extract_text()
+                    for page in PdfReader(BytesIO(pdf_response.content)).pages
+                )
+                assert labels["f2_event_at"] in pdf_text
+                assert expected_event_at in pdf_text
+                assert labels["f2_notes"] in pdf_text
+                assert "Current F2 observation notes" in pdf_text
+                assert labels["f2_amendment_reason"] in pdf_text
+                assert "Corrected from the signed determination log" in pdf_text
+                assert labels["determination_started_at"] in pdf_text
+                assert expected_start_at in pdf_text
+                assert labels["origin_revision"] in pdf_text
