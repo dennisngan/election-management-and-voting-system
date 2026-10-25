@@ -449,3 +449,146 @@ def test_material_submission_approval_and_selection_use_transient_password_dialo
             assert 'password' not in selected and 'password' not in editor.property('state')
             """,
         )
+
+
+def test_material_report_dialog_reinitializes_name_for_form_format_and_locale(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        https_server.clock.value = setup["clock"].value
+        client, path = setup["counter"], setup["rounds_path"]
+        options = client.get(path).json()
+        f1 = complete_f1_command(options, actual_counted_quantity=5)
+        f1["candidate_votes"][0]["quantity"] = 5
+        created = client.post(path, json=f1)
+        assert created.status_code == 201, created.text
+        f2 = {
+            "request_id": str(uuid4()),
+            "expected_revision": 1,
+            "scope_revision": options["scope"]["revision"],
+            "event_at": "2026-11-15T23:20:17.654321+08:00",
+            "determination_started_at": None,
+            "accepted_votes": [
+                {"candidate_id": row["id"], "quantity": 0} for row in options["candidates"]
+            ],
+            "rejected_papers": [
+                {
+                    "reason_id": row["id"],
+                    "reason_revision": row["revision"],
+                    "quantity": 0,
+                    "explanation": "",
+                }
+                for row in options["f2_invalid_reasons"]
+            ],
+            "notes": "Report dialog name test.",
+            "amendment_reason": "",
+        }
+        saved = client.put(path + f"/{created.json()['id']}/f2", json=f2)
+        assert saved.status_code == 200, saved.text
+        round_id = created.json()["id"]
+
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["receiveronly"]["username"],
+                "password": READY_PASSWORD,
+                "station_id": setup["stations"]["N1"]["id"],
+                "locale": "en",
+                "round_id": round_id,
+                "cancel_caption": "Cancel",
+                "checks": [
+                    {
+                        "form": "f2",
+                        "format": "pdf",
+                        "button": "f1ExportPdf",
+                        "locale": "en",
+                        "filename": f"f2-round-{round_id}-revision-2-en.pdf",
+                        "filters": ["PDF (*.pdf)"],
+                    },
+                    {
+                        "form": "f2",
+                        "format": "csv",
+                        "button": "f1ExportCsv",
+                        "locale": "en",
+                        "filename": f"f2-round-{round_id}-revision-2-en.csv",
+                        "filters": ["CSV (*.csv)"],
+                    },
+                    {
+                        "form": "f3",
+                        "format": "pdf",
+                        "button": "f1ExportPdf",
+                        "locale": "en",
+                        "filename": f"f3-round-{round_id}-revision-2-en.pdf",
+                        "filters": ["PDF (*.pdf)"],
+                    },
+                    {
+                        "form": "f4",
+                        "format": "csv",
+                        "button": "f1ExportCsv",
+                        "locale": "sc",
+                        "filename": f"f4-round-{round_id}-revision-2-sc.csv",
+                        "filters": ["CSV (*.csv)"],
+                    },
+                ],
+            },
+            """
+            from PySide6.QtCore import QObject, QMetaObject
+
+            click('countingRoundsNavigation')
+            editor = controller.countingRounds
+            wait(lambda: not any(editor.property('state')[key]
+                for key in ('busy', 'refreshing')), timeout=5)
+            choose('countingRoundsScope', 1)
+            wait(lambda: not any(editor.property('state')[key]
+                for key in ('busy', 'refreshing')), timeout=5)
+            assert editor.property('state')['selected']['id'] == setup['round_id']
+
+            def visible_export_dialog():
+                return [item for item in window.findChildren(
+                    QObject, 'countReportExportDialog') if item.property('visible')]
+
+            folder = None
+            for check in setup['checks']:
+                if controller.property('state')['locale'] != check['locale']:
+                    controller.setLocale(check['locale'])
+                    frame()
+                if editor.property('state')['report_form'] != check['form']:
+                    assert editor.selectReportForm(check['form'])
+                    frame()
+                    assert editor.property('state')['report_form'] == check['form']
+                export_button = control(check['button'])
+                assert export_button.property('visible') and export_button.property('enabled')
+                assert QMetaObject.invokeMethod(export_button, 'click')
+                application.processEvents()
+                try:
+                    wait(lambda: len(visible_export_dialog()) == 1)
+                except AssertionError as error:
+                    remaining = window.findChildren(QObject, 'countReportExportDialog')
+                    raise AssertionError((
+                        check,
+                        [(item.property('visible'), item.property('selectedFile').toString())
+                            for item in remaining],
+                    )) from error
+                dialog = visible_export_dialog()[0]
+                suffix = dialog.property('defaultSuffix')
+                filters = dialog.property('nameFilters')
+                selected_url = dialog.property('selectedFile')
+                assert suffix == check['format']
+                assert list(filters) == check['filters']
+                assert selected_url.toString().rsplit('/', 1)[-1] == check['filename']
+                current_folder = dialog.property('currentFolder').toString()
+                if folder is None:
+                    folder = current_folder
+                assert current_folder == folder
+                assert QMetaObject.invokeMethod(dialog, 'reject')
+                QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+                application.processEvents()
+                frame()
+                wait(lambda: not visible_export_dialog())
+            """,
+        )
+        for form, suffix in (("f2", "pdf"), ("f2", "csv"), ("f3", "pdf"), ("f4", "csv")):
+            report_path = f"{path}/{round_id}/revisions/2/{form}.{suffix}"
+            assert https_server.request_count("GET", report_path) == 0
