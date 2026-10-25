@@ -58,6 +58,9 @@ class QueueBoundaryServer(HttpsServer):
     held_read_entered: threading.Event = field(default_factory=threading.Event)
     release_held_read: threading.Event = field(default_factory=threading.Event)
     held_read_finished: threading.Event = field(default_factory=threading.Event)
+    hold_scope_station_id: int = 0
+    held_scope_entered: threading.Event = field(default_factory=threading.Event)
+    release_held_scope: threading.Event = field(default_factory=threading.Event)
 
 
 @pytest.fixture
@@ -90,6 +93,15 @@ def queue_boundary_server(
             endpoint.hold_station_id = 0
             endpoint.held_read_entered.set()
             await asyncio.to_thread(endpoint.release_held_read.wait, 5)
+        held_scope = bool(
+            request.method == "GET"
+            and endpoint.hold_scope_station_id
+            and path == f"/api/workspace/stations/{endpoint.hold_scope_station_id}/counting-scopes"
+        )
+        if held_scope:
+            endpoint.hold_scope_station_id = 0
+            endpoint.held_scope_entered.set()
+            await asyncio.to_thread(endpoint.release_held_scope.wait, 5)
         response = await call_next(request)
         if held:
             endpoint.held_read_finished.set()
@@ -135,6 +147,7 @@ def queue_boundary_server(
         yield endpoint
     finally:
         endpoint.release_held_read.set()
+        endpoint.release_held_scope.set()
         server.should_exit = True
         wait_for(qt_app, lambda: not thread.is_alive())
         thread.join(timeout=0)
@@ -684,3 +697,52 @@ def test_count_scope_polling_does_not_block_clean_queue_station_selection(
             )
             assert editor.property("state")["current"] == saved.json()
             assert client.property("workspace").property("state")["error"] == ""
+
+
+def test_scope_open_state_does_not_leak_into_a_new_queue_session(
+    admin: TestClient,
+    database_url: str,
+    queue_boundary_server: QueueBoundaryServer,
+    qt_app: QCoreApplication,
+) -> None:
+    stations = active_queue_stations(admin)
+    first, second = [row["station"]["id"] for row in stations]
+    account = queue_account(admin, [first, second])
+    clock = QueueClock()
+    server = queue_boundary_server
+    server.clock.value = clock.value
+    with queue_client(database_url, account, clock):
+        with queue_editor(server, qt_app, account, first) as (client, editor):
+            scopes = client.property("countingScopes")
+            scopes.open()
+            wait_for(qt_app, lambda: setup_idle(scopes))
+            assert scopes.property("state")["error"] == ""
+            client.signOut()
+            assert state_of(client)["phase"] == "signed_out"
+            server.hold_scope_station_id = first
+            try:
+                client.signIn(server.url, account["username"], READY_PASSWORD)
+                wait_for(qt_app, lambda: state_of(client)["phase"] == "workspace")
+                workspace = client.property("workspace")
+                wait_for(qt_app, lambda: setup_idle(workspace))
+                workspace.selectStation(first)
+                wait_for(qt_app, lambda: setup_idle(workspace))
+                assert editor.open(first, "polling_officer")
+                wait_for(qt_app, lambda: setup_idle(editor))
+                # A new session has not opened scopes. A previous session's page
+                # must not start a hidden foreground read or guard clean navigation.
+                assert scopes.property("state")["busy"] is False
+                assert workspace.property("selectionGuarded") is False
+                assert not server.held_scope_entered.is_set()
+                workspace.selectStation(second)
+                wait_for(
+                    qt_app,
+                    lambda: (
+                        setup_idle(workspace)
+                        and setup_idle(editor)
+                        and editor.property("state")["station_id"] == second
+                    ),
+                )
+                assert workspace.property("state")["error"] == ""
+            finally:
+                server.release_held_scope.set()

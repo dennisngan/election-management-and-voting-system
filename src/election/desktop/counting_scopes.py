@@ -70,6 +70,7 @@ class CountingScopesController(QObject):
         return qt_state(quantity_display(self._state))
 
     def reset(self) -> None:
+        self._opened = False
         self._generation += 1
         self._selection_generation += 1
         self._report_generation += 1
