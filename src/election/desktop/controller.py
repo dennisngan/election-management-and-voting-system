@@ -20,6 +20,7 @@ from election.desktop.complaint_categories import ComplaintCategoriesController
 from election.desktop.complaint_periods import ComplaintPeriodsController
 from election.desktop.complaints import ComplaintCasesController
 from election.desktop.configuration import ConfigurationController
+from election.desktop.constituency_results import ConstituencyResultsController
 from election.desktop.counter_returns import CounterReturnsController
 from election.desktop.counting_rounds import CountingRoundsController
 from election.desktop.counting_scopes import CountingScopesController
@@ -96,6 +97,9 @@ class DesktopController(QObject):
         self._counting_rounds = CountingRoundsController(
             self._authorized_request, self, download=self._authorized_download
         )
+        self._constituency_results = ConstituencyResultsController(
+            self._authorized_request, self, download=self._authorized_download
+        )
         self._accounting = AccountingController(
             self._authorized_request, self, download=self._authorized_download
         )
@@ -133,6 +137,9 @@ class DesktopController(QObject):
                 or self._counting_scopes.property("state")["busy"]
                 or self._counting_rounds.property("state")["dirty"]
                 or self._counting_rounds.property("state")["busy"]
+                or self._constituency_results.property("state")["dirty"]
+                or self._constituency_results.property("state")["busy"]
+                or self._constituency_results.property("state")["uncertain_save"]
                 or self._fallback.property("state")["dirty"]
                 or self._fallback.property("state")["busy"]
                 or self._turnout.property("state")["dirty"]
@@ -154,6 +161,7 @@ class DesktopController(QObject):
         self._boxes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._counting_scopes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._counting_rounds.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._constituency_results.stateChanged.connect(self._workspace.stateChanged.emit)
         self._fallback.stateChanged.connect(self._workspace.stateChanged.emit)
         self._turnout.stateChanged.connect(self._workspace.stateChanged.emit)
         self._complaints.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -254,6 +262,10 @@ class DesktopController(QObject):
         return self._counting_rounds
 
     @Property(QObject, constant=True)
+    def constituencyResults(self) -> ConstituencyResultsController:
+        return self._constituency_results
+
+    @Property(QObject, constant=True)
     def fallback(self) -> FallbackController:
         return self._fallback
 
@@ -286,6 +298,7 @@ class DesktopController(QObject):
         self._boxes.set_context(context)
         self._counting_scopes.set_context(context)
         self._counting_rounds.set_context(context)
+        self._constituency_results.set_context(context)
         self._fallback.set_context(context)
         self._turnout.set_context(context)
         self._complaints.set_context(context)
@@ -659,6 +672,7 @@ class DesktopController(QObject):
             self._boxes.refresh()
             self._counting_scopes.refresh()
             self._counting_rounds.refresh()
+            self._constituency_results.refresh()
             self._fallback.refresh()
             self._turnout.refresh()
             self._complaints.refresh()
@@ -700,6 +714,7 @@ class DesktopController(QObject):
         self._boxes.reset()
         self._counting_scopes.reset()
         self._counting_rounds.reset()
+        self._constituency_results.reset()
         self._fallback.reset()
         self._turnout.reset()
         self._complaints.reset()
