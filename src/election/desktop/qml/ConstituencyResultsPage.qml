@@ -80,6 +80,19 @@ ColumnLayout {
         var parts = [t("constituency_results_pending_" + row.code)]
         if (row.station_id !== undefined) parts.push(t("constituency_results_station") + " #" + row.station_id)
         if (row.scope_id !== undefined) parts.push(t("constituency_results_scope") + " #" + row.scope_id)
+        if (row.scope_revision !== undefined)
+            parts.push(t("constituency_results_scope_revision") + " " + row.scope_revision)
+        if (row.source_accounting_revisions && row.source_accounting_revisions.length)
+            parts.push(row.source_accounting_revisions.map(function(source) {
+                return t("constituency_results_station") + " #" + source.station_id
+                    + " · P(18) #" + source.record_id + " · "
+                    + t("constituency_results_accounting_revision") + " " + source.revision
+                    + " · " + (words[source.status] || source.status)
+                    + " · " + t("constituency_results_source_current") + ": "
+                    + t(source.source_current ? "constituency_results_yes" : "constituency_results_no")
+                    + " · " + t("constituency_results_approval_valid") + ": "
+                    + t(source.approval_valid ? "constituency_results_yes" : "constituency_results_no")
+            }).join("; "))
         if (row.box_ids && row.box_ids.length)
             parts.push(t("constituency_results_boxes") + " " + row.box_ids.join(", "))
         if (row.blockers && row.blockers.length)

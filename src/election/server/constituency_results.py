@@ -285,6 +285,24 @@ def constituency_result(db: Session, actor: Account, constituency_id: int) -> di
                     }
             scope_inputs.append(state)
 
+    scopes_by_id = {row["scope_id"]: row for row in scope_inputs}
+    for item in pending:
+        scope_state = scopes_by_id.get(item.get("scope_id"))
+        if scope_state is None:
+            continue
+        item["scope_revision"] = scope_state["scope_revision"]
+        item["source_accounting_revisions"] = [
+            {
+                "station_id": source["context"]["station"]["id"],
+                "record_id": source["id"],
+                "revision": source["revision"],
+                "status": source["status"],
+                "source_current": source["source_current"],
+                "approval_valid": source["approval_valid"],
+            }
+            for source in scope_state["accounting_basis"]
+        ]
+
     known = [quantity for quantity in totals.values() if quantity is not None]
     leaders = []
     if known:

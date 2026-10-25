@@ -254,6 +254,26 @@ def _tables(result: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable
         )
     )
 
+    for row in result["pending"]:
+        if row.get("scope_revision") is None:
+            continue
+        title = labels["pending"] + " · " + labels["scope_id"] + " " + str(row["scope_id"])
+        tables.append(HistoryTable(title, [
+            [labels["field"], labels["value"]],
+            [labels["code"], labels.get(row["code"], row["code"])],
+            [labels["scope_revision"], str(row["scope_revision"])],
+        ], (0.34, 0.66)))
+        source_rows = [[labels["station_id"], labels["accounting_record"],
+                        labels["accounting_revision"], labels["status"],
+                        labels["source_current"], labels["approval_valid"]]]
+        source_rows.extend([
+            str(source["station_id"]), str(source["record_id"]), str(source["revision"]),
+            labels.get(source["status"], source["status"]),
+            _value(source["source_current"], labels), _value(source["approval_valid"], labels),
+        ] for source in row.get("source_accounting_revisions", []))
+        tables.append(HistoryTable(labels["accounting_source"], source_rows,
+                                   (0.18, 0.16, 0.16, 0.18, 0.16, 0.16), split_in_row=False))
+
     if not result["resolution_history"]:
         tables.append(HistoryTable(labels["resolution_history"], [], (0.5, 0.5), labels["none"]))
     for decision in result["resolution_history"]:
