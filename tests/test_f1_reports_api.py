@@ -211,3 +211,46 @@ def test_reason_display_edits_preserve_frozen_f1_wording_and_reject_stale_catalo
         text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(old_pdf.content)).pages)
         assert "Reviewed project display label" not in text
         assert reason["source_english"] in text
+
+
+@pytest.mark.parametrize(
+    ("locale", "revision_label"),
+    [
+        ("tc", "點票輪次版本記錄編號"),
+        ("sc", "点票轮次版本记录编号"),
+        ("en", "Count round revision record ID"),
+    ],
+)
+def test_f1_report_identifies_the_count_round_revision_record(
+    admin: TestClient,
+    database_url: str,
+    locale: str,
+    revision_label: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        client, path = setup["counter"], setup["rounds_path"]
+        options = client.get(path).json()
+        command = complete_f1_command(options)
+        first = client.post(path, json=command)
+        assert first.status_code == 201, first.text
+        command.update(request_id=str(uuid4()), expected_revision=1, notes="核對點票版本身份。")
+        amended = client.put(path + f"/{first.json()['id']}", json=command)
+        assert amended.status_code == 200, amended.text
+        record = amended.json()
+        assert record["revision_id"] != record["scope_basis"]["revision_id"]
+        target = path + f"/{record['id']}/revisions/2/statement"
+        response = client.get(target, params={"locale": locale})
+        assert response.status_code == 200, response.text
+        report = response.json()
+        assert report["labels"]["revision_id"] == revision_label
+        assert f"{revision_label} · {record['revision_id']}" in report["preview_lines"]
+        csv_response = client.get(target + ".csv", params={"locale": locale})
+        assert csv_response.status_code == 200
+        rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
+        assert [revision_label, str(record["revision_id"])] in rows
+        pdf = client.get(target + ".pdf", params={"locale": locale})
+        assert pdf.status_code == 200
+        text = " ".join(
+            " ".join(page.extract_text().split()) for page in PdfReader(BytesIO(pdf.content)).pages
+        )
+        assert revision_label in text

@@ -7,6 +7,7 @@ _F1: dict[ReportLocale, dict[str, str]] = {
     "tc": {
         "title": "F1 初步點票",
         "round_id": "點票輪次記錄編號",
+        "revision_id": "點票輪次版本記錄編號",
         "round_number": "輪次",
         "scope_revision": "凍結點票範圍版本",
         "is_current": "目前點票記錄版本",
@@ -50,6 +51,7 @@ _F1: dict[ReportLocale, dict[str, str]] = {
     "sc": {
         "title": "F1 初步点票",
         "round_id": "点票轮次记录编号",
+        "revision_id": "点票轮次版本记录编号",
         "round_number": "轮次",
         "scope_revision": "冻结点票范围版本",
         "is_current": "当前点票记录版本",
@@ -93,6 +95,7 @@ _F1: dict[ReportLocale, dict[str, str]] = {
     "en": {
         "title": "F1 initial tally",
         "round_id": "Count round ID",
+        "revision_id": "Count round revision record ID",
         "round_number": "Round",
         "scope_revision": "Frozen counting scope revision",
         "is_current": "Current tally revision",
