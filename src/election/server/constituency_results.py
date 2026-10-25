@@ -266,7 +266,7 @@ def constituency_results_router(
             for row in candidates
         ]
         complete = bool(stations and candidates and contributions) and not pending
-        provisional = election.status != "finalized"
+        provisional = bool(election.status != "finalized" or not complete or ties)
         context = {
             "election": {"id": election.id, "name": election.name,
                          "status": election.status, "revision": election.revision},
