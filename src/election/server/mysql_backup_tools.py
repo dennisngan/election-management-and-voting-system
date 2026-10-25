@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import NoReturn
+from typing import BinaryIO, NoReturn
 
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
@@ -118,10 +118,13 @@ def _client_options(url: URL, *, container: str | None) -> tuple[str, int, bytes
     return host, port, ("\n".join(lines) + "\n").encode("utf-8")
 
 
-def _validate_client_binary(client_binary: str, *, container: str | None) -> str:
-    if Path(client_binary).name != "mysqldump":
-        _fail("unsupported_backup_client")
-    if container is not None and client_binary != "mysqldump":
+def _validate_client_binary(
+    client_binary: str, *, container: str | None, expected_name: str = "mysqldump"
+) -> str:
+    tool = "backup" if expected_name == "mysqldump" else "restore"
+    if Path(client_binary).name != expected_name:
+        _fail(f"unsupported_{tool}_client")
+    if container is not None and client_binary != expected_name:
         _fail("unsupported_container_client")
     binary = "docker" if container is not None else client_binary
     resolved = shutil.which(binary)
@@ -147,7 +150,9 @@ def _client_environment() -> dict[str, str]:
     return environment
 
 
-def _client_version(command: list[str], environment: dict[str, str]) -> str:
+def _client_version(
+    command: list[str], environment: dict[str, str], *, tool: str = "backup"
+) -> str:
     try:
         result = subprocess.run(
             [*command, "--version"],
@@ -159,17 +164,17 @@ def _client_version(command: list[str], environment: dict[str, str]) -> str:
             env=environment,
         )
     except OSError:
-        _fail("backup_client_version_failed")
+        _fail(f"{tool}_client_version_failed")
     if result.returncode != 0:
-        raise BackupToolError("backup_client_version_failed", exit_status=result.returncode)
+        raise BackupToolError(f"{tool}_client_version_failed", exit_status=result.returncode)
     output = result.stdout + result.stderr
     match = re.search(rb"\bVer\s+(\d+)\.(\d+)\.(\d+)", output)
     if match is None:
-        _fail("unsupported_backup_client_version")
+        _fail(f"unsupported_{tool}_client_version")
     version = ".".join(part.decode("ascii") for part in match.groups())
     major, minor, _ = (int(part) for part in version.split("."))
     if (major, minor) != (8, 4):
-        _fail("unsupported_backup_client_version")
+        _fail(f"unsupported_{tool}_client_version")
     return version
 
 
@@ -205,6 +210,243 @@ def _private_options_file(directory: Path, contents: bytes) -> Iterator[str]:
             temporary.cleanup()
         except OSError:
             pass
+
+
+def _private_restore_source(source: Path) -> BinaryIO:
+    try:
+        parent = source.parent.resolve(strict=True)
+        if not parent.is_dir() or stat.S_IMODE(parent.stat().st_mode) & 0o077:
+            _fail("restore_directory_not_private")
+        path = parent / source.name
+        mode = path.lstat().st_mode
+        if not stat.S_ISREG(mode) or stat.S_IMODE(mode) != 0o600:
+            _fail("restore_source_not_private")
+        descriptor = os.open(
+            path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        )
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or stat.S_IMODE(opened.st_mode) != 0o600:
+            os.close(descriptor)
+            _fail("restore_source_not_private")
+        if opened.st_size <= 0:
+            os.close(descriptor)
+            _fail("restore_source_empty")
+        return os.fdopen(descriptor, "rb")
+    except BackupToolError:
+        raise
+    except OSError:
+        _fail("restore_source_unavailable")
+
+
+def _statement_heads(source: BinaryIO) -> Iterator[tuple[str, ...]]:
+    """Yield leading SQL tokens per statement, ignoring quoted text and comments."""
+    statement: list[str] = []
+    token = bytearray()
+    quote: int | None = None
+    escaped = False
+    line_comment = False
+    block_comment = False
+    executable_comment = False
+    executable_version = False
+    previous = 0
+
+    def flush_token() -> None:
+        if token and len(statement) < 4:
+            statement.append(token.decode("ascii").upper())
+        token.clear()
+
+    for chunk in iter(lambda: source.read(64 * 1024), b""):
+        for char in chunk:
+            if line_comment:
+                if char == 10:
+                    line_comment = False
+                previous = char
+                continue
+            if block_comment:
+                if not executable_comment and char == ord("!") and previous == ord("*"):
+                    executable_comment = True
+                    executable_version = True
+                    previous = char
+                    continue
+                if previous == ord("*") and char == ord("/"):
+                    block_comment = False
+                    executable_comment = False
+                    previous = char
+                    continue
+                if not executable_comment:
+                    previous = char
+                    continue
+                if executable_version:
+                    if ord("0") <= char <= ord("9"):
+                        previous = char
+                        continue
+                    executable_version = False
+                    if char in b" \t\r\n":
+                        previous = char
+                        continue
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif char == ord("\\") and quote != ord("`"):
+                    escaped = True
+                elif char == quote:
+                    quote = None
+                previous = char
+                continue
+            if char in (ord("'"), ord('"'), ord("`")):
+                if token and len(statement) < 4:
+                    statement.append(token.decode("ascii").upper())
+                token.clear()
+                quote = char
+                previous = char
+                continue
+            if char == ord("#") or (char == ord("-") and previous == ord("-")):
+                flush_token()
+                line_comment = True
+                previous = char
+                continue
+            if char == ord("*") and previous == ord("/"):
+                flush_token()
+                block_comment = True
+                executable_comment = False
+                executable_version = False
+                previous = char
+                continue
+            if char == ord(";"):
+                flush_token()
+                yield tuple(statement)
+                statement.clear()
+            elif char in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$":
+                if len(token) < 32:
+                    token.append(char)
+            else:
+                flush_token()
+            previous = char
+    flush_token()
+    if statement:
+        yield tuple(statement)
+
+
+def _validate_restore_dump(source: BinaryIO) -> None:
+    source.seek(0)
+    for statement in _statement_heads(source):
+        first = statement[0] if statement else ""
+        second = statement[1] if len(statement) > 1 else ""
+        third = statement[2] if len(statement) > 2 else ""
+        if first == "USE" or (
+            first in ("CREATE", "DROP")
+            and (
+                second in ("DATABASE", "SCHEMA")
+                or (second == "TEMPORARY" and third in ("DATABASE", "SCHEMA"))
+            )
+        ):
+            _fail("restore_dump_changes_database")
+    source.seek(0)
+
+
+def _docker_environment() -> list[str]:
+    return [
+        "--env=MYSQL_PWD=",
+        "--env=MYSQL_PASSWORD=",
+        "--env=MYSQL_ROOT_PASSWORD=",
+        "--env=DATABASE_URL=",
+        "--env=ELECTION_DATABASE_URL=",
+        "--env=ELECTION_TEST_DATABASE_URL=",
+        "--env=ELECTION_LIFECYCLE_TEST_DATABASE_URL=",
+    ]
+
+
+@contextlib.contextmanager
+def _container_restore_options(
+    binary: str, container: str, environment: dict[str, str], contents: bytes
+) -> Iterator[str]:
+    try:
+        result = subprocess.run(
+            [
+                binary,
+                "exec",
+                *_docker_environment(),
+                container,
+                "mktemp",
+                "-d",
+                "-m",
+                "700",
+                "/tmp/.election-mysql-restore.XXXXXXXX",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            shell=False,
+            env=environment,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        _fail("restore_credentials_directory_failed")
+    if result.returncode != 0:
+        raise BackupToolError("restore_credentials_directory_failed", exit_status=result.returncode)
+    try:
+        directory = result.stdout.decode("ascii").strip()
+    except UnicodeDecodeError:
+        _fail("restore_credentials_directory_failed")
+    if not re.fullmatch(r"/tmp/\.election-mysql-restore\.[A-Za-z0-9]{8}", directory):
+        _fail("restore_credentials_directory_failed")
+    credentials = directory + "/client.cnf"
+    cleanup_failed = False
+    try:
+        try:
+            upload = subprocess.run(
+                [
+                    binary,
+                    "exec",
+                    "-i",
+                    *_docker_environment(),
+                    container,
+                    "install",
+                    "-m",
+                    "600",
+                    "/dev/stdin",
+                    credentials,
+                ],
+                input=contents,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                shell=False,
+                env=environment,
+                timeout=30,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            _fail("restore_credentials_file_failed")
+        if upload.returncode != 0:
+            raise BackupToolError("restore_credentials_file_failed", exit_status=upload.returncode)
+        yield credentials
+    finally:
+        for executable, path in (("rm", credentials), ("rmdir", directory)):
+            try:
+                cleanup = subprocess.run(
+                    [
+                        binary,
+                        "exec",
+                        *_docker_environment(),
+                        container,
+                        executable,
+                        "--",
+                        path,
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    shell=False,
+                    env=environment,
+                    timeout=30,
+                )
+                cleanup_failed = cleanup_failed or cleanup.returncode != 0
+            except (OSError, subprocess.TimeoutExpired):
+                cleanup_failed = True
+        if cleanup_failed:
+            _fail("restore_credentials_cleanup_failed")
 
 
 def _publish(partial: Path, destination: Path) -> None:
@@ -371,3 +613,102 @@ def dump_mysql(
             except OSError:
                 pass
         _fail("backup_io_failed")
+
+
+def restore_mysql(
+    database_url: str,
+    source: Path,
+    *,
+    container: str | None = None,
+    client_binary: str = "mysql",
+) -> str:
+    """Import a private single-schema dump into an explicit existing *_test schema."""
+    try:
+        url = make_url(database_url)
+    except (ArgumentError, ValueError):
+        _fail("invalid_database_url")
+    if url.drivername != "mysql+pymysql":
+        _fail("unsupported_database_url")
+    schema = _schema_name(url)
+    if not schema.endswith("_test"):
+        _fail("restore_target_must_be_test_schema")
+    name = container or ""
+    if container is not None and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name):
+        _fail("invalid_database_container")
+    host, port, options = _client_options(url, container=container)
+    binary = _validate_client_binary(client_binary, container=container, expected_name="mysql")
+    environment = _client_environment()
+    version_command = (
+        [binary, "exec", *_docker_environment(), name, "mysql"]
+        if container is not None
+        else [binary]
+    )
+    version = _client_version(version_command, environment, tool="restore")
+
+    try:
+        with _private_restore_source(source) as dump:
+            _validate_restore_dump(dump)
+            with tempfile.TemporaryFile(mode="w+b") as stderr:
+                if container is None:
+                    directory = source.parent.resolve(strict=True)
+                    with _private_options_file(directory, options) as defaults:
+                        argv = [
+                            binary,
+                            f"--defaults-file={defaults}",
+                            "--no-login-paths",
+                            "--binary-mode=1",
+                            "--protocol=TCP",
+                            f"--host={host}",
+                            f"--port={port}",
+                            f"--database={schema}",
+                        ]
+                        try:
+                            process = subprocess.Popen(
+                                argv,
+                                stdin=dump,
+                                stdout=subprocess.DEVNULL,
+                                stderr=stderr,
+                                close_fds=True,
+                                shell=False,
+                                env=environment,
+                            )
+                        except OSError:
+                            _fail("restore_client_unavailable")
+                        return_code = process.wait()
+                else:
+                    with _container_restore_options(binary, name, environment, options) as defaults:
+                        argv = [
+                            binary,
+                            "exec",
+                            "-i",
+                            *_docker_environment(),
+                            name,
+                            "mysql",
+                            f"--defaults-file={defaults}",
+                            "--no-login-paths",
+                            "--binary-mode=1",
+                            "--protocol=TCP",
+                            "--host=127.0.0.1",
+                            "--port=3306",
+                            f"--database={schema}",
+                        ]
+                        try:
+                            process = subprocess.Popen(
+                                argv,
+                                stdin=dump,
+                                stdout=subprocess.DEVNULL,
+                                stderr=stderr,
+                                close_fds=True,
+                                shell=False,
+                                env=environment,
+                            )
+                        except OSError:
+                            _fail("restore_client_unavailable")
+                        return_code = process.wait()
+        if return_code != 0:
+            raise BackupToolError("restore_import_failed", exit_status=return_code)
+        return version
+    except BackupToolError:
+        raise
+    except OSError:
+        _fail("restore_io_failed")
