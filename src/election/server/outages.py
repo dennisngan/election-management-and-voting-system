@@ -627,6 +627,8 @@ def outage_router(
         response: Response,
     ) -> dict[str, Any]:
         _check_operational_role(actor, data.workflow)
+        if data.workflow != "count":
+            raise HTTPException(422, detail={"code": "paper_workflow_not_supported"})
         turnout_scope(db, actor, station_id, writable=True)
         now = timestamp()
         _validate_original_time(data.original_event_at, now)
