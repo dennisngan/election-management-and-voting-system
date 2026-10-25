@@ -23,6 +23,7 @@ from election.desktop.configuration import ConfigurationController
 from election.desktop.counter_returns import CounterReturnsController
 from election.desktop.counting_scopes import CountingScopesController
 from election.desktop.fallback import FallbackController
+from election.desktop.invalid_reasons import InvalidReasonsController
 from election.desktop.lifecycle import LifecycleController
 from election.desktop.polling import PollingController
 from election.desktop.queue import QueueController
@@ -68,6 +69,7 @@ class DesktopController(QObject):
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
         self._staff = StaffController(self._authorized_request, self)
         self._complaint_categories = ComplaintCategoriesController(self._authorized_request, self)
+        self._invalid_reasons = InvalidReasonsController(self._authorized_request, self)
         self._staff.accessChanged.connect(self._access_changed)
         self._polling = PollingController(self._authorized_request, self)
         self._stock = StockController(self._authorized_request, self._authorized_download, self)
@@ -195,6 +197,10 @@ class DesktopController(QObject):
     @Property(QObject, constant=True)
     def complaintCategories(self) -> ComplaintCategoriesController:
         return self._complaint_categories
+
+    @Property(QObject, constant=True)
+    def invalidReasons(self) -> InvalidReasonsController:
+        return self._invalid_reasons
 
     @Property(QObject, constant=True)
     def workspace(self) -> WorkspaceController:
@@ -361,6 +367,7 @@ class DesktopController(QObject):
         account_id = account.get("id", 0)
         self._staff.set_available(administrator, account_id if type(account_id) is int else 0)
         self._complaint_categories.set_available(administrator)
+        self._invalid_reasons.set_available(administrator)
         self._workspace.set_available(
             self._state["phase"] == "workspace"
             and not account.get("must_change_password", True)
@@ -627,6 +634,7 @@ class DesktopController(QObject):
             self._lifecycle.refresh()
             self._staff.refresh()
             self._complaint_categories.refresh()
+            self._invalid_reasons.refresh()
             self._workspace.refresh()
             self._accounting.refresh()
             self._polling.refresh()
@@ -666,6 +674,7 @@ class DesktopController(QObject):
         self._lifecycle.reset()
         self._staff.reset()
         self._complaint_categories.reset()
+        self._invalid_reasons.reset()
         self._workspace.reset()
         self._accounting.reset()
         self._polling.reset()

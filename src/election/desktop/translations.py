@@ -8,6 +8,7 @@ from election.desktop.counter_return_translations import COUNTER_RETURN_TRANSLAT
 from election.desktop.counting_scope_translations import COUNTING_SCOPE_TRANSLATIONS
 from election.desktop.fallback_translations import FALLBACK_TRANSLATIONS
 from election.desktop.fallback_turnout_translations import FALLBACK_TURNOUT_TRANSLATIONS
+from election.desktop.invalid_reason_translations import INVALID_REASON_TRANSLATIONS
 from election.desktop.special_paper_translations import SPECIAL_PAPER_TRANSLATIONS
 from election.desktop.stock_snapshot_translations import STOCK_SNAPSHOT_TRANSLATIONS
 
@@ -1964,3 +1965,6 @@ for language, accounting_labels in ACCOUNTING_TRANSLATIONS.items():
 
 for language, counting_scope_labels in COUNTING_SCOPE_TRANSLATIONS.items():
     TRANSLATIONS[language].update(counting_scope_labels)
+
+for language, invalid_reason_labels in INVALID_REASON_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(invalid_reason_labels)

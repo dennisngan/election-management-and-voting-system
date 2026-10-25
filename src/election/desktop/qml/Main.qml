@@ -269,6 +269,31 @@ ApplicationWindow {
                     }
                 }
                 Button {
+                    id: invalidReasonsNavigation
+                    objectName: "invalidReasonsNavigation"
+                    text: window.t("invalid_reasons_title")
+                    Layout.fillWidth: true
+                    implicitHeight: Math.max(48, invalidReasonsNavigationText.implicitHeight + 24)
+                    visible: window.administrator
+                    highlighted: window.currentPage === "invalidReasons"
+                    flat: true
+                    Material.roundedScale: Material.FullScale
+                    contentItem: Text {
+                        id: invalidReasonsNavigationText
+                        text: invalidReasonsNavigation.text
+                        textFormat: Text.PlainText
+                        font: invalidReasonsNavigation.font
+                        color: "#25344b"
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "invalidReasons"
+                        controller.invalidReasons.open()
+                    }
+                }
+                Button {
                     text: window.t("staff_accounts"); Layout.fillWidth: true
                     visible: window.administrator
                     highlighted: window.currentPage === "staff"; flat: true
@@ -801,6 +826,16 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
                     catalog: controller.complaintCategories
+                    words: window.words
+                    locale: window.state.locale
+                    onReveal: control => window.revealField(control)
+                }
+                InvalidReasonsPage {
+                    visible: window.state.phase === "workspace"
+                        && window.currentPage === "invalidReasons" && window.administrator
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
+                    catalog: controller.invalidReasons
                     words: window.words
                     locale: window.state.locale
                     onReveal: control => window.revealField(control)
