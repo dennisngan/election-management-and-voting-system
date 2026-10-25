@@ -130,7 +130,24 @@ def _validate_client_binary(client_binary: str, *, container: str | None) -> str
     return resolved
 
 
-def _client_version(command: list[str]) -> str:
+def _client_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    protected = {
+        "MYSQL_PWD",
+        "MYSQL_PASSWORD",
+        "MYSQL_ROOT_PASSWORD",
+        "DATABASE_URL",
+        "ELECTION_DATABASE_URL",
+        "ELECTION_TEST_DATABASE_URL",
+        "ELECTION_LIFECYCLE_TEST_DATABASE_URL",
+    }
+    for key in tuple(environment):
+        if key in protected or key.endswith(("_DATABASE_URL", "_PASSWORD")):
+            environment.pop(key, None)
+    return environment
+
+
+def _client_version(command: list[str], environment: dict[str, str]) -> str:
     try:
         result = subprocess.run(
             [*command, "--version"],
@@ -139,6 +156,7 @@ def _client_version(command: list[str]) -> str:
             stderr=subprocess.PIPE,
             check=False,
             shell=False,
+            env=environment,
         )
     except OSError:
         _fail("backup_client_version_failed")
@@ -233,7 +251,8 @@ def dump_mysql(
     host, port, options = _client_options(url, container=container)
     binary = _validate_client_binary(client_binary, container=container)
     command = [binary, "exec", name, "mysqldump"] if container is not None else [binary]
-    version = _client_version(command)
+    environment = _client_environment()
+    version = _client_version(command, environment)
 
     try:
         parent = destination.parent.resolve(strict=True)
@@ -275,7 +294,10 @@ def dump_mysql(
             descriptor = None
             if container is None:
                 with _private_options_file(parent, options) as defaults_file:
-                    argv = [binary, f"--defaults-extra-file={defaults_file}", *flags, schema]
+                    argv = [
+                        binary, f"--defaults-file={defaults_file}", "--no-login-paths",
+                        *flags, schema,
+                    ]
                     try:
                         process = subprocess.Popen(
                             argv,
@@ -284,6 +306,7 @@ def dump_mysql(
                             stderr=stderr,
                             close_fds=True,
                             shell=False,
+                            env=environment,
                         )
                     except OSError:
                         _fail("backup_client_unavailable")
@@ -293,9 +316,17 @@ def dump_mysql(
                     binary,
                     "exec",
                     "-i",
+                    "--env=MYSQL_PWD=",
+                    "--env=MYSQL_PASSWORD=",
+                    "--env=MYSQL_ROOT_PASSWORD=",
+                    "--env=DATABASE_URL=",
+                    "--env=ELECTION_DATABASE_URL=",
+                    "--env=ELECTION_TEST_DATABASE_URL=",
+                    "--env=ELECTION_LIFECYCLE_TEST_DATABASE_URL=",
                     name,
                     "mysqldump",
-                    "--defaults-extra-file=/dev/stdin",
+                    "--defaults-file=/dev/stdin",
+                    "--no-login-paths",
                     *flags,
                     schema,
                 ]
@@ -307,6 +338,7 @@ def dump_mysql(
                         stderr=stderr,
                         close_fds=True,
                         shell=False,
+                        env=environment,
                     )
                     process.communicate(input=options)
                     return_code = process.returncode
