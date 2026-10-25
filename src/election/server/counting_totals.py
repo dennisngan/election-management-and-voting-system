@@ -77,3 +77,20 @@ def f2_summary(data: dict[str, Any]) -> dict[str, Any]:
         "final_arithmetic_valid": arithmetic,
         "blockers": blockers,
     }
+
+
+def physical_approval_blockers(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Known physical differences require review; unavailable estimates stay unknown."""
+    blockers = []
+    actual = data["actual_counted_quantity"]
+    for source in ("stock", "turnout"):
+        expected = data["scope_basis"].get(f"estimated_box_from_{source}_quantity")
+        if actual is not None and expected is not None and actual != expected:
+            blockers.append(
+                {
+                    "code": "count_physical_difference_unaccepted",
+                    "source": source,
+                    "difference_quantity": actual - expected,
+                }
+            )
+    return blockers

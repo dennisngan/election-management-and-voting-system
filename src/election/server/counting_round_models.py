@@ -28,7 +28,9 @@ class CountRoundRevision(Base):
     __table_args__ = (
         UniqueConstraint("round_id", "revision", name="uq_count_round_revision"),
         CheckConstraint("revision >= 1", name="ck_count_round_revision"),
-        CheckConstraint("status = 'draft'", name="ck_count_round_status"),
+        CheckConstraint(
+            "status IN ('draft', 'submitted', 'approved')", name="ck_count_round_status"
+        ),
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

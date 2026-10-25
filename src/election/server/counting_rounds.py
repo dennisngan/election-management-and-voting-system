@@ -17,6 +17,7 @@ from election.server.boxes import utc_time
 from election.server.configuration_models import Candidate
 from election.server.counting_round_models import CountRound, CountRoundRequest, CountRoundRevision
 from election.server.counting_scopes import scope_at, scope_options
+from election.server.counting_totals import physical_approval_blockers
 from election.server.invalid_ballot_reasons import invalid_reason_rows
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
@@ -137,6 +138,7 @@ def round_context(
             )
             if row["stage"] == "f1" and row["enabled"]
         ],
+        "selection": None,
         "f2_invalid_reasons": [
             row
             for row in invalid_reason_rows(db, options["context"]["election"]["id"])
@@ -167,6 +169,9 @@ def round_view(
     blockers = list(row.data["blockers"])
     if not source_current:
         blockers.append({"code": "count_round_basis_stale"})
+    approval_blockers = [*blockers, *physical_approval_blockers(row.data)]
+    if not row.data.get("count_inputs_complete"):
+        approval_blockers.append({"code": "count_inputs_incomplete"})
     return {
         **row.data,
         "id": round.id,
@@ -184,6 +189,11 @@ def round_view(
         "source_current": source_current,
         "blockers": blockers,
         "completed_at": row.data.get("completed_at"),
+        "approval_blockers": approval_blockers,
+        "approval_valid": bool(
+            row.status == "approved" and head and head.id == row.id and not approval_blockers
+        ),
+        "selected": False,
         "revision_event_at": as_utc(row.event_at),
         "revision_entered_at": as_utc(row.entered_at),
         "revision_actor_id": row.actor_id,

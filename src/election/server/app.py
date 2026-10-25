@@ -29,6 +29,7 @@ from election.server.counting_outcomes import counting_outcomes_router
 from election.server.counting_rounds import counting_rounds_router
 from election.server.counting_scope_reports import counting_scope_reports_router
 from election.server.counting_scopes import counting_scopes_router
+from election.server.counting_workflow import counting_workflow_router
 from election.server.db import make_engine
 from election.server.f1_reports import f1_reports_router
 from election.server.fallback import fallback_router
@@ -176,6 +177,7 @@ def create_app(
     app.include_router(counting_scopes_router(database, ready_account, timestamp))
     app.include_router(counting_rounds_router(database, ready_account, timestamp))
     app.include_router(counting_outcomes_router(database, ready_account, timestamp))
+    app.include_router(counting_workflow_router(database, ready_account, timestamp))
     app.include_router(f1_reports_router(database, ready_account, timestamp))
     app.include_router(counting_scope_reports_router(database, ready_account, timestamp))
     app.include_router(accounting_reports_router(database, ready_account, timestamp))
