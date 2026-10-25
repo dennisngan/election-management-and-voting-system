@@ -75,22 +75,46 @@ def f2_summary(data: dict[str, Any]) -> dict[str, Any]:
         "final_invalid_quantity": final_invalid,
         "final_accounted_quantity": final_accounted,
         "final_arithmetic_valid": arithmetic,
+        "physical_comparisons": physical_comparisons(data),
         "blockers": blockers,
     }
 
 
-def physical_approval_blockers(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Known physical differences require review; unavailable estimates stay unknown."""
-    blockers = []
+def physical_comparisons(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Compare actual count with each frozen scope estimate without coercing missing values."""
     actual = data["actual_counted_quantity"]
+    comparisons = []
     for source in ("stock", "turnout"):
         expected = data["scope_basis"].get(f"estimated_box_from_{source}_quantity")
-        if actual is not None and expected is not None and actual != expected:
-            blockers.append(
-                {
-                    "code": "count_physical_difference_unaccepted",
-                    "source": source,
-                    "difference_quantity": actual - expected,
-                }
-            )
-    return blockers
+        available = actual is not None and expected is not None
+        difference = actual - expected if available else None
+        comparisons.append(
+            {
+                "source": source,
+                "expected_quantity": expected,
+                "actual_quantity": actual,
+                "difference_quantity": difference,
+                "available": available,
+                "status": (
+                    "unavailable"
+                    if not available
+                    else "matching"
+                    if difference == 0
+                    else "pending"
+                ),
+            }
+        )
+    return comparisons
+
+
+def physical_approval_blockers(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Known physical differences require review; unavailable estimates stay unknown."""
+    return [
+        {
+            "code": "count_physical_difference_unaccepted",
+            "source": comparison["source"],
+            "difference_quantity": comparison["difference_quantity"],
+        }
+        for comparison in physical_comparisons(data)
+        if comparison["available"] and comparison["status"] == "pending"
+    ]
