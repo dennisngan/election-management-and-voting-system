@@ -354,7 +354,7 @@ ColumnLayout {
             CheckBox {
                 id: explanationCheck
                 objectName: "invalidReasonExplanationRequired"
-                text: page.t("invalid_reason_explanation_required")
+                text: page.t("invalid_reason_explanation_rule")
                 checked: !!page.form.explanation_required
                 enabled: page.editable && !page.selected.is_other
                 onClicked: page.catalog.setExplanationRequired(checked)

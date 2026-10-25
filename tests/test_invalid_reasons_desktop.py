@@ -27,11 +27,16 @@ def clear_private_active_pointer(database_url: str) -> Iterator[None]:
 
 
 @pytest.mark.parametrize(
-    ("locale", "navigation_caption", "revision_caption"),
+    ("locale", "navigation_caption", "revision_caption", "explanation_caption"),
     [
-        ("tc", "無效選票原因", "原因版本"),
-        ("sc", "无效选票原因", "原因版本"),
-        ("en", "Invalid ballot reasons", "Reason revision"),
+        ("tc", "無效選票原因", "原因版本", "正數選票必須補充說明"),
+        ("sc", "无效选票原因", "原因版本", "正数选票必须补充说明"),
+        (
+            "en",
+            "Invalid ballot reasons",
+            "Reason revision",
+            "Require an explanation for positive quantities",
+        ),
     ],
 )
 def test_admin_edits_display_labels_creates_project_reason_and_reads_history(
@@ -43,6 +48,7 @@ def test_admin_edits_display_labels_creates_project_reason_and_reads_history(
     locale: str,
     navigation_caption: str,
     revision_caption: str,
+    explanation_caption: str,
 ) -> None:
     election = create_election(admin)
     path = f"/api/elections/{election['id']}/invalid-ballot-reasons"
@@ -65,6 +71,7 @@ def test_admin_edits_display_labels_creates_project_reason_and_reads_history(
             "locale": locale,
             "navigation_caption": navigation_caption,
             "revision_caption": revision_caption,
+            "explanation_caption": explanation_caption,
             "project_code": "project-f1-display-note",
         },
         """
@@ -100,6 +107,9 @@ def test_admin_edits_display_labels_creates_project_reason_and_reads_history(
             assert control('invalidReasonsTitle').property('text') == caption
         controller.setLocale(setup['locale'])
         frame()
+        assert control('invalidReasonExplanationRequired').property('text') == (
+            setup['explanation_caption']
+        )
 
         enter('invalidReasonLabelTc', '本地顯示繁體')
         enter('invalidReasonLabelSc', '本地显示简体')
