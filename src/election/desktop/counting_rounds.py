@@ -65,6 +65,7 @@ class CountingRoundsController(QObject):
             "scope": {},
             "latest_scope": {},
             "edit_scope_revision": 0,
+            "acknowledged_scope_revision": 0,
             "candidates": [],
             "invalid_reasons": [],
             "f2_invalid_reasons": [],
@@ -359,7 +360,7 @@ class CountingRoundsController(QObject):
                 and (
                     record["revision"] != selected["revision"]
                     or self._state["latest_scope"].get("revision")
-                    != self._state["edit_scope_revision"]
+                    != self._state["acknowledged_scope_revision"]
                 )
             )
             or stale_catalog
@@ -379,9 +380,11 @@ class CountingRoundsController(QObject):
             self._error("invalid_response", "read")
             return
         scope_changed = bool(
-            self._state["edit_scope_revision"]
-            and data["scope"]["revision"] != self._state["edit_scope_revision"]
+            self._state["acknowledged_scope_revision"]
+            and data["scope"]["revision"] != self._state["acknowledged_scope_revision"]
         )
+        if foreground:
+            self._state["acknowledged_scope_revision"] = data["scope"]["revision"]
         keep_unsaved_basis = not foreground and not self._state["selected"] and scope_changed
         self._state.update(
             scope=deepcopy(self._state["scope"] if keep_unsaved_basis else data["scope"]),
@@ -513,6 +516,7 @@ class CountingRoundsController(QObject):
             scope={},
             latest_scope={},
             edit_scope_revision=0,
+            acknowledged_scope_revision=0,
             selected={},
             history=[],
             rounds=[],
