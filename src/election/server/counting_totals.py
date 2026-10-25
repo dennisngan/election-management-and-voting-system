@@ -107,7 +107,9 @@ def physical_comparisons(data: dict[str, Any]) -> list[dict[str, Any]]:
     return comparisons
 
 
-def physical_approval_blockers(data: dict[str, Any]) -> list[dict[str, Any]]:
+def physical_approval_blockers(
+    data: dict[str, Any], *, comparisons: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
     """Known physical differences require review; unavailable estimates stay unknown."""
     return [
         {
@@ -115,6 +117,6 @@ def physical_approval_blockers(data: dict[str, Any]) -> list[dict[str, Any]]:
             "source": comparison["source"],
             "difference_quantity": comparison["difference_quantity"],
         }
-        for comparison in physical_comparisons(data)
+        for comparison in (physical_comparisons(data) if comparisons is None else comparisons)
         if comparison["available"] and comparison["status"] == "pending"
     ]

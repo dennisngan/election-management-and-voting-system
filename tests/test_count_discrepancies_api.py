@@ -15,7 +15,8 @@ from tests.test_counting_scopes_api import database_url as database_url
 
 
 def test_acceptance_preserves_observations_and_allows_exact_revision_approval(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         counter, supervisor = setup["counter"], setup["clients"]["supervisor"]
@@ -26,16 +27,22 @@ def test_acceptance_preserves_observations_and_allows_exact_revision_approval(
         target = path + f"/{created.json()['id']}"
         outcomes = counter.put(target + "/f2", json=complete_f2_command(options))
         assert outcomes.status_code == 200, outcomes.text
-        submitted = counter.post(target + "/submit", json={
-            "request_id": str(uuid4()), "expected_revision": 2,
-            "scope_revision": options["scope"]["revision"],
-        })
+        submitted = counter.post(
+            target + "/submit",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 2,
+                "scope_revision": options["scope"]["revision"],
+            },
+        )
         assert submitted.status_code == 200, submitted.text
         before = submitted.json()
         command = {
-            "request_id": str(uuid4()), "expected_revision": 3,
+            "request_id": str(uuid4()),
+            "expected_revision": 3,
             "scope_revision": options["scope"]["revision"],
-            "expected_decision_revision": 0, "password": READY_PASSWORD,
+            "expected_decision_revision": 0,
+            "password": READY_PASSWORD,
             "reason": "紙本覆核確認實點零張；接受與凍結庫存估算五張的差異。",
         }
         accepted = supervisor.post(target + "/physical-differences/stock/accept", json=command)
@@ -56,20 +63,34 @@ def test_acceptance_preserves_observations_and_allows_exact_revision_approval(
         assert decision["accepted_at"] == "2026-11-15T16:00:00Z"
         assert len(record["physical_decisions"]) == 1
         assert record["approval_blockers"] == []
-        approval = supervisor.post(target + "/approve", json={
-            "request_id": str(uuid4()), "expected_revision": 3,
-            "scope_revision": options["scope"]["revision"], "password": READY_PASSWORD,
-        })
+        approval = supervisor.post(
+            target + "/approve",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 3,
+                "scope_revision": options["scope"]["revision"],
+                "password": READY_PASSWORD,
+            },
+        )
         assert approval.status_code == 200, approval.text
         assert approval.json()["revision"] == 4 and approval.json()["approval_valid"] is True
         assert approval.json()["actual_counted_quantity"] == 0
-        assert next(row for row in approval.json()["physical_comparisons"]
-                    if row["source"] == "stock")["difference_quantity"] == -5
-        selected = supervisor.post(target + "/select", json={
-            "request_id": str(uuid4()), "expected_revision": 4,
-            "scope_revision": options["scope"]["revision"],
-            "expected_selection_revision": 0, "password": READY_PASSWORD,
-        })
+        assert (
+            next(
+                row for row in approval.json()["physical_comparisons"] if row["source"] == "stock"
+            )["difference_quantity"]
+            == -5
+        )
+        selected = supervisor.post(
+            target + "/select",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 4,
+                "scope_revision": options["scope"]["revision"],
+                "expected_selection_revision": 0,
+                "password": READY_PASSWORD,
+            },
+        )
         assert selected.status_code == 200, selected.text
         assert selected.json()["selected"] is True
         replay = supervisor.post(target + "/physical-differences/stock/accept", json=command)

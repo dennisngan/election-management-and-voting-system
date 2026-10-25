@@ -22,10 +22,11 @@ from election.server.counting_round_models import (
     CountRoundSelection,
 )
 from election.server.counting_scopes import scope_at, scope_options
-from election.server.counting_totals import physical_approval_blockers, physical_comparisons
+from election.server.counting_totals import physical_approval_blockers
 from election.server.invalid_ballot_reasons import invalid_reason_rows
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
+from election.server.physical_decisions import physical_review
 from election.server.polling import as_utc
 from election.server.turnout_basis import turnout_scope
 
@@ -176,7 +177,11 @@ def round_view(
     blockers = list(row.data["blockers"])
     if not source_current:
         blockers.append({"code": "count_round_basis_stale"})
-    approval_blockers = [*blockers, *physical_approval_blockers(row.data)]
+    review = physical_review(db, round.id, row.data, source_current=source_current)
+    approval_blockers = [
+        *blockers,
+        *physical_approval_blockers(row.data, comparisons=review["physical_comparisons"]),
+    ]
     if not row.data.get("count_inputs_complete"):
         approval_blockers.append({"code": "count_inputs_incomplete"})
     return {
@@ -199,9 +204,7 @@ def round_view(
         "f2_complete": row.data.get("f2_complete", False),
         "count_inputs_complete": row.data.get("count_inputs_complete", False),
         "count_complete": row.data.get("completed_at") is not None,
-        "physical_comparisons": row.data.get(
-            "physical_comparisons", physical_comparisons(row.data)
-        ),
+        **review,
         "completed_at": row.data.get("completed_at"),
         "approval_blockers": approval_blockers,
         "approval_valid": bool(

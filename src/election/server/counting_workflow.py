@@ -215,9 +215,11 @@ def counting_workflow_router(
             raise HTTPException(409, detail={"code": "count_inputs_incomplete"})
         now = timestamp()
         frozen = deepcopy(current.data)
-        if physical_approval_blockers(frozen):
+        if physical_approval_blockers(frozen, comparisons=view["physical_comparisons"]):
             raise HTTPException(409, detail={"code": "count_physical_difference_unaccepted"})
         frozen.update(
+            physical_comparisons=view["physical_comparisons"],
+            physical_decisions=view["physical_decisions"],
             approved_at=as_utc(now),
             approved_by=actor.id,
             reviewed_revision=current.revision,
