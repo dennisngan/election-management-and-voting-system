@@ -118,9 +118,8 @@ def test_admin_creates_backup_and_reviews_translated_server_metadata(
         """,
     )
 
-    with https_server.lock:
-        assert ("GET", "/api/backups") in https_server.requests
-        assert https_server.request_count("POST", "/api/backups") == 1
+    assert https_server.request_count("GET", "/api/backups") >= 1
+    assert https_server.request_count("POST", "/api/backups") == 1
     listing = admin.get("/api/backups")
     assert listing.status_code == 200, listing.text
     new_jobs = [row for row in listing.json()["backups"] if row["id"] not in before]

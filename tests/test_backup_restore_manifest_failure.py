@@ -278,6 +278,7 @@ def test_restore_survives_final_manifest_failure_after_target_import(
             "sha256": backup["sha256"],
         }
         assert "restore_result_manifest_unavailable" in stderr
+        assert json.loads(started_path.read_text())["phase"] == "importing"
 
         expired_target_session = target_admin.get("/api/auth/me")
         assert expired_target_session.status_code == 401, expired_target_session.text
