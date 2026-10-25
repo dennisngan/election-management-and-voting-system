@@ -70,6 +70,7 @@ class CountingScopesController(QObject):
         return qt_state(quantity_display(self._state))
 
     def reset(self) -> None:
+        self._opened = False
         self._generation += 1
         self._selection_generation += 1
         self._report_generation += 1
@@ -372,7 +373,14 @@ class CountingScopesController(QObject):
 
     @Slot()
     def refresh(self) -> None:
-        self.reload()
+        if (
+            not self._opened
+            or not self._state["station_id"]
+            or self._state["busy"]
+            or self._state["refreshing"]
+        ):
+            return
+        self._send(self._path(), "GET", None, self._accept, background=True)
 
     @Slot()
     def discardAndReload(self) -> None:
