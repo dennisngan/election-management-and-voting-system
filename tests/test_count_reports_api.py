@@ -4,6 +4,7 @@ import csv
 from io import BytesIO, StringIO
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
@@ -14,6 +15,55 @@ from tests.test_counting_scopes_api import (
     clear_private_active_pointer as clear_private_active_pointer,
 )
 from tests.test_counting_scopes_api import database_url as database_url
+
+
+@pytest.mark.parametrize(
+    ("locale", "not_applicable"),
+    [
+        ("tc", "不適用"),
+        ("sc", "不适用"),
+        ("en", "Not applicable"),
+    ],
+)
+def test_zero_questionable_count_reports_determination_start_not_applicable(
+    admin: TestClient,
+    database_url: str,
+    locale: str,
+    not_applicable: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        client, path = setup["counter"], setup["rounds_path"]
+        options = client.get(path).json()
+        f1 = client.post(
+            path,
+            json=complete_f1_command(
+                options,
+                questionable_quantity=0,
+                actual_counted_quantity=0,
+            ),
+        )
+        assert f1.status_code == 201, f1.text
+        f2 = client.put(
+            path + f"/{f1.json()['id']}/f2",
+            json=complete_f2_command(options, determination_started_at=None),
+        )
+        assert f2.status_code == 200, f2.text
+        record = f2.json()
+        assert record["f2_complete"] is True
+        assert record["f2"]["determination_started_at"] is None
+
+        report = client.get(
+            path + f"/{f1.json()['id']}/revisions/2/f2",
+            params={"locale": locale},
+        )
+        assert report.status_code == 200, report.text
+        section = next(
+            table for table in report.json()["tables"]
+            if table["title"] == report.json()["labels"]["f2_section"]
+        )
+        assert [report.json()["labels"]["determination_started_at"], not_applicable] in section[
+            "rows"
+        ]
 
 
 def test_f1_only_report_exposes_unobserved_f2_and_frozen_physical_comparisons(
@@ -206,11 +256,19 @@ def test_count_report_route_is_available_for_the_selected_revision(
         assert response.status_code == 200, response.text
         record = response.json()["record"]
         assert record["f2_complete"] is False
+        assert record["f2"]["determination_started_at"] is None
         assert all(row["quantity"] is None for row in record["f2"]["accepted_votes"])
         assert all(row["quantity"] is None for row in record["f2"]["rejected_papers"])
         preview = "\n".join(response.json()["preview_lines"])
         assert "Candidate acceptance quantity is unobserved" in preview
         assert "Rejected-reason quantity is unobserved" in preview
+        assert [
+            response.json()["labels"]["determination_started_at"],
+            response.json()["labels"]["not_recorded"],
+        ] in next(
+            table for table in response.json()["tables"]
+            if table["title"] == response.json()["labels"]["f2_section"]
+        )["rows"]
 
 
 def test_count_report_preserves_submitted_approved_and_selected_revision_state(

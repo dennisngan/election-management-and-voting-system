@@ -180,6 +180,12 @@ def _f2_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTa
         "accepted_questionable_quantity": record.get("accepted_questionable_quantity"),
         "rejected_questionable_quantity": record.get("rejected_questionable_quantity"),
     }
+    determination_start = f2.get("determination_started_at")
+    f2_metadata["determination_start_display"] = (
+        labels["not_applicable"]
+        if record["questionable_quantity"] == 0 and determination_start is None
+        else _value("determination_started_at", determination_start, labels)
+    )
     tables = [
         _table(
             labels["f2_section"],
@@ -189,7 +195,7 @@ def _f2_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTa
                     ("f2_event_at", "event_at"),
                     ("f2_entered_at", "entered_at"),
                     ("f2_actor_id", "actor_id"),
-                    ("determination_started_at", "determination_started_at"),
+                    ("determination_started_at", "determination_start_display"),
                     ("f2_notes", "notes"),
                     ("f2_amendment_reason", "amendment_reason"),
                     ("accepted_questionable_quantity", "accepted_questionable_quantity"),
