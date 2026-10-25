@@ -52,6 +52,7 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
                 "reason": "Supervisor records the explicitly chosen tied candidate.",
             },
             """
+            from PySide6.QtCore import QObject
             results = controller.property('constituencyResults')
             assert results is not None
             click('constituencyResultsNavigation')
@@ -82,7 +83,7 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
             enter('constituencyResultTieReason', setup['reason'])
             click('constituencyResultDiscard')
             click_confirmation(
-                control('constituencyResultDiscardDialog'),
+                window.findChild(QObject, 'constituencyResultDiscardDialog'),
                 controller.texts['constituency_results_confirm_discard'],
             )
             wait(lambda: results.property('state')['dirty'] is False)
@@ -95,7 +96,7 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
             click('constituencyResultResolveTie')
             enter('constituencyResultsPassword', setup['password'])
             click_confirmation(
-                control('constituencyResultsPasswordDialog'),
+                window.findChild(QObject, 'constituencyResultsPasswordDialog'),
                 controller.texts['constituency_results_confirm'],
             )
             wait(lambda: not results.property('state')['busy'])
@@ -137,6 +138,7 @@ def test_supervisor_result_page_keeps_missing_contributions_null_and_unresolvabl
                 "transferred_box_id": setup["boxes"]["transferred_n2"]["id"],
             },
             """
+            from PySide6.QtCore import QObject
             results = controller.property('constituencyResults')
             assert results is not None
             click('constituencyResultsNavigation')

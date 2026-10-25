@@ -76,6 +76,23 @@ def test_submitted_count_without_selection_is_pending_and_not_a_candidate_total(
             and item["station_id"] == setup["stations"]["N1"]["id"]
             for item in result["pending"]
         )
+        pending_scope = next(
+            item for item in result["pending"]
+            if item["code"] == "selected_count_missing"
+            and item["scope_id"] == setup["scope"]["id"]
+        )
+        assert pending_scope["scope_revision"] == 1
+        assert pending_scope["source_accounting_revisions"] == [
+            {
+                "station_id": source["context"]["station"]["id"],
+                "record_id": source["id"],
+                "revision": source["revision"],
+                "status": "approved",
+                "source_current": True,
+                "approval_valid": True,
+            }
+            for source in setup["scope"]["accounting_basis"]
+        ]
         assert result["complete"] is False
         assert result["provisional"] is True
         assert result["leader_candidate_ids"] == []
