@@ -147,9 +147,10 @@ def restore(manifest_path: Path, target_schema: str, container: str | None) -> d
             )
             record["prior_target_artifact"] = prior.name
             record["prior_target_sha256"] = _file_hash(prior)
-            record["phase"] = "target_preserved"
-            _private_manifest(directory / (operation_id + ".started.json"), record)
+            # Persist import intent before MySQL can modify the target. If the
+            # process stops during import, the durable record remains conservative.
             record["phase"] = "importing"
+            _private_manifest(directory / (operation_id + ".started.json"), record)
             record["restore_client_version"] = restore_mysql(
                 settings.restore_database_url, artifact, container=container
             )
