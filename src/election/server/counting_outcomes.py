@@ -199,6 +199,38 @@ def counting_outcomes_router(
         if data.determination_started_at and data.determination_started_at > data.event_at:
             raise HTTPException(422, detail={"code": "determination_time_invalid"})
         f2 = f2_basis(options, data, now, actor.id)
+        previous_f2 = current.data.get("f2")
+        if (
+            previous_f2
+            and previous_f2["determination_started_at"] is not None
+            and previous_f2["determination_started_at"] != f2["determination_started_at"]
+            and not data.amendment_reason.strip()
+        ):
+            raise HTTPException(422, detail={"code": "determination_reason_required"})
+        if (
+            previous_f2
+            and previous_f2["determination_started_at"] == f2["determination_started_at"]
+        ):
+            f2["determination_event"] = deepcopy(previous_f2.get("determination_event"))
+        elif f2["determination_started_at"] is not None:
+            f2["determination_event"] = {
+                "origin_revision": data.expected_revision + 1,
+                "event_at": f2["determination_started_at"],
+                "entered_at": f2["entered_at"],
+                "actor_id": actor.id,
+                "amendment_reason": data.amendment_reason,
+            }
+        else:
+            f2["determination_event"] = None
+        observed = [row["quantity"] for row in f2["accepted_votes"] + f2["rejected_papers"]]
+        known_total = sum(value for value in observed if value is not None)
+        if known_total > current.data["questionable_quantity"]:
+            raise HTTPException(422, detail={"code": "f2_outcomes_exceed_questionable"})
+        if (
+            all(value is not None for value in observed)
+            and known_total != current.data["questionable_quantity"]
+        ):
+            raise HTTPException(422, detail={"code": "f2_outcomes_unbalanced"})
         frozen = deepcopy(current.data)
         frozen.update(
             f1_metadata={

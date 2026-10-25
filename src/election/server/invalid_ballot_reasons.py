@@ -286,6 +286,7 @@ def invalid_ballot_reasons_router(
                 .where(
                     InvalidBallotReason.election_id == election_id,
                     InvalidBallotReason.code == data.code,
+                    InvalidBallotReason.stage == data.stage,
                 )
                 .with_for_update()
             )
