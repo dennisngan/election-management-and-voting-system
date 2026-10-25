@@ -191,17 +191,6 @@ def test_submitted_and_approved_rounds_reject_ordinary_f1_and_f2_edits(
         submitted = _submit(setup["counter"], target, 2, options["scope"]["revision"])
         assert submitted.status_code == 200, submitted.text
         _assert_f1_f2_edits_rejected(setup, options, target, 3)
-
-
-def test_approved_round_rejects_ordinary_f1_and_f2_edits(
-    admin: TestClient,
-    database_url: str,
-) -> None:
-    with tally_setup(admin, database_url) as setup:
-        options, path, f1, _ = _prepare_draft(setup)
-        target = f"{path}/{f1['id']}"
-        submitted = _submit(setup["counter"], target, 2, options["scope"]["revision"])
-        assert submitted.status_code == 200, submitted.text
         approved = _approve(
             setup["clients"]["supervisor"],
             target,
