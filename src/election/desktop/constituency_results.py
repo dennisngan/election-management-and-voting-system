@@ -149,7 +149,12 @@ class ConstituencyResultsController(QObject):
             self._state["refreshing"] = False
         generation = self._generation
         activity = "refreshing" if background else "busy"
-        self._state.update(**{activity: True}, error="", notice="")
+        preserve_uncertain_error = bool(self._state["uncertain_save"] and self._state["error"])
+        self._state.update(
+            **{activity: True},
+            error=self._state["error"] if preserve_uncertain_error else "",
+            notice="",
+        )
         self.stateChanged.emit()
 
         def loaded(body: dict[str, Any]) -> None:
@@ -181,6 +186,9 @@ class ConstituencyResultsController(QObject):
             if generation != self._generation:
                 return
             self._state[activity] = False
+            if background and self._state["uncertain_save"] and self._state["error"]:
+                self.stateChanged.emit()
+                return
             self._state.update(error=code, notice="")
             self.stateChanged.emit()
 
@@ -201,6 +209,14 @@ class ConstituencyResultsController(QObject):
 
     @Slot()
     def refresh(self) -> None:
+        if (
+            not self._opened
+            or not self._state["constituency_id"]
+            or self._state["role"] != "supervisor"
+            or self._state["busy"]
+            or self._state["refreshing"]
+        ):
+            return
         self._load(background=True)
 
     def _can_review(self) -> bool:
@@ -218,24 +234,28 @@ class ConstituencyResultsController(QObject):
 
     @Slot(int)
     def setResolutionCandidate(self, candidate_id: int) -> None:
+        if self._state["uncertain_save"]:
+            self._error("unsaved_tie_resolution")
+            return
         result = self._state["result"]
         if not self._can_review() or candidate_id not in result.get("tie_candidate_ids", []):
             self._error("tie_candidate_invalid")
             return
         self._state.update(
             selected_candidate_id=candidate_id,
-            dirty=(
-                candidate_id != self._state["selected_candidate_id"]
-                or bool(self._state["reason"].strip())
-            ),
+            dirty=True,
             error="",
             notice="",
         )
+        self._pending = None
         self._clear_report()
         self.stateChanged.emit()
 
     @Slot(str)
     def setResolutionReason(self, reason: str) -> None:
+        if self._state["uncertain_save"]:
+            self._error("unsaved_tie_resolution")
+            return
         if not self._can_review():
             self._error("constituency_result_read_only")
             return
@@ -248,45 +268,90 @@ class ConstituencyResultsController(QObject):
             error="",
             notice="",
         )
+        self._pending = None
         self._clear_report()
         self.stateChanged.emit()
 
-    @Slot(str)
-    def resolveTie(self, password: str) -> None:
-        if not self._can_review():
-            self._error("constituency_result_read_only")
-            return
+    @Slot()
+    def discardAndReload(self) -> None:
         if self._state["busy"]:
             return
-        result = self._state["result"]
-        candidate_id = self._state["selected_candidate_id"]
-        reason = self._state["reason"]
-        if candidate_id not in result.get("tie_candidate_ids", []):
-            self._error("tie_candidate_invalid")
+        if self._state["uncertain_save"]:
+            self._error("unsaved_tie_resolution")
             return
-        if not reason.strip() or len(reason) > 2000:
-            self._error("tie_resolution_reason_required")
+        self._pending = None
+        self._state.update(
+            selected_candidate_id=0,
+            reason="",
+            dirty=False,
+            newer_basis=False,
+            error="",
+            notice="",
+        )
+        self._clear_report()
+        self.stateChanged.emit()
+        self.reload()
+
+    @Slot(str)
+    def resolveTie(self, password: str) -> None:
+        if self._state["busy"]:
             return
         if not password:
             self._error("invalid_credentials")
             return
-        resolution = result.get("tie_resolution")
-        expected_revision = resolution.get("revision", 0) if isinstance(resolution, dict) else 0
-        body = {
-            "expected_resolution_revision": expected_revision,
-            "basis_digest": result["basis_digest"],
-            "candidate_id": candidate_id,
-            "reason": reason,
-        }
-        signature = json.dumps(
-            {"path": self._path("/tie-resolutions"), "body": body},
-            sort_keys=True,
-            ensure_ascii=False,
-        )
-        if self._pending is None or self._pending[0] != signature:
-            self._pending = signature, str(uuid4())
-        request_id = self._pending[1]
-        command = {**body, "request_id": request_id, "password": password}
+        retrying_uncertain = self._state["uncertain_save"]
+        result = self._state["result"]
+        if retrying_uncertain:
+            if self._state["role"] != "supervisor" or self._pending is None:
+                self._error("unsaved_tie_resolution")
+                return
+            try:
+                pending_command = json.loads(self._pending[0])
+                path = pending_command["path"]
+                body = pending_command["body"]
+            except TypeError, ValueError, KeyError:
+                self._error("unsaved_tie_resolution")
+                return
+            if (
+                path != self._path("/tie-resolutions")
+                or type(body.get("candidate_id")) is not int
+                or not isinstance(body.get("reason"), str)
+                or not body["reason"].strip()
+                or not isinstance(body.get("basis_digest"), str)
+            ):
+                self._error("unsaved_tie_resolution")
+                return
+            candidate_id = body["candidate_id"]
+            reason = body["reason"]
+            command = {**body, "request_id": self._pending[1], "password": password}
+        else:
+            if not self._can_review():
+                self._error("constituency_result_read_only")
+                return
+            candidate_id = self._state["selected_candidate_id"]
+            reason = self._state["reason"]
+            if candidate_id not in result.get("tie_candidate_ids", []):
+                self._error("tie_candidate_invalid")
+                return
+            if not reason.strip() or len(reason) > 2000:
+                self._error("tie_resolution_reason_required")
+                return
+            resolution = result.get("tie_resolution")
+            expected_revision = resolution.get("revision", 0) if isinstance(resolution, dict) else 0
+            body = {
+                "expected_resolution_revision": expected_revision,
+                "basis_digest": result["basis_digest"],
+                "candidate_id": candidate_id,
+                "reason": reason,
+            }
+            signature = json.dumps(
+                {"path": self._path("/tie-resolutions"), "body": body},
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+            if self._pending is None or self._pending[0] != signature:
+                self._pending = signature, str(uuid4())
+            command = {**body, "request_id": self._pending[1], "password": password}
         self._generation += 1
         generation = self._generation
         self._state.update(busy=True, refreshing=False, error="", notice="", uncertain_save=False)
@@ -296,7 +361,7 @@ class ConstituencyResultsController(QObject):
             if generation != self._generation:
                 return
             if not self._valid_result(body, self._state["constituency_id"]):
-                self._state.update(busy=False, error="request_failed", uncertain_save=False)
+                self._state.update(busy=False, error="request_failed", uncertain_save=True)
                 self.stateChanged.emit()
                 return
             resolution_view = body.get("tie_resolution")
@@ -307,7 +372,7 @@ class ConstituencyResultsController(QObject):
                 and resolution_view.get("reason") == reason
                 and resolution_view.get("valid") is True
             ):
-                self._state.update(busy=False, error="request_failed", uncertain_save=False)
+                self._state.update(busy=False, error="request_failed", uncertain_save=True)
                 self.stateChanged.emit()
                 return
             self._pending = None
@@ -328,7 +393,9 @@ class ConstituencyResultsController(QObject):
         def failed(code: str) -> None:
             if generation != self._generation:
                 return
-            uncertain = code in NETWORK_ERRORS
+            uncertain = code in NETWORK_ERRORS or (
+                retrying_uncertain and code == "invalid_credentials"
+            )
             self._state.update(busy=False, error=code, notice="", uncertain_save=uncertain)
             if code in ("constituency_result_basis_stale", "tie_resolution_revision_conflict"):
                 self._state["newer_basis"] = True
@@ -370,6 +437,7 @@ class ConstituencyResultsController(QObject):
         self._clear_report()
         generation = self._report_generation
         self._generation += 1
+        self._state["refreshing"] = False
         request_generation = self._generation
         self._state.update(busy=True, error="", notice="")
         self.stateChanged.emit()
@@ -422,7 +490,7 @@ class ConstituencyResultsController(QObject):
         self._generation += 1
         generation = self._generation
         report_generation = self._report_generation
-        self._state.update(busy=True, error="", notice="", export_path="")
+        self._state.update(busy=True, refreshing=False, error="", notice="", export_path="")
         self.stateChanged.emit()
 
         def failed(code: str) -> None:
