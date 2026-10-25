@@ -1,6 +1,7 @@
 """F2 determination and workflow through the real Material client."""
 
 from collections.abc import Iterator
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -455,6 +456,7 @@ def test_material_report_dialog_reinitializes_name_for_form_format_and_locale(
     admin: TestClient,
     database_url: str,
     https_server: HttpsServer,
+    tmp_path: Path,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         https_server.clock.value = setup["clock"].value
@@ -488,6 +490,8 @@ def test_material_report_dialog_reinitializes_name_for_form_format_and_locale(
         saved = client.put(path + f"/{created.json()['id']}/f2", json=f2)
         assert saved.status_code == 200, saved.text
         round_id = created.json()["id"]
+        export_folder = tmp_path / "count export 資料"
+        export_folder.mkdir()
 
         run_workspace_qml(
             {
@@ -497,6 +501,7 @@ def test_material_report_dialog_reinitializes_name_for_form_format_and_locale(
                 "station_id": setup["stations"]["N1"]["id"],
                 "locale": "en",
                 "round_id": round_id,
+                "scheme_less_folder": str(export_folder),
                 "cancel_caption": "Cancel",
                 "checks": [
                     {
@@ -534,7 +539,7 @@ def test_material_report_dialog_reinitializes_name_for_form_format_and_locale(
                 ],
             },
             """
-            from PySide6.QtCore import QObject, QMetaObject
+            from PySide6.QtCore import QObject, QMetaObject, QUrl
 
             click('countingRoundsNavigation')
             editor = controller.countingRounds
@@ -549,8 +554,7 @@ def test_material_report_dialog_reinitializes_name_for_form_format_and_locale(
                 return [item for item in window.findChildren(
                     QObject, 'countReportExportDialog') if item.property('visible')]
 
-            folder = None
-            for check in setup['checks']:
+            for index, check in enumerate(setup['checks']):
                 if controller.property('state')['locale'] != check['locale']:
                     controller.setLocale(check['locale'])
                     frame()
@@ -578,10 +582,26 @@ def test_material_report_dialog_reinitializes_name_for_form_format_and_locale(
                 assert suffix == check['format']
                 assert list(filters) == check['filters']
                 assert selected_url.toString().rsplit('/', 1)[-1] == check['filename']
-                current_folder = dialog.property('currentFolder').toString()
-                if folder is None:
-                    folder = current_folder
-                assert current_folder == folder
+                current_folder = dialog.property('currentFolder')
+                if index == 0:
+                    # Cocoa can return an absolute local path without a URL scheme.
+                    # Preserve that public folder value, then ensure later exports
+                    # reconstruct a usable local-file URL from it.
+                    scheme_less_folder = QUrl(setup['scheme_less_folder'])
+                    assert scheme_less_folder.scheme() == ''
+                    assert dialog.setProperty('currentFolder', scheme_less_folder)
+                    current_folder = dialog.property('currentFolder')
+                    assert current_folder.path() == setup['scheme_less_folder']
+                    assert current_folder.isLocalFile() is False
+                else:
+                    assert selected_url.isLocalFile(), selected_url.toString()
+                    assert selected_url.toLocalFile() == (
+                        setup['scheme_less_folder'] + '/' + check['filename']
+                    )
+                    assert current_folder.path() == setup['scheme_less_folder'], (
+                        current_folder.toString(), current_folder.scheme(),
+                        setup['scheme_less_folder'],
+                    )
                 assert QMetaObject.invokeMethod(dialog, 'reject')
                 QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
                 application.processEvents()
