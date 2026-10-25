@@ -502,21 +502,36 @@ def _comparison_tables(record: dict[str, Any], labels: dict[str, str]) -> list[H
     tables = []
     for comparison in record.get("physical_comparisons", []):
         source_label = labels.get("source_" + comparison["source"], comparison["source"])
+        rows = _pairs(
+            {**comparison, "source_label": source_label},
+            (
+                ("source", "source_label"),
+                ("expected_quantity", "expected_quantity"),
+                ("actual_quantity", "actual_quantity"),
+                ("difference_quantity", "difference_quantity"),
+                ("available", "available"),
+                ("comparison_status", "status"),
+            ),
+            labels,
+        )
+        acceptance = comparison.get("acceptance")
+        if acceptance:
+            rows.extend(
+                _pairs(
+                    acceptance,
+                    (
+                        ("decision_actor", "actor_id"),
+                        ("accepted_at", "accepted_at"),
+                        ("acceptance_reason", "reason"),
+                        ("reviewed_count_revision", "reviewed_revision"),
+                    ),
+                    labels,
+                )
+            )
         tables.append(
             _table(
                 labels["physical_comparisons"] + " · " + source_label,
-                _pairs(
-                    {**comparison, "source_label": source_label},
-                    (
-                        ("source", "source_label"),
-                        ("expected_quantity", "expected_quantity"),
-                        ("actual_quantity", "actual_quantity"),
-                        ("difference_quantity", "difference_quantity"),
-                        ("available", "available"),
-                        ("comparison_status", "status"),
-                    ),
-                    labels,
-                ),
+                rows,
                 labels,
             )
         )
@@ -546,12 +561,76 @@ def _comparison_tables(record: dict[str, Any], labels: dict[str, str]) -> list[H
     return tables
 
 
+def _physical_decision_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]:
+    tables: list[HistoryTable] = []
+    fields = (
+        ("decision_revision", "revision"),
+        ("reviewed_count_revision", "reviewed_revision"),
+        ("reviewed_count_revision_id", "reviewed_revision_id"),
+        ("scope_revision", "scope_revision"),
+        ("decision_actor", "actor_id"),
+        ("accepted_at", "accepted_at"),
+        ("acceptance_reason", "reason"),
+        ("expected_quantity", "expected_quantity"),
+        ("actual_quantity", "actual_quantity"),
+        ("difference_quantity", "difference_quantity"),
+        ("applies_to_revision", "applies_to_revision"),
+        ("decision_validity", "valid"),
+        ("decision_is_current", "is_current"),
+        ("fingerprint", "fingerprint"),
+    )
+    for decision in record.get("physical_decisions", []):
+        source_label = labels.get("source_" + decision["source"], decision["source"])
+        tables.append(
+            _table(
+                labels["physical_decision_history"] + " · " + source_label,
+                _pairs(decision, fields, labels),
+                labels,
+            )
+        )
+    for decision in record.get("approved_physical_decisions", []):
+        source_label = labels.get("source_" + decision["source"], decision["source"])
+        tables.append(
+            _table(
+                labels["physical_decision_approved"] + " · " + source_label,
+                _pairs(decision, fields, labels),
+                labels,
+            )
+        )
+    for comparison in record.get("reviewed_physical_comparisons", []):
+        source_label = labels.get("source_" + comparison["source"], comparison["source"])
+        tables.append(
+            _table(
+                labels["physical_comparison_reviewed"] + " · " + source_label,
+                _pairs(
+                    {**comparison, "source_label": source_label},
+                    (
+                        ("source", "source_label"),
+                        ("expected_quantity", "expected_quantity"),
+                        ("actual_quantity", "actual_quantity"),
+                        ("difference_quantity", "difference_quantity"),
+                        ("comparison_status", "status"),
+                    ),
+                    labels,
+                ),
+                labels,
+            )
+        )
+    if not tables:
+        tables.append(
+            _table(
+                labels["physical_decision_history"],
+                [[labels["form"], labels["not_recorded"]]],
+                labels,
+            )
+        )
+    return tables
+
+
 def _tables(report: dict[str, Any]) -> list[HistoryTable]:
     record, labels, form = report["record"], report["labels"], report["form"]
     tables = [_summary(record, labels)]
-    tables.extend(
-        _f2_tables(record, labels, include_outcomes=form in ("f2", "count"))
-    )
+    tables.extend(_f2_tables(record, labels, include_outcomes=form in ("f2", "count")))
     if form in ("f3", "count"):
         tables.extend(_f3_tables(record, labels))
     if form in ("f4", "count"):
@@ -559,6 +638,7 @@ def _tables(report: dict[str, Any]) -> list[HistoryTable]:
     if form == "count":
         tables.extend(_f1_tables(record, labels))
     tables.extend(_workflow_tables(record, labels))
+    tables.extend(_physical_decision_tables(record, labels))
     tables.extend(_comparison_tables(record, labels))
     tables.append(
         _table(
