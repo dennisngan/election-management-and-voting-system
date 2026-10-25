@@ -96,6 +96,9 @@ def test_box_statement_exports_round_occurrences_with_exact_revision_and_time_pr
         report = response.json()
         assert report["count_completion"] is None
         assert len(report["count_events"]) == 3
+        assert all(
+            row["entered_at"] == "2026-11-15T16:00:00.987654Z" for row in report["count_events"]
+        )
         preview = "\n".join(report["preview_lines"])
         assert title in preview
         assert scalar_caption + ":" not in preview
@@ -107,6 +110,12 @@ def test_box_statement_exports_round_occurrences_with_exact_revision_and_time_pr
         rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
         assert [scope_label, str(setup["scope"]["id"])] in rows
         assert rows.count([scope_label, str(setup["scope"]["id"])]) == 3
+        entry_label = {
+            "tc": "伺服器記錄時間（香港時間）",
+            "sc": "服务器记录时间（香港时间）",
+            "en": "Server entry time (Hong Kong time)",
+        }[locale]
+        assert rows.count([entry_label, "2026-11-16 00:00:00.987654 HKT"]) == 3
         assert [origin_label, str(saved["submitted"]["revision_id"])] in rows
         assert [current_label, str(saved["approved"]["revision_id"])] in rows
         assert [origin_label, str(saved["first"]["revision_id"])] in rows
