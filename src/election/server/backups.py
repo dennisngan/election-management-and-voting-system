@@ -120,7 +120,7 @@ def backups_router(
                 actor_id=actor.id,
                 action="backup_requested",
                 occurred_at=timestamp(),
-                details={"request_id": row.request_id, "backup_id": row.id},
+                details={"account_id": actor.id, "request_id": row.request_id, "backup_id": row.id},
             )
         )
         db.commit()
