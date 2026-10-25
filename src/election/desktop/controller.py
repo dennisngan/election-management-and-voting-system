@@ -1,10 +1,21 @@
 import json
+import os
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Property, QByteArray, QEventLoop, QObject, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    Property,
+    QByteArray,
+    QEventLoop,
+    QObject,
+    QStandardPaths,
+    QTimer,
+    QUrl,
+    Signal,
+    Slot,
+)
 from PySide6.QtNetwork import (
     QNetworkAccessManager,
     QNetworkReply,
@@ -16,6 +27,7 @@ from PySide6.QtNetwork import (
 from election.desktop.accounting import AccountingController
 from election.desktop.allocations import AllocationController
 from election.desktop.boxes import BoxesController
+from election.desktop.client_command_journal import CommandJournal, JournalError, command_workflow
 from election.desktop.complaint_categories import ComplaintCategoriesController
 from election.desktop.complaint_periods import ComplaintPeriodsController
 from election.desktop.complaints import ComplaintCasesController
@@ -28,6 +40,7 @@ from election.desktop.invalid_reasons import InvalidReasonsController
 from election.desktop.lifecycle import LifecycleController
 from election.desktop.polling import PollingController
 from election.desktop.queue import QueueController
+from election.desktop.recovery import RecoveryController
 from election.desktop.special_papers import SpecialPapersController
 from election.desktop.staff import StaffController
 from election.desktop.stock import StockController
@@ -65,6 +78,16 @@ class DesktopController(QObject):
             "capabilities": {},
         }
         self._token = ""
+        journal_directory = os.environ.get("ELECTION_CLIENT_STATE_DIR") or str(
+            Path(
+                QStandardPaths.writableLocation(
+                    QStandardPaths.StandardLocation.AppLocalDataLocation
+                )
+            )
+            / "operational-commands"
+        )
+        self._command_journal = CommandJournal(Path(journal_directory))
+        self._recovery = RecoveryController(self._authorized_request, self._command_journal, self)
         self._configuration = ConfigurationController(self._authorized_request, self)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
@@ -250,6 +273,10 @@ class DesktopController(QObject):
         return self._counting_scopes
 
     @Property(QObject, constant=True)
+    def recovery(self) -> RecoveryController:
+        return self._recovery
+
+    @Property(QObject, constant=True)
     def countingRounds(self) -> CountingRoundsController:
         return self._counting_rounds
 
@@ -275,6 +302,12 @@ class DesktopController(QObject):
 
     def _workspace_changed(self) -> None:
         context = self._workspace.property("state")["selected"]
+        self._recovery.set_context(
+            context.get("station", {}).get("id", 0),
+            self._state["account"].get("role", ""),
+            self._state["server_url"],
+            self._state["account"].get("id", 0),
+        )
         self._accounting.set_context(context)
         self._polling.set_context(context)
         self._stock.set_context(context)
@@ -350,12 +383,71 @@ class DesktopController(QObject):
         success: ResultHandler,
         failure: Callable[[str], None],
     ) -> None:
+        command = None
+        workflow = command_workflow(path)
+        account_id = self._state["account"].get("id", 0)
+        origin = self._state["server_url"]
+        if workflow and payload and method in ("POST", "PUT", "PATCH") and "request_id" in payload:
+            try:
+                command = self._command_journal.prepare(
+                    origin, account_id, workflow[0], workflow[1], path, method, payload
+                )
+            except (OSError, ValueError, KeyError, TypeError, JournalError) as error:
+                failure(
+                    str(error)
+                    if isinstance(error, JournalError)
+                    else "recovery_journal_unavailable"
+                )
+                return
+
+        def remember(status: str, *, body: dict[str, Any] | None = None, code: str = "") -> None:
+            if command is not None:
+                self._command_journal.record_outcome(
+                    origin, account_id, command["request_id"], status, record=body, error=code
+                )
+
+        def saved(body: dict[str, Any]) -> None:
+            if command is not None:
+                record = body.get("record", body)
+                valid = (
+                    isinstance(record, dict)
+                    and type(record.get("id")) is int
+                    and type(record.get("revision")) is int
+                    and record["revision"] > 0
+                )
+                try:
+                    remember(
+                        "committed" if valid else "uncertain",
+                        body=body,
+                        code="" if valid else "invalid_response",
+                    )
+                except OSError, ValueError, RuntimeError:
+                    failure("recovery_journal_unavailable")
+                    return
+            success(body)
+
         def failed(code: str) -> None:
+            try:
+                remember(
+                    "uncertain"
+                    if code
+                    in {
+                        "disconnected",
+                        "request_failed",
+                        "invalid_response",
+                        "certificate_error",
+                        "database_unavailable",
+                    }
+                    else "rejected",
+                    code=code,
+                )
+            except OSError, ValueError, RuntimeError:
+                code = "recovery_journal_unavailable"
             failure(code)
             if code == "session_expired":
                 self._error(code)
 
-        self._request(path, method, payload, success, failed, token=self._token)
+        self._request(path, method, payload, saved, failed, token=self._token)
 
     def _authorized_download(
         self, path: str, success: ResultHandler, failure: Callable[[str], None]
