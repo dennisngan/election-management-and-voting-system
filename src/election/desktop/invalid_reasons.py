@@ -151,7 +151,9 @@ class InvalidReasonsController(QObject):
         self._state["items"] = deepcopy(rows)
         selected = self._state["selected"]
         latest = next((row for row in rows if row["id"] == selected.get("id")), None)
-        self._state["newer_revision"] = bool(selected and latest != selected)
+        self._state["newer_revision"] = bool(
+            selected and not self._state["historical"] and latest != selected
+        )
         return True
 
     def _accept(self, row: dict[str, Any], *, historical: bool = False) -> None:
@@ -435,5 +437,7 @@ class InvalidReasonsController(QObject):
             return
         self._state["history"] = deepcopy(history)
         latest = next((item for item in history if item["revision"] == row["revision"]), row)
-        self._state["newer_revision"] = bool(latest != self._state["selected"])
+        self._state["newer_revision"] = bool(
+            not self._state["historical"] and latest != self._state["selected"]
+        )
         self.stateChanged.emit()
