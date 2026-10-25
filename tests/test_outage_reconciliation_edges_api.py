@@ -95,3 +95,75 @@ def test_late_paper_link_replays_original_count_receipt_without_second_effect(
         assert entered["status"] == "entered"
         assert entered["reentry"]["request_id"] == request_id
         assert entered["reentry"]["record"] == original_receipt
+
+
+def test_paper_reference_identity_is_trimmed_case_sensitive_and_request_bound(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        _, _, count_round = _count_draft(setup)
+        counter = setup["counter"]
+        station_id = setup["stations"]["N1"]["id"]
+        outage_path = f"/api/workspace/stations/{station_id}/outages"
+        outage = counter.post(
+            outage_path,
+            json={
+                "request_id": str(uuid4()),
+                "reference": "N1 identity test " + uuid4().hex[:10],
+                "kind": "network",
+                "started_at": "2026-11-15T23:15:00+08:00",
+                "ended_at": "2026-11-15T23:40:00+08:00",
+                "notes": "Paper-reference identity check.",
+            },
+        )
+        assert outage.status_code == 201, outage.text
+        outage_record_path = outage_path + f"/{outage.json()['id']}"
+        base = {
+            "expected_outage_revision": 1,
+            "workflow": "count",
+            "action": "submit",
+            "original_event_at": "2026-11-15T23:35:00+08:00",
+            "target": {"scope_id": setup["scope"]["id"], "round_id": count_round["id"]},
+            "notes": "Paper return for the identity test.",
+        }
+        first_request = str(uuid4())
+        first = counter.post(
+            outage_record_path + "/paper-records",
+            json={**base, "request_id": first_request, "paper_reference": "  Exact-Paper-Ref  "},
+        )
+        assert first.status_code == 201, first.text
+        assert first.json()["paper_reference"] == "Exact-Paper-Ref"
+
+        duplicate = counter.post(
+            outage_record_path + "/paper-records",
+            json={**base, "request_id": str(uuid4()), "paper_reference": "Exact-Paper-Ref"},
+        )
+        assert duplicate.status_code == 409, duplicate.text
+
+        case_variant = counter.post(
+            outage_record_path + "/paper-records",
+            json={**base, "request_id": str(uuid4()), "paper_reference": "exact-paper-ref"},
+        )
+        assert case_variant.status_code == 201, case_variant.text
+        assert case_variant.json()["paper_reference"] == "exact-paper-ref"
+
+        changed_identity = counter.post(
+            outage_record_path + "/paper-records",
+            json={**base, "request_id": first_request, "paper_reference": "Different-Ref"},
+        )
+        assert changed_identity.status_code == 409, changed_identity.text
+        assert changed_identity.json()["detail"]["code"] == "request_conflict"
+        replay = counter.post(
+            outage_record_path + "/paper-records",
+            json={**base, "request_id": first_request, "paper_reference": "Exact-Paper-Ref"},
+        )
+        assert replay.status_code == 200, replay.text
+        assert replay.json()["id"] == first.json()["id"]
+        current = counter.get(outage_record_path)
+        assert current.status_code == 200, current.text
+        records = current.json()["record"]["paper_records"]
+        assert [row["paper_reference"] for row in records] == [
+            "Exact-Paper-Ref",
+            "exact-paper-ref",
+        ]
