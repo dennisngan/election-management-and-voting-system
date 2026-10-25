@@ -1,6 +1,7 @@
 """Box QML controls execute real station workflows; native Computer proof is separate."""
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -177,6 +178,145 @@ def test_counting_officer_receives_sixth_arrival_and_records_milestones_through_
             assert all(row["status"] == "received" for row in saved["items"])
             assert saved["milestones"][1]["box_id"] == box_id
             assert saved["count_completion"] is None
+
+
+def test_box_export_dialog_rebuilds_local_suggestions_after_scheme_less_folder(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    tmp_path: Path,
+) -> None:
+    stations, clock = box_stations(admin), BoxClock()
+    origin, destination = stations["N2"], stations["N1"]
+    https_server.clock.value = clock.value
+    export_folder = tmp_path / "box export 資料"
+    export_folder.mkdir()
+    origin_path = f"/api/workspace/stations/{origin['id']}/boxes"
+    destination_path = f"/api/workspace/stations/{destination['id']}/boxes"
+
+    with box_staff(admin, database_url, clock, "polling_officer", [origin["id"]]) as (
+        sender,
+        _,
+    ):
+        created = sender.post(
+            origin_path,
+            json=prepared_box(box_reference="URL 測試票箱 0001"),
+        )
+        assert created.status_code == 201, created.text
+        box_id = created.json()["id"]
+        departed = sender.post(
+            f"{origin_path}/{box_id}/departure",
+            json=event_command(1, "2026-11-15T22:45:00+08:00"),
+        )
+        assert departed.status_code == 201, departed.text
+
+        with box_staff(
+            admin, database_url, clock, "counting_officer", [destination["id"]]
+        ) as (receiver, account):
+            received = receiver.post(
+                f"{destination_path}/{box_id}/receipt",
+                json=event_command(2, "2026-11-15T22:50:00+08:00"),
+            )
+            assert received.status_code == 201, received.text
+
+            run_workspace_qml(
+                {
+                    "server": https_server.url,
+                    "username": account["username"],
+                    "password": READY_PASSWORD,
+                    "station_id": destination["id"],
+                    "box_id": box_id,
+                    "locale": "en",
+                    "scheme_less_folder": str(export_folder),
+                    "checks": [
+                        {
+                            "format": "pdf",
+                            "button": "boxExportPdf",
+                            "locale": "en",
+                            "filename": f"box-handover-{destination['id']}-en.pdf",
+                            "filters": ["PDF (*.pdf)"],
+                        },
+                        {
+                            "format": "csv",
+                            "button": "boxExportCsv",
+                            "locale": "en",
+                            "filename": f"box-handover-{destination['id']}-en.csv",
+                            "filters": ["CSV (*.csv)"],
+                        },
+                        {
+                            "format": "pdf",
+                            "button": "boxExportPdf",
+                            "locale": "tc",
+                            "filename": f"box-handover-{destination['id']}-tc.pdf",
+                            "filters": ["PDF (*.pdf)"],
+                        },
+                    ],
+                },
+                """
+                from PySide6.QtCore import QObject, QMetaObject, QUrl
+
+                click('boxesNavigation')
+                boxes = controller.property('boxes')
+                wait(lambda: not boxes.property('state')['busy'])
+                choose('boxPicker', 0)
+                wait(lambda: not boxes.property('state')['busy']
+                    and boxes.property('state')['selected']['id'] == setup['box_id'])
+                assert boxes.property('state')['selected']['status'] == 'received'
+
+                def file_dialogs():
+                    return [
+                        item for item in window.findChildren(QObject)
+                        if isinstance(item.property('currentFolder'), QUrl)
+                        and isinstance(item.property('selectedFile'), QUrl)
+                        and item.property('defaultSuffix') in ('pdf', 'csv')
+                    ]
+
+                def visible_file_dialogs():
+                    return [item for item in file_dialogs() if item.property('visible')]
+
+                for index, check in enumerate(setup['checks']):
+                    if controller.property('state')['locale'] != check['locale']:
+                        controller.setLocale(check['locale'])
+                        frame()
+                    export_button = control(check['button'])
+                    assert export_button.property('visible') is True
+                    assert export_button.property('enabled') is True
+                    assert QMetaObject.invokeMethod(export_button, 'click')
+                    application.processEvents()
+                    wait(lambda: len(visible_file_dialogs()) == 1)
+
+                    dialog = visible_file_dialogs()[0]
+                    selected_file = dialog.property('selectedFile')
+                    assert dialog.property('defaultSuffix') == check['format']
+                    assert list(dialog.property('nameFilters')) == check['filters']
+                    assert selected_file.toString().rsplit('/', 1)[-1] == check['filename']
+
+                    if index == 0:
+                        scheme_less_folder = QUrl(setup['scheme_less_folder'])
+                        assert scheme_less_folder.scheme() == ''
+                        assert dialog.setProperty('currentFolder', scheme_less_folder)
+                        current_folder = dialog.property('currentFolder')
+                        assert current_folder.path() == setup['scheme_less_folder']
+                        assert current_folder.isLocalFile() is False
+                    else:
+                        assert selected_file.isLocalFile(), selected_file.toString()
+                        assert selected_file.toLocalFile() == (
+                            setup['scheme_less_folder'] + '/' + check['filename']
+                        )
+                        current_folder = dialog.property('currentFolder')
+                        assert current_folder.path() == setup['scheme_less_folder']
+
+                    assert QMetaObject.invokeMethod(dialog, 'reject')
+                    application.processEvents()
+                    frame()
+                    wait(lambda: not visible_file_dialogs())
+                """,
+            )
+
+    for suffix in ("pdf", "csv"):
+        assert https_server.request_count(
+            "GET", f"{destination_path}/statement.{suffix}"
+        ) == 0
 
 
 @pytest.mark.parametrize("locale", ["tc", "sc", "en"])
