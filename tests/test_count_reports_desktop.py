@@ -75,6 +75,9 @@ def test_desktop_selects_count_forms_and_exports_requested_language_and_revision
             page_text = "\n".join(page.extract_text() for page in pages)
             assert "F4 最終點票總覽" in page_text
             assert "F2 問題選票判定" not in page_text
+            assert "F2 判定事件紀錄" in page_text
+            assert "2026-11-15 23:18:12.123456 HKT" in page_text
+            assert "F2 伺服器記錄時間（香港時間）" in page_text
             assert editor.selectReportForm("count") is True
             editor.preview("en")
             wait_for_editor_idle(qt_app, editor)

@@ -474,9 +474,17 @@ def test_every_count_report_preserves_f1_f2_timing_and_origin_metadata(
                     for row in metadata
                 )
 
+                event_title = {
+                    "tc": "F2 判定事件紀錄",
+                    "sc": "F2 判定事件记录",
+                    "en": "F2 Determination Event Record",
+                }[locale]
+                expected_f2_title = (
+                    event_title if form in ("f3", "f4") else labels["f2_section"]
+                )
                 f2_sections = [
                     table for table in report["tables"]
-                    if table["title"] == labels["f2_section"]
+                    if table["title"] == expected_f2_title
                 ]
                 assert len(f2_sections) == 1, (
                     f"{locale}/{form}: expected one F2 metadata section, got "
@@ -497,6 +505,9 @@ def test_every_count_report_preserves_f1_f2_timing_and_origin_metadata(
                 assert [labels["determination_started_at"], expected_start_at] in f2_rows
 
                 if form in ("f3", "f4"):
+                    assert not any(
+                        table["title"] == labels["f2_section"] for table in report["tables"]
+                    )
                     assert not any(
                         row[0] in {
                             labels["accepted_questionable_quantity"],
