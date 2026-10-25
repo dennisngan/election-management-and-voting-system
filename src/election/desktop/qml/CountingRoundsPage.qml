@@ -19,6 +19,8 @@ ColumnLayout {
     readonly property bool writer: editorState.role === "counting_officer"
     readonly property bool editable: writer && !working && !editorState.historical
         && !editorState.newer_revision && !!scope.count_ready
+        && (!selected.id || selected.status === "draft")
+        && editorState.dirty_stage !== "f2"
         && (!selected.id || !!selected.source_current)
         && editorState.context.election && editorState.context.election.status === "active"
     property var candidateRows: []
@@ -415,7 +417,12 @@ ColumnLayout {
                     objectName: "f1Save"; text: page.t("f1_save"); visible: page.writer
                     enabled: page.editable || (page.writer && !page.working && !!page.editorState.uncertain_save)
                     working: page.working
-                    onClicked: page.countingRounds.save()
+                    onClicked: {
+                        if (page.selected.f2 && page.selected.status === "draft")
+                            discardF2Dialog.open()
+                        else
+                            page.countingRounds.save()
+                    }
                 }
             }
         }
@@ -493,6 +500,12 @@ ColumnLayout {
             }
         }
     }
+    CountOutcomesPanel {
+        countingRounds: page.countingRounds
+        words: page.words
+        locale: page.locale
+        onReveal: control => page.reveal(control)
+    }
     FormPanel {
         visible: !!page.selected.id
         implicitHeight: reports.implicitHeight + 40
@@ -534,6 +547,15 @@ ColumnLayout {
         message: page.t("f1_discard")
         acceptLabel: page.t("discard_changes"); rejectLabel: page.t("keep_editing")
         onConfirmed: page.countingRounds.discardAndReload()
+    }
+    ConfirmationDialog {
+        id: discardF2Dialog
+        objectName: "f1DiscardF2Dialog"
+        focus: true
+        message: page.t("f1_discard_f2_title") + "\n" + page.t("f1_discard_f2_message")
+        acceptLabel: page.t("f1_discard_f2_confirm")
+        rejectLabel: page.t("keep_editing")
+        onConfirmed: page.countingRounds.saveDiscardingF2()
     }
     FileDialog {
         id: exportDialog
