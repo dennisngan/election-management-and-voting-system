@@ -180,6 +180,7 @@ def backups_router(
                     action="backup_completed",
                     occurred_at=timestamp(),
                     details={
+                        "account_id": actor.id,
                         "request_id": row.request_id,
                         "backup_id": row.id,
                         "sha256": row.sha256,
@@ -201,6 +202,7 @@ def backups_router(
                     action="backup_failed",
                     occurred_at=timestamp(),
                     details={
+                        "account_id": actor.id,
                         "request_id": row.request_id,
                         "backup_id": row.id,
                         "error_code": row.error_code,
