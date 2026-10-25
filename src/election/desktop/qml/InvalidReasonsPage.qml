@@ -6,6 +6,7 @@ import QtQuick.Layouts
 
 ColumnLayout {
     id: page
+    objectName: "invalidReasonsPage"
     required property var catalog
     required property var words
     property string locale: "tc"
@@ -17,6 +18,10 @@ ColumnLayout {
         && editorState.election.status !== "finalized"
     property string pendingAction: "reload"
     property int pendingId: 0
+    property var electionRows: []
+    property var reasonRows: []
+    property var historyRows: []
+    onLocaleChanged: Qt.callLater(function() { page.syncPickerModels() })
     signal reveal(var control)
     spacing: 20
 
@@ -30,16 +35,22 @@ ColumnLayout {
             if (items[index].id === id) return index
         return -1
     }
-    function restorePickers() {
-        electionPicker.currentIndex = Qt.binding(function() {
-            return page.indexOf(page.editorState.elections || [], page.editorState.election_id)
+    function syncPickerModels() {
+        var state = catalog.state
+        var elections = state.elections || []
+        var reasons = state.items || []
+        var history = (state.history || []).map(function(row) {
+            return {revision: row.revision, label: page.historyLabel(row)}
         })
-        reasonPicker.currentIndex = Qt.binding(function() {
-            return page.indexOf(page.editorState.items || [], page.selected.id)
-        })
-        historyPicker.currentIndex = Qt.binding(function() {
-            return page.indexOf(page.editorState.history || [], page.selected.revision)
-        })
+        if (!electionPicker.popup.visible
+                && JSON.stringify(electionRows) !== JSON.stringify(elections))
+            electionRows = elections.slice()
+        if (!reasonPicker.popup.visible
+                && JSON.stringify(reasonRows) !== JSON.stringify(reasons))
+            reasonRows = reasons.slice()
+        if (!historyPicker.popup.visible
+                && JSON.stringify(historyRows) !== JSON.stringify(history))
+            historyRows = history
     }
     function choose(action, id) {
         var accepted = action === "election" ? catalog.selectElection(id, false)
@@ -49,21 +60,14 @@ ColumnLayout {
             pendingId = id
             discardDialog.open()
         }
-        restorePickers()
     }
     function historyLabel(row) {
         return t("invalid_reason_revision") + " " + row.revision
             + (row.enabled ? "" : " · " + t("invalid_reason_disabled"))
     }
-    function historyOptions() {
-        return (page.editorState.history || []).map(function(row) {
-            return {revision: row.revision, label: page.historyLabel(row)}
-        })
-    }
     function historyIndex() {
-        var options = historyOptions()
-        for (var index = 0; index < options.length; index++)
-            if (options[index].revision === page.selected.revision) return index
+        for (var index = 0; index < historyRows.length; index++)
+            if (historyRows[index].revision === page.selected.revision) return index
         return -1
     }
 
@@ -132,8 +136,30 @@ ColumnLayout {
     }
     Connections {
         target: page.catalog
-        function onStateChanged() { Qt.callLater(function() { page.restorePickers() }) }
+        function onStateChanged() { Qt.callLater(function() { page.syncPickerModels() }) }
     }
+    Connections {
+        target: electionPicker.popup
+        function onVisibleChanged() {
+            if (!electionPicker.popup.visible)
+                Qt.callLater(function() { page.syncPickerModels() })
+        }
+    }
+    Connections {
+        target: reasonPicker.popup
+        function onVisibleChanged() {
+            if (!reasonPicker.popup.visible)
+                Qt.callLater(function() { page.syncPickerModels() })
+        }
+    }
+    Connections {
+        target: historyPicker.popup
+        function onVisibleChanged() {
+            if (!historyPicker.popup.visible)
+                Qt.callLater(function() { page.syncPickerModels() })
+        }
+    }
+    Component.onCompleted: syncPickerModels()
 
     RowLayout {
         Layout.fillWidth: true
@@ -185,9 +211,9 @@ ColumnLayout {
             Picker {
                 id: electionPicker
                 objectName: "invalidReasonElection"
-                model: page.editorState.elections || []
+                model: page.electionRows
                 textRole: "name"
-                currentIndex: page.indexOf(model, page.editorState.election_id)
+                currentIndex: page.indexOf(page.electionRows, page.editorState.election_id)
                 Accessible.name: page.t("selected_election")
                 onActivated: index => {
                     if (index >= 0) page.choose("election", model[index].id)
@@ -201,8 +227,8 @@ ColumnLayout {
             Picker {
                 id: reasonPicker
                 objectName: "invalidReasonPicker"
-                model: page.editorState.items || []
-                currentIndex: page.indexOf(model, page.selected.id)
+                model: page.reasonRows
+                currentIndex: page.indexOf(page.reasonRows, page.selected.id)
                 displayText: currentIndex >= 0
                     ? page.reasonLabel(model[currentIndex]) : page.t("invalid_reason_select")
                 Accessible.name: page.t("invalid_reason_select")
@@ -279,9 +305,9 @@ ColumnLayout {
                 Picker {
                     id: historyPicker
                     objectName: "invalidReasonHistory"
-                    model: page.historyOptions()
+                    model: page.historyRows
                     currentIndex: page.historyIndex()
-                    displayText: currentIndex >= 0 ? model[currentIndex].label
+                    displayText: currentIndex >= 0 ? page.historyRows[currentIndex].label
                         : page.t("invalid_reason_history")
                     textRole: "label"
                     Accessible.name: page.t("invalid_reason_history")
@@ -402,7 +428,7 @@ ColumnLayout {
                 page.catalog.loadReason(page.pendingId, true)
             else
                 page.catalog.reload(true)
-            page.restorePickers()
+            page.syncPickerModels()
         }
     }
 }
