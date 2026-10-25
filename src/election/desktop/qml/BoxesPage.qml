@@ -87,8 +87,8 @@ ColumnLayout {
         pendingFormat = format; pendingLocale = locale
         exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
         exportDialog.defaultSuffix = format
-        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/box-handover-"
-            + editorState.station_id + "-" + locale + "." + format
+        exportDialog.selectedFile = Qt.resolvedUrl(exportDialog.currentFolder.toString() + "/box-handover-"
+            + editorState.station_id + "-" + locale + "." + format)
         exportDialog.open()
     }
 
