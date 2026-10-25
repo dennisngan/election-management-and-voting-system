@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from tests.box_support import READY_PASSWORD
 from tests.outcomes_support import complete_f2_command
 from tests.tally_support import complete_f1_command, tally_setup
 from tests.test_counting_scopes_api import (
@@ -167,3 +168,125 @@ def test_paper_reference_identity_is_trimmed_case_sensitive_and_request_bound(
             "Exact-Paper-Ref",
             "exact-paper-ref",
         ]
+
+
+def test_reconciliation_requires_exact_supervisor_review_and_invalidates_on_basis_changes(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        counter = setup["counter"]
+        options, round_target, count_round = _count_draft(setup)
+        outage_path, paper = _create_outage_and_paper(setup, count_round["id"])
+        submitted = counter.post(
+            round_target + "/submit",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 2,
+                "scope_revision": options["scope"]["revision"],
+                "paper_record_id": paper["id"],
+            },
+        )
+        assert submitted.status_code == 200, submitted.text
+        assert submitted.json()["revision"] == 3
+        outage_response = counter.get(outage_path)
+        assert outage_response.status_code == 200, outage_response.text
+        record = outage_response.json()["record"]
+        paper_row = record["paper_records"][0]
+        assert paper_row["status"] == "entered"
+
+        supervisor = setup["clients"]["supervisor"]
+        approve_path = outage_path + "/approve"
+
+        def approval(*, request_id: str | None = None, **changes: object) -> dict:
+            return {
+                "request_id": request_id or str(uuid4()),
+                "expected_revision": record["revision"],
+                "expected_reconciliation_revision": 0,
+                "paper_revisions": [{"paper_id": paper_row["id"], "revision": 1}],
+                "password": READY_PASSWORD,
+                "reason": "Supervisor matched the paper return to its count receipt.",
+                **changes,
+            }
+
+        wrong_password = supervisor.post(
+            approve_path,
+            json=approval(password="Incorrect-Password-42!"),
+        )
+        assert wrong_password.status_code == 401, wrong_password.text
+        blank_reason = supervisor.post(approve_path, json=approval(reason="   "))
+        assert blank_reason.status_code == 422, blank_reason.text
+        omitted_membership = supervisor.post(approve_path, json=approval(paper_revisions=[]))
+        assert omitted_membership.status_code == 409, omitted_membership.text
+        assert omitted_membership.json()["detail"]["code"] == ("outage_paper_revision_conflict")
+
+        approved = supervisor.post(approve_path, json=approval())
+        assert approved.status_code == 200, approved.text
+        current = approved.json()["record"]
+        assert current["reconciled"] is True
+        assert current["reconciliation"]["valid"] is True
+
+        stale_cas = supervisor.post(
+            approve_path,
+            json=approval(request_id=str(uuid4()), expected_reconciliation_revision=0),
+        )
+        assert stale_cas.status_code == 409, stale_cas.text
+        assert stale_cas.json()["detail"]["code"] == ("outage_reconciliation_revision_conflict")
+
+        successor = counter.put(
+            outage_path,
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": current["revision"],
+                "reference": current["reference"],
+                "kind": current["kind"],
+                "started_at": current["started_at"],
+                "ended_at": current["ended_at"],
+                "notes": "Supervisor rechecked the original outage interval.",
+                "amendment_reason": "Corrected the outage note from the signed log.",
+            },
+        )
+        assert successor.status_code == 200, successor.text
+        after_outage_successor = counter.get(outage_path).json()["record"]
+        assert after_outage_successor["revision"] == current["revision"] + 1
+        assert after_outage_successor["reconciled"] is False
+        assert after_outage_successor["reconciliation_history"][0]["valid"] is False
+
+        reapproved = supervisor.post(
+            approve_path,
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": after_outage_successor["revision"],
+                "expected_reconciliation_revision": 1,
+                "paper_revisions": [{"paper_id": paper_row["id"], "revision": 1}],
+                "password": READY_PASSWORD,
+                "reason": "Supervisor reviewed the revised outage history and same paper receipt.",
+            },
+        )
+        assert reapproved.status_code == 200, reapproved.text
+        assert reapproved.json()["record"]["reconciliation"]["revision"] == 2
+        assert reapproved.json()["record"]["reconciled"] is True
+
+        second_paper = counter.post(
+            outage_path + "/paper-records",
+            json={
+                "request_id": str(uuid4()),
+                "expected_outage_revision": after_outage_successor["revision"],
+                "paper_reference": "N1-PAPER-SECOND-" + uuid4().hex[:10],
+                "workflow": "count",
+                "action": "submit",
+                "original_event_at": "2026-11-15T23:36:00+08:00",
+                "target": {
+                    "scope_id": setup["scope"]["id"],
+                    "round_id": count_round["id"],
+                },
+                "notes": "A second current paper return is awaiting entry.",
+            },
+        )
+        assert second_paper.status_code == 201, second_paper.text
+        after_paper_successor = counter.get(outage_path).json()["record"]
+        assert len(after_paper_successor["paper_records"]) == 2
+        assert after_paper_successor["paper_records"][1]["status"] == "pending"
+        assert after_paper_successor["reconciled"] is False
+        assert after_paper_successor["reconciliation_history"][0]["revision"] == 2
+        assert after_paper_successor["reconciliation_history"][0]["valid"] is False
