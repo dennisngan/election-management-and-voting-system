@@ -48,6 +48,7 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
                 "password": READY_PASSWORD,
                 "station_id": setup["stations"]["N1"]["id"],
                 "locale": "en",
+                "transferred_box_id": setup["boxes"]["transferred_n2"]["id"],
                 "reason": "Supervisor records the explicitly chosen tied candidate.",
             },
             """
@@ -59,11 +60,21 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
             record = state['result']
             assert record['complete'] is True
             assert record['provisional'] is True
+            assert control('constituencyResultsCompleteValue').property('text') == (
+                controller.texts['constituency_results_yes']
+            )
+            assert control('constituencyResultsProvisionalValue').property('text') == (
+                controller.texts['constituency_results_yes']
+            )
             assert [row['quantity'] for row in record['candidate_totals']] == [0, 0]
             assert record['tie_candidate_ids'] == [
                 row['candidate_id'] for row in record['candidate_totals']
             ]
             assert state['selected_candidate_id'] == 0
+            received_box = control(
+                'constituencyResultBox_' + str(setup['transferred_box_id'])
+            )
+            assert controller.texts['box_received_status'] in received_box.property('text')
 
             choose('constituencyResultTieCandidate', 1)
             candidate_id = record['tie_candidate_ids'][1]
@@ -123,6 +134,7 @@ def test_supervisor_result_page_keeps_missing_contributions_null_and_unresolvabl
                 "password": READY_PASSWORD,
                 "station_id": setup["stations"]["N1"]["id"],
                 "locale": "en",
+                "transferred_box_id": setup["boxes"]["transferred_n2"]["id"],
             },
             """
             results = controller.property('constituencyResults')
@@ -133,6 +145,12 @@ def test_supervisor_result_page_keeps_missing_contributions_null_and_unresolvabl
             record = state['result']
             assert record['complete'] is False
             assert record['provisional'] is True
+            assert control('constituencyResultsCompleteValue').property('text') == (
+                controller.texts['constituency_results_no']
+            )
+            assert control('constituencyResultsProvisionalValue').property('text') == (
+                controller.texts['constituency_results_yes']
+            )
             assert any(row['code'] == 'selected_count_missing' for row in record['pending'])
             assert all(row['quantity'] is None for row in record['candidate_totals'])
             for row in record['candidate_totals']:
