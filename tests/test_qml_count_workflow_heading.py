@@ -20,14 +20,16 @@ def database_url() -> Iterator[str]:
 
 
 @pytest.mark.parametrize(
-    ("locale", "approval_title", "selection_title"),
+    ("locale", "approval_title", "selection_title", "cancel_caption", "confirm_caption"),
     [
-        ("tc", "輸入主管密碼以核准點票", "輸入主管密碼以選定結果"),
-        ("sc", "输入主管密码以批准点票", "输入主管密码以选定结果"),
+        ("tc", "輸入主管密碼以核准點票", "輸入主管密碼以選定結果", "取消", "確認"),
+        ("sc", "输入主管密码以批准点票", "输入主管密码以选定结果", "取消", "确认"),
         (
             "en",
             "Enter Supervisor password to approve this count",
             "Enter Supervisor password to select this result",
+            "Cancel",
+            "Confirm",
         ),
     ],
 )
@@ -38,6 +40,8 @@ def test_workflow_dialog_headers_are_complete_in_all_locales_and_confirm_exact_r
     locale: str,
     approval_title: str,
     selection_title: str,
+    cancel_caption: str,
+    confirm_caption: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         https_server.clock.value = setup["clock"].value
@@ -55,8 +59,7 @@ def test_workflow_dialog_headers_are_complete_in_all_locales_and_confirm_exact_r
             "event_at": "2026-11-15T23:20:17.654321+08:00",
             "determination_started_at": None,
             "accepted_votes": [
-                {"candidate_id": row["id"], "quantity": 0}
-                for row in options["candidates"]
+                {"candidate_id": row["id"], "quantity": 0} for row in options["candidates"]
             ],
             "rejected_papers": [
                 {
@@ -91,6 +94,8 @@ def test_workflow_dialog_headers_are_complete_in_all_locales_and_confirm_exact_r
                 "locale": locale,
                 "approval_title": approval_title,
                 "selection_title": selection_title,
+                "cancel_caption": cancel_caption,
+                "confirm_caption": confirm_caption,
                 "ready_password": READY_PASSWORD,
             },
             """
@@ -111,6 +116,8 @@ def test_workflow_dialog_headers_are_complete_in_all_locales_and_confirm_exact_r
             assert header is not None
             assert header.property('text') == setup['approval_title']
             assert header.property('truncated') is False
+            assert control('countWorkflowCancel').property('text') == setup['cancel_caption']
+            assert control('countWorkflowConfirm').property('text') == setup['confirm_caption']
             assert control('countWorkflowConfirm').property('enabled') is False
             enter('countWorkflowPassword', setup['ready_password'])
             assert control('countWorkflowConfirm').property('enabled') is True
@@ -128,6 +135,8 @@ def test_workflow_dialog_headers_are_complete_in_all_locales_and_confirm_exact_r
             header = dialog.property('header')
             assert header.property('text') == setup['selection_title']
             assert header.property('truncated') is False
+            assert control('countWorkflowCancel').property('text') == setup['cancel_caption']
+            assert control('countWorkflowConfirm').property('text') == setup['confirm_caption']
             assert control('countWorkflowConfirm').property('enabled') is False
             enter('countWorkflowPassword', setup['ready_password'])
             click('countWorkflowCancel')

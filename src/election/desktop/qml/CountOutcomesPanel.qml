@@ -601,12 +601,12 @@ ColumnLayout {
         footer: DialogButtonBox {
             Button {
                 objectName: "countWorkflowCancel"
-                text: panel.t("cancel")
+                text: panel.t("f2_dialog_cancel")
                 DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
             }
             Button {
                 objectName: "countWorkflowConfirm"
-                text: panel.t("confirm")
+                text: panel.t("f2_dialog_confirm")
                 enabled: workflowPassword.text.length > 0
                 DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
             }

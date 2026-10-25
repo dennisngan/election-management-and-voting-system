@@ -320,6 +320,8 @@ _LABELS: dict[str, tuple[str, str, str]] = {
     "count_form_f4": ("F4 最終點票總覽", "F4 最终点票总览", "F4 final count"),
     "count_form_count": ("完整點票記錄", "完整点票记录", "Complete count record"),
     "count_preview": ("預覽所選點票表格", "预览所选点票表格", "Preview selected count form"),
+    "f2_dialog_cancel": ("取消", "取消", "Cancel"),
+    "f2_dialog_confirm": ("確認", "确认", "Confirm"),
 }
 
 COUNT_OUTCOME_TRANSLATIONS: dict[str, dict[str, str]] = {
