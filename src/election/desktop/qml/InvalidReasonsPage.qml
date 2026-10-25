@@ -18,6 +18,7 @@ ColumnLayout {
         && editorState.election.status !== "finalized"
     property string pendingAction: "reload"
     property int pendingId: 0
+    property var stageRows: []
     property var electionRows: []
     property var reasonRows: []
     property var historyRows: []
@@ -37,6 +38,10 @@ ColumnLayout {
     }
     function syncPickerModels() {
         var state = catalog.state
+        var stages = [
+            {id: 0, label: page.t("invalid_reason_f1")},
+            {id: 1, label: page.t("invalid_reason_f2")}
+        ]
         var elections = state.elections || []
         var reasons = state.items || []
         var history = (state.history || []).map(function(row) {
@@ -46,6 +51,8 @@ ColumnLayout {
         if (!electionPicker.popup.visible
                 && JSON.stringify(electionRows) !== JSON.stringify(elections))
             electionRows = JSON.parse(JSON.stringify(elections))
+        if (!stagePicker.popup.visible && JSON.stringify(stageRows) !== JSON.stringify(stages))
+            stageRows = stages
         if (!reasonPicker.popup.visible
                 && JSON.stringify(reasonRows) !== JSON.stringify(reasons))
             reasonRows = JSON.parse(JSON.stringify(reasons))
@@ -55,6 +62,7 @@ ColumnLayout {
     }
     function choose(action, id) {
         var accepted = action === "election" ? catalog.selectElection(id, false)
+            : action === "stage" ? catalog.selectStage(id === 0 ? "f1" : "f2", false)
             : action === "reason" ? catalog.loadReason(id, false) : catalog.reload(false)
         if (!accepted && editorState.dirty) {
             pendingAction = action
@@ -222,6 +230,24 @@ ColumnLayout {
             }
             FormCaption {
                 visible: !!page.editorState.election_id
+                text: page.t("invalid_reason_stage")
+            }
+            Picker {
+                id: stagePicker
+                objectName: "invalidReasonStage"
+                visible: !!page.editorState.election_id
+                model: page.stageRows
+                textRole: "label"
+                currentIndex: page.editorState.stage === "f2" ? 1 : 0
+                displayText: page.t(page.editorState.stage === "f2"
+                    ? "invalid_reason_f2" : "invalid_reason_f1")
+                Accessible.name: page.t("invalid_reason_stage")
+                onActivated: index => {
+                    if (index >= 0) page.choose("stage", model[index].id)
+                }
+            }
+            FormCaption {
+                visible: !!page.editorState.election_id
                 text: page.t(page.editorState.election.status || "draft")
             }
             FormCaption { text: page.t("invalid_reason_select") }
@@ -328,7 +354,8 @@ ColumnLayout {
             }
             FormCaption {
                 visible: page.editorState.editing
-                text: page.t("invalid_reason_stage") + ": " + page.t("invalid_reason_f1")
+                text: page.t("invalid_reason_stage") + ": "
+                    + page.t(page.editorState.stage === "f2" ? "invalid_reason_f2" : "invalid_reason_f1")
             }
             Input {
                 field: "label_tc"; caption: page.t("invalid_reason_label_tc")
@@ -426,6 +453,8 @@ ColumnLayout {
         onConfirmed: {
             if (page.pendingAction === "election")
                 page.catalog.selectElection(page.pendingId, true)
+            else if (page.pendingAction === "stage")
+                page.catalog.selectStage(page.pendingId === 0 ? "f1" : "f2", true)
             else if (page.pendingAction === "reason")
                 page.catalog.loadReason(page.pendingId, true)
             else

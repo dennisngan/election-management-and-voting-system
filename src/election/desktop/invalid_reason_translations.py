@@ -1,15 +1,16 @@
-"""F1 invalid-ballot reason catalogue labels in supported desktop languages."""
+"""Stage-specific invalid-ballot reason catalogue labels in desktop languages."""
 
 INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
         "invalid_reasons_title": "無效選票原因",
-        "invalid_reasons_hint": "管理 F1 初步點票使用的無效選票原因及顯示文字。",
+        "invalid_reasons_hint": "管理 F1 初步點票及 F2 判定使用的無效選票原因及顯示文字。",
         "invalid_reason_select": "選擇原因",
         "invalid_reason_new": "新增項目原因",
         "invalid_reason_save": "儲存原因版本",
         "invalid_reason_code": "項目代號",
         "invalid_reason_stage": "適用點票階段",
         "invalid_reason_f1": "F1 初步點票",
+        "invalid_reason_f2": "F2 無效選票判定",
         "invalid_reason_label_tc": "繁體中文顯示文字",
         "invalid_reason_label_sc": "簡體中文顯示文字",
         "invalid_reason_label_en": "英文顯示文字",
@@ -50,13 +51,14 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "sc": {
         "invalid_reasons_title": "无效选票原因",
-        "invalid_reasons_hint": "管理 F1 初步点票使用的无效选票原因及显示文字。",
+        "invalid_reasons_hint": "管理 F1 初步点票及 F2 判定使用的无效选票原因及显示文字。",
         "invalid_reason_select": "选择原因",
         "invalid_reason_new": "新增项目原因",
         "invalid_reason_save": "保存原因版本",
         "invalid_reason_code": "项目代号",
         "invalid_reason_stage": "适用点票阶段",
         "invalid_reason_f1": "F1 初步点票",
+        "invalid_reason_f2": "F2 无效选票判定",
         "invalid_reason_label_tc": "繁体中文显示文字",
         "invalid_reason_label_sc": "简体中文显示文字",
         "invalid_reason_label_en": "英文显示文字",
@@ -98,7 +100,8 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
         "invalid_reasons_title": "Invalid ballot reasons",
         "invalid_reasons_hint": (
-            "Manage invalid-paper reasons and display wording used during the F1 initial tally."
+            "Manage invalid-paper reasons and display wording used during the F1 initial tally "
+            "and F2 invalid-paper determination."
         ),
         "invalid_reason_select": "Select a reason",
         "invalid_reason_new": "New project reason",
@@ -106,6 +109,7 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
         "invalid_reason_code": "Project code",
         "invalid_reason_stage": "Counting stage",
         "invalid_reason_f1": "F1 initial tally",
+        "invalid_reason_f2": "F2 invalid-paper determination",
         "invalid_reason_label_tc": "Traditional Chinese display label",
         "invalid_reason_label_sc": "Simplified Chinese display label",
         "invalid_reason_label_en": "English display label",

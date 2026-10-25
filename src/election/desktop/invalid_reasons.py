@@ -1,4 +1,4 @@
-"""Administrator editor for the revisioned F1 invalid-reason catalogue."""
+"""Administrator editor for the revisioned F1 and F2 invalid-reason catalogues."""
 
 import json
 from collections.abc import Callable
@@ -23,7 +23,7 @@ def empty_form() -> dict[str, Any]:
 
 
 class InvalidReasonsController(QObject):
-    """Edit F1 reason labels while preserving verified source provenance."""
+    """Edit stage-specific reason labels while preserving verified provenance."""
 
     stateChanged = Signal()
 
@@ -50,6 +50,7 @@ class InvalidReasonsController(QObject):
             "elections": [],
             "election_id": 0,
             "election": {},
+            "stage": "f1",
             "items": [],
             "selected": {},
             "history": [],
@@ -105,6 +106,9 @@ class InvalidReasonsController(QObject):
     def _path(self) -> str:
         return f"/api/elections/{self._state['election_id']}/invalid-ballot-reasons"
 
+    def _catalog_path(self) -> str:
+        return f"{self._path()}?stage={self._state['stage']}"
+
     def _valid_row(self, row: Any) -> bool:
         return bool(
             isinstance(row, dict)
@@ -113,7 +117,7 @@ class InvalidReasonsController(QObject):
             and row["id"] > 0
             and type(row.get("revision")) is int
             and row["revision"] > 0
-            and row.get("stage") == "f1"
+            and row.get("stage") == self._state["stage"]
             and all(
                 isinstance(row.get(key), str)
                 for key in ("code", "label_tc", "label_sc", "label_en", "source_english")
@@ -254,7 +258,7 @@ class InvalidReasonsController(QObject):
                     self._error("configuration_not_found")
                     return
                 self._state["election"] = deepcopy(current)
-                self._send(self._path(), "GET", None, self._accept_catalog, background=True)
+                self._send(self._catalog_path(), "GET", None, self._accept_catalog, background=True)
 
         self._send("/api/elections", "GET", None, elections, background=True)
 
@@ -286,7 +290,30 @@ class InvalidReasonsController(QObject):
             dirty=False,
             newer_revision=False,
         )
-        self._send(self._path(), "GET", None, self._accept_catalog)
+        self._send(self._catalog_path(), "GET", None, self._accept_catalog)
+        return True
+
+    @Slot(str, bool, result=bool)
+    def selectStage(self, stage: str, discard: bool) -> bool:
+        if (
+            stage not in ("f1", "f2")
+            or stage == self._state["stage"]
+            or not self._state["election_id"]
+            or not self._can_load(discard)
+        ):
+            return False
+        self._state.update(
+            stage=stage,
+            items=[],
+            selected={},
+            history=[],
+            historical=False,
+            form=empty_form(),
+            editing=False,
+            dirty=False,
+            newer_revision=False,
+        )
+        self._send(self._catalog_path(), "GET", None, self._accept_catalog)
         return True
 
     @Slot(int, bool, result=bool)
@@ -356,7 +383,7 @@ class InvalidReasonsController(QObject):
                     dirty=False, newer_revision=False,
                 )
 
-        self._send(self._path(), "GET", None, loaded)
+        self._send(self._catalog_path(), "GET", None, loaded)
         return True
 
     def _editable(self) -> bool:
@@ -437,7 +464,7 @@ class InvalidReasonsController(QObject):
             path += f"/{selected['id']}"
             method = "PUT"
         else:
-            payload["stage"] = "f1"
+            payload["stage"] = self._state["stage"]
         signature = json.dumps([path, method, payload], sort_keys=True, ensure_ascii=False)
         if self._pending is None or self._pending[0] != signature:
             self._pending = (signature, str(uuid4()))
@@ -473,7 +500,7 @@ class InvalidReasonsController(QObject):
                     background=True,
                 )
 
-            self._send(self._path(), "GET", None, reviewed)
+            self._send(self._catalog_path(), "GET", None, reviewed)
 
         self._send(path, method, payload, saved)
 

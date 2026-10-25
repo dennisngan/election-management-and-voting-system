@@ -20,7 +20,12 @@ def _quantity_json(value: Any, *, encode: bool, key: str = "") -> Any:
     if key == "quantity" or key.endswith("_quantity"):
         if encode and type(value) is int:
             return str(value)
-        if not encode and isinstance(value, str) and value.isascii() and value.isdecimal():
+        if (
+            not encode
+            and isinstance(value, str)
+            and value.isascii()
+            and value.removeprefix("-").isdecimal()
+        ):
             return int(value)
     # Legacy numeric integers stay exact. A previously rounded float cannot be
     # reconstructed, so never turn it into an invented integer.

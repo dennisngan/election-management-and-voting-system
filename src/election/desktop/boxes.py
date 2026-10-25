@@ -9,6 +9,7 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
+from election.desktop.event_times import format_event_time
 from election.desktop.lifecycle import HKT, TIME_FORMAT
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
@@ -76,6 +77,7 @@ class BoxesController(QObject):
             "milestone_history": [],
             "counting_applicable": False,
             "count_completion": None,
+            "count_events": [],
             "selected": {},
             "history": [],
             "selected_milestone": {},
@@ -180,6 +182,49 @@ class BoxesController(QObject):
             and isinstance(row.get("entered_at"), str)
         )
 
+    def _count_event(self, row: Any) -> bool:
+        return bool(
+            isinstance(row, dict)
+            and isinstance(row.get("event_id"), str)
+            and row["event_id"]
+            and row.get("kind") in ("determination_start", "count_completion")
+            and type(row.get("station_id")) is int
+            and row.get("station_id") == self._state["station_id"]
+            and all(
+                type(row.get(key)) is int and row[key] > 0
+                for key in (
+                    "scope_id",
+                    "scope_revision",
+                    "round_id",
+                    "round_number",
+                    "round_revision",
+                    "round_revision_id",
+                    "current_round_revision",
+                    "current_round_revision_id",
+                    "actor_id",
+                )
+            )
+            and isinstance(row.get("scope_reference"), str)
+            and row["scope_reference"].strip()
+            and isinstance(row.get("event_at"), str)
+            and isinstance(row.get("entered_at"), str)
+            and format_event_time(row["event_at"]) != "—"
+            and format_event_time(row["entered_at"]) != "—"
+            and isinstance(row.get("amendment_reason"), str)
+            and row.get("status") in ("draft", "submitted", "approved")
+            and all(
+                type(row.get(key)) is bool
+                for key in ("is_current", "source_current", "approval_valid", "selected")
+            )
+            and (
+                "selection_revision" in row
+                and (
+                    row["selection_revision"] is None
+                    or (type(row["selection_revision"]) is int and row["selection_revision"] > 0)
+                )
+            )
+        )
+
     def _dirty(self) -> None:
         self._state["dirty"] = self._box_dirty or self._milestone_dirty
 
@@ -233,6 +278,9 @@ class BoxesController(QObject):
             and all(self._milestone(row) for row in data["milestone_history"])
             and type(data.get("counting_applicable")) is bool
             and data.get("count_completion") is None
+            and isinstance(data.get("count_events"), list)
+            and all(self._count_event(row) for row in data["count_events"])
+            and len({row["event_id"] for row in data["count_events"]}) == len(data["count_events"])
         ):
             self._error("request_failed")
             return False
@@ -243,6 +291,7 @@ class BoxesController(QObject):
             milestone_history=deepcopy(data["milestone_history"]),
             counting_applicable=data["counting_applicable"],
             count_completion=None,
+            count_events=deepcopy(data["count_events"]),
         )
         if accept:
             selected_id = self._state["selected"].get("id")
@@ -606,6 +655,10 @@ class BoxesController(QObject):
             return parsed.astimezone(HKT).strftime(TIME_FORMAT) + " HKT" if parsed.tzinfo else "—"
         except ValueError, OverflowError:
             return "—"
+
+    @Slot(str, result=str)
+    def formatEventTime(self, value: str) -> str:
+        return format_event_time(value)
 
     def _report_path(self, locale: str, extension: str = "") -> str | None:
         if self._state["busy"]:

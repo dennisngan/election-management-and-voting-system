@@ -14,7 +14,7 @@ from election.server.stock_snapshot_models import SnapshotQuantityJSON
 class InvalidBallotReason(Base):
     __tablename__ = "invalid_ballot_reasons"
     __table_args__ = (
-        UniqueConstraint("election_id", "code", name="uq_invalid_reason_code"),
+        UniqueConstraint("election_id", "stage", "code", name="uq_invalid_reason_stage_code"),
         CheckConstraint("stage IN ('f1', 'f2')", name="ck_invalid_reason_stage"),
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )

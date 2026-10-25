@@ -19,6 +19,8 @@ ColumnLayout {
     readonly property bool writer: editorState.role === "counting_officer"
     readonly property bool editable: writer && !working && !editorState.historical
         && !editorState.newer_revision && !!scope.count_ready
+        && (!selected.id || selected.status === "draft")
+        && editorState.dirty_stage !== "f2"
         && (!selected.id || !!selected.source_current)
         && editorState.context.election && editorState.context.election.status === "active"
     property var candidateRows: []
@@ -28,6 +30,7 @@ ColumnLayout {
     property var scopeOptions: []
     property var roundOptions: []
     property var historyOptions: []
+    property var reportOptions: []
     property string selectorKey: ""
     property string pendingFormat: "pdf"
     property string pendingLocale: "tc"
@@ -58,6 +61,11 @@ ColumnLayout {
         return -1
     }
     function syncRows() {
+        var forms = ["f1", "f2", "f3", "f4", "count"].map(function(form) {
+            return {form: form, label: page.t("count_form_" + form)}
+        })
+        if (!reportFormPicker.popup.visible && JSON.stringify(reportOptions) !== JSON.stringify(forms))
+            reportOptions = forms
         var candidates = (editorState.candidate_inputs || []).map(function(row) {
             return {candidate_id: row.candidate_id, name: row.name, ballot_number: row.ballot_number}
         })
@@ -94,8 +102,10 @@ ColumnLayout {
         pendingFormat = format; pendingLocale = locale
         exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
         exportDialog.defaultSuffix = format
-        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/f1-round-"
-            + selected.id + "-revision-" + selected.revision + "-" + locale + "." + format
+        // Native currentFolder can be an absolute path URL without a file scheme.
+        // Resolve it before passing the next suggested filename to the native panel.
+        exportDialog.selectedFile = Qt.resolvedUrl(exportDialog.currentFolder.toString() + "/" + (editorState.report_form || "f1") + "-round-"
+            + selected.id + "-revision-" + selected.revision + "-" + locale + "." + format)
         exportDialog.open()
     }
     function moveFocus(field, forward) {
@@ -415,7 +425,12 @@ ColumnLayout {
                     objectName: "f1Save"; text: page.t("f1_save"); visible: page.writer
                     enabled: page.editable || (page.writer && !page.working && !!page.editorState.uncertain_save)
                     working: page.working
-                    onClicked: page.countingRounds.save()
+                    onClicked: {
+                        if (page.selected.f2 && page.selected.status === "draft")
+                            discardF2Dialog.open()
+                        else
+                            page.countingRounds.save()
+                    }
                 }
             }
         }
@@ -493,18 +508,37 @@ ColumnLayout {
             }
         }
     }
+    CountOutcomesPanel {
+        countingRounds: page.countingRounds
+        words: page.words
+        locale: page.locale
+        onReveal: control => page.reveal(control)
+    }
     FormPanel {
         visible: !!page.selected.id
         implicitHeight: reports.implicitHeight + 40
         ColumnLayout {
             id: reports
             anchors.fill: parent; anchors.margins: 20; spacing: 14
-            Heading { text: page.t("f1_report") }
+            Heading { text: page.t(page.editorState.report_form === "f1" ? "f1_report" : "count_reports") }
+            FormCaption { text: page.t("count_report_form") }
+            Picker {
+                id: reportFormPicker
+                objectName: "countReportForm"
+                model: page.reportOptions
+                currentIndex: page.indexFor(page.reportOptions, "form", page.editorState.report_form)
+                displayText: page.t("count_form_" + (page.editorState.report_form || "f1"))
+                Accessible.name: page.t("count_report_form")
+                enabled: !page.working && !page.editorState.dirty
+                onActivated: index => {
+                    if (index >= 0) page.countingRounds.selectReportForm(model[index].form)
+                }
+            }
             GridLayout {
                 Layout.fillWidth: true; columns: page.width > 800 ? 3 : 1
                 columnSpacing: 12; rowSpacing: 12
                 Action {
-                    objectName: "f1Preview"; text: page.t("f1_preview")
+                    objectName: "f1Preview"; text: page.t(page.editorState.report_form === "f1" ? "f1_preview" : "count_preview")
                     enabled: !page.working && !page.editorState.dirty
                     onClicked: page.countingRounds.preview(page.locale)
                 }
@@ -535,8 +569,18 @@ ColumnLayout {
         acceptLabel: page.t("discard_changes"); rejectLabel: page.t("keep_editing")
         onConfirmed: page.countingRounds.discardAndReload()
     }
+    ConfirmationDialog {
+        id: discardF2Dialog
+        objectName: "f1DiscardF2Dialog"
+        focus: true
+        message: page.t("f1_discard_f2_title") + "\n" + page.t("f1_discard_f2_message")
+        acceptLabel: page.t("f1_discard_f2_confirm")
+        rejectLabel: page.t("keep_editing")
+        onConfirmed: page.countingRounds.saveDiscardingF2()
+    }
     FileDialog {
         id: exportDialog
+        objectName: "countReportExportDialog"
         fileMode: FileDialog.SaveFile
         currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
         onAccepted: page.countingRounds.exportStatement(

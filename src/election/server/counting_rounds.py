@@ -15,8 +15,14 @@ from sqlalchemy.orm import Session
 
 from election.server.boxes import utc_time
 from election.server.configuration_models import Candidate
-from election.server.counting_round_models import CountRound, CountRoundRequest, CountRoundRevision
+from election.server.counting_round_models import (
+    CountRound,
+    CountRoundRequest,
+    CountRoundRevision,
+    CountRoundSelection,
+)
 from election.server.counting_scopes import scope_at, scope_options
+from election.server.counting_totals import physical_approval_blockers, physical_comparisons
 from election.server.invalid_ballot_reasons import invalid_reason_rows
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
@@ -52,6 +58,7 @@ class F1Draft(BaseModel):
     actual_counted_quantity: Quantity | None = None
     notes: str = Field(default="", max_length=2000)
     amendment_reason: str = Field(default="", max_length=2000)
+    discard_f2: bool = Field(default=False, strict=True)
 
     @field_validator("event_at")
     @classmethod
@@ -115,7 +122,7 @@ def round_context(
             .execution_options(populate_existing=True)
         )
     )
-    return {
+    result: dict[str, Any] = {
         "context": options["context"],
         "scope": scope,
         "candidates": [
@@ -136,7 +143,15 @@ def round_context(
             )
             if row["stage"] == "f1" and row["enabled"]
         ],
+        "selection": None,
+        "f2_invalid_reasons": [
+            row
+            for row in invalid_reason_rows(db, options["context"]["election"]["id"])
+            if row["stage"] == "f2" and row["enabled"]
+        ],
     }
+    result.update(selection_context(db, scope_id, result))
+    return result
 
 
 def round_view(
@@ -161,6 +176,9 @@ def round_view(
     blockers = list(row.data["blockers"])
     if not source_current:
         blockers.append({"code": "count_round_basis_stale"})
+    approval_blockers = [*blockers, *physical_approval_blockers(row.data)]
+    if not row.data.get("count_inputs_complete"):
+        approval_blockers.append({"code": "count_inputs_incomplete"})
     return {
         **row.data,
         "id": round.id,
@@ -177,7 +195,71 @@ def round_view(
         "is_current": bool(head and head.id == row.id),
         "source_current": source_current,
         "blockers": blockers,
+        "f2": row.data.get("f2"),
+        "f2_complete": row.data.get("f2_complete", False),
+        "count_inputs_complete": row.data.get("count_inputs_complete", False),
+        "count_complete": row.data.get("completed_at") is not None,
+        "physical_comparisons": row.data.get(
+            "physical_comparisons", physical_comparisons(row.data)
+        ),
+        "completed_at": row.data.get("completed_at"),
+        "approval_blockers": approval_blockers,
+        "approval_valid": bool(
+            row.status == "approved" and head and head.id == row.id and not approval_blockers
+        ),
+        "selected": bool(
+            options.get("selection")
+            and options["selection"]["valid"]
+            and options["selection"]["round_revision_id"] == row.id
+        ),
+        "selection": options.get("selection"),
+        "selection_history": options.get("selection_history", []),
+        "revision_event_at": as_utc(row.event_at),
+        "revision_entered_at": as_utc(row.entered_at),
+        "revision_actor_id": row.actor_id,
+        "revision_notes": row.notes,
+        "revision_amendment_reason": row.amendment_reason,
+        **row.data.get("f1_metadata", {}),
     }
+
+
+def selection_context(db: Session, scope_id: int, options: dict[str, Any]) -> dict[str, Any]:
+    rows = list(
+        db.scalars(
+            select(CountRoundSelection)
+            .where(CountRoundSelection.scope_id == scope_id)
+            .order_by(CountRoundSelection.revision.desc())
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
+    history = []
+    for index, pointer in enumerate(rows):
+        target = db.scalar(
+            select(CountRoundRevision)
+            .where(CountRoundRevision.id == pointer.round_revision_id)
+            .with_for_update()
+        )
+        assert target is not None
+        round = round_at(db, scope_id, target.round_id)
+        target_view = round_view(db, round, target, {**options, "selection": None})
+        history.append(
+            {
+                "id": pointer.id,
+                "revision": pointer.revision,
+                "scope_id": scope_id,
+                "round_id": round.id,
+                "round_number": round.round_number,
+                "round_revision": target.revision,
+                "round_revision_id": target.id,
+                "scope_revision": target.data["scope_revision"],
+                "selected_at": as_utc(pointer.selected_at),
+                "actor_id": pointer.actor_id,
+                "is_current": index == 0,
+                "valid": bool(index == 0 and target_view["approval_valid"]),
+            }
+        )
+    return {"selection": history[0] if history else None, "selection_history": history}
 
 
 def f1_basis(options: dict[str, Any], data: F1Draft) -> dict[str, Any]:
@@ -375,6 +457,12 @@ def counting_rounds_router(
         db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
         turnout_scope(db, actor, station_id, writable=True)
         options = round_context(db, actor, station_id, scope_id)
+        digest_data = data.model_dump(
+            mode="json",
+            exclude={"request_id", "discard_f2"},
+        )
+        if data.discard_f2:
+            digest_data["discard_f2"] = True
         digest = hashlib.sha256(
             json.dumps(
                 {
@@ -382,7 +470,7 @@ def counting_rounds_router(
                     "scope_id": scope_id,
                     "round_id": round_id,
                     "actor_id": actor.id,
-                    "data": data.model_dump(mode="json", exclude={"request_id"}),
+                    "data": digest_data,
                 },
                 sort_keys=True,
                 ensure_ascii=False,
@@ -411,6 +499,10 @@ def counting_rounds_router(
             raise HTTPException(409, detail={"code": "revision_conflict"})
         if current and current.data["scope_revision"] != data.scope_revision:
             raise HTTPException(409, detail={"code": "count_round_basis_stale"})
+        if current and current.status != "draft":
+            raise HTTPException(409, detail={"code": "count_round_read_only"})
+        if current and current.data.get("f2") is not None and not data.discard_f2:
+            raise HTTPException(409, detail={"code": "f2_discard_required"})
         event_at, now = data.event_at.replace(tzinfo=None), timestamp()
         if event_at > now:
             raise HTTPException(422, detail={"code": "event_time_in_future"})
