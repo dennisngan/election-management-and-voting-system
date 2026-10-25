@@ -28,7 +28,7 @@ ApplicationWindow {
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
     readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "specialPapers", "counterReturns", "turnout", "fallback", "complaints",
-        "complaintPeriods", "queue", "boxes", "accounting", "countingScopes"].indexOf(currentPage) >= 0
+        "complaintPeriods", "queue", "boxes", "accounting", "countingScopes", "countingRounds"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
     onCurrentPageChanged: Qt.callLater(function() { if (scroll.contentItem) scroll.contentItem.contentY = 0 })
@@ -603,6 +603,26 @@ ApplicationWindow {
                         controller.countingScopes.open()
                     }
                 }
+                Button {
+                    id: countingRoundsNavigation
+                    objectName: "countingRoundsNavigation"
+                    text: window.t("f1_title"); Layout.fillWidth: true; flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "countingRounds"
+                    Material.background: window.currentPage === "countingRounds" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: countingRoundsNavigation.text; textFormat: Text.PlainText
+                        font: countingRoundsNavigation.font; color: window.ink; wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "countingRounds"
+                        controller.workspace.open()
+                        controller.countingRounds.open()
+                    }
+                }
                 Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
                 Item { Layout.fillHeight: true }
                 Caption { text: window.t("role") + " · " + window.t(window.state.account.role || ""); Layout.fillWidth: true }
@@ -949,6 +969,14 @@ ApplicationWindow {
                         visible: window.currentPage === "accounting"
                         Layout.fillWidth: true
                         accounting: controller.accounting
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    CountingRoundsPage {
+                        visible: window.currentPage === "countingRounds"
+                        Layout.fillWidth: true
+                        countingRounds: controller.countingRounds
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)
