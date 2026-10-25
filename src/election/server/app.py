@@ -17,6 +17,7 @@ from election.server.accounting import accounting_router
 from election.server.accounting_reports import accounting_reports_router
 from election.server.allocation_reports import allocation_reports_router
 from election.server.allocations import allocation_router
+from election.server.backups import backups_router
 from election.server.box_reports import box_reports_router
 from election.server.boxes import box_router
 from election.server.complaint_categories import complaint_categories_router
@@ -144,6 +145,7 @@ def create_app(
         return account
 
     app.include_router(configuration_router(database, administrator, timestamp))
+    app.include_router(backups_router(database, administrator, timestamp, engine))
     app.include_router(
         complaint_categories_router(database, administrator, ready_account, timestamp)
     )

@@ -101,7 +101,7 @@ def _client_options(url: URL, *, container: str | None) -> tuple[str, int, bytes
     elif set(query) - {"connect_timeout"}:
         _fail("unsupported_container_database_option")
     elif "connect_timeout" in query:
-        options["connect-timeout"] = str(query["connect_timeout"])
+        options["connect-timeout"] = str(query.pop("connect_timeout"))
     if query:
         _fail("unsupported_database_option")
     if "ssl-mode" in options and options["ssl-mode"] not in {
