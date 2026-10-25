@@ -81,8 +81,9 @@ def test_committed_count_receipt_is_recovered_after_desktop_restart(
             wait_for(qt_app, lambda: recovered_client.property("state")["phase"] == "workspace")
             workspace = recovered_client.property("workspace")
             wait_for_editor_idle(qt_app, workspace)
-            assert workspace.selectStation(station_id) is True
+            workspace.selectStation(station_id)
             wait_for_editor_idle(qt_app, workspace)
+            assert workspace.property("state")["selected"]["station"]["id"] == station_id
 
             recovery = recovered_client.property("recovery")
             assert recovery is not None, "Fresh desktop session has no recovery controller"
