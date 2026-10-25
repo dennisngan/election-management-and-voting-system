@@ -197,6 +197,21 @@ def test_backup_manifest_restores_public_count_state_and_known_request_once(
             assert source_reader.status_code == 201, source_reader.text
             source_reader_account = source_reader.json()
 
+            source_elections = admin.get("/api/elections")
+            assert source_elections.status_code == 200, source_elections.text
+            expected_elections = source_elections.json()["items"]
+            source_account_audit = admin.get(
+                f"/api/accounts/{setup['accounts']['receiveronly']['id']}/audit"
+            )
+            assert source_account_audit.status_code == 200, source_account_audit.text
+            expected_account_audit = source_account_audit.json()["items"]
+            assert any(row["action"] == "staff_created" for row in expected_account_audit)
+            source_count_history = counter.get(round_target)
+            assert source_count_history.status_code == 200, source_count_history.text
+            expected_count_history = source_count_history.json()
+            assert expected_count_history["record"]["approval_valid"] is True
+            assert expected_count_history["record"]["selected"] is True
+
             backup_request = {"request_id": str(uuid4())}
             requested = admin.post("/api/backups", json=backup_request)
             assert requested.status_code in (200, 201, 202), requested.text
@@ -344,8 +359,9 @@ def test_backup_manifest_restores_public_count_state_and_known_request_once(
                 restored_admin.headers["Authorization"] = "Bearer " + changed.json()["token"]
                 sentinel_list = restored_admin.get("/api/elections")
                 assert sentinel_list.status_code == 200, sentinel_list.text
+                assert sentinel_list.json()["items"] == expected_elections
                 assert all(
-                    row["id"] != sentinel.json()["id"] for row in sentinel_list.json()["items"]
+                    row["name"] != target_sentinel_name for row in sentinel_list.json()["items"]
                 )
                 assignment = restored_admin.get(
                     f"/api/accounts/{setup['accounts']['receiveronly']['id']}"
@@ -356,12 +372,9 @@ def test_backup_manifest_restores_public_count_state_and_known_request_once(
                     f"/api/accounts/{setup['accounts']['receiveronly']['id']}/audit"
                 )
                 assert audit.status_code == 200, audit.text
-                assert {row["action"] for row in audit.json()["items"]} >= {
-                    "f1_draft_saved",
-                    "count_round_submitted",
-                    "count_round_approved",
-                    "count_round_selected",
-                }
+                # Account audit is subject-account security history; operational
+                # count events are exposed by the exact public count history below.
+                assert audit.json()["items"] == expected_account_audit
 
                 with TestClient(
                     create_app(restore_database_url), base_url="https://testserver"
@@ -421,3 +434,4 @@ def test_backup_manifest_restores_public_count_state_and_known_request_once(
                     assert [
                         row["revision"] for row in current_round.json()["history"]
                     ] == [4, 3, 2, 1]
+                    assert current_round.json() == expected_count_history
