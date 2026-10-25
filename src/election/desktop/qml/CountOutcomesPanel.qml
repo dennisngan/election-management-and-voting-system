@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 ColumnLayout {
@@ -568,10 +569,9 @@ ColumnLayout {
             text: workflowDialog.title
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            padding: 16
-            font.pixelSize: 20
-            font.weight: Font.Medium
-            color: "#25344b"
+            padding: 24
+            bottomPadding: 0
+            font.pixelSize: Material.dialogTitleFontPixelSize
         }
         onOpened: workflowPassword.forceActiveFocus()
         onRejected: workflowPassword.clear()
