@@ -75,6 +75,7 @@ def test_admin_creates_backup_and_reviews_translated_server_metadata(
             "labels": labels,
         },
         """
+        import re
         for language in ('tc', 'sc', 'en'):
             controller.setLocale(language)
             frame()
