@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from election.server.app import create_app
 from tests.box_support import BoxClock, box_staff
+from tests.configuration_support import create_election
 from tests.tally_support import tally_setup
 from tests.test_counting_scopes_api import (
     clear_private_active_pointer as clear_private_active_pointer,
@@ -17,9 +18,7 @@ from tests.test_counting_scopes_api import database_url as database_url
 
 
 def initial_draft(setup: dict[str, Any], **changes: object) -> dict[str, Any]:
-    options = setup.setdefault(
-        "options", setup["counter"].get(setup["rounds_path"]).json()
-    )
+    options = setup.setdefault("options", setup["counter"].get(setup["rounds_path"]).json())
     candidate = options["candidates"][0]
     return {
         "request_id": str(uuid4()),
@@ -36,7 +35,8 @@ def initial_draft(setup: dict[str, Any], **changes: object) -> dict[str, Any]:
 
 
 def test_concurrent_initial_round_creation_is_single_effect(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         client, path = setup["counter"], setup["rounds_path"]
@@ -59,14 +59,16 @@ def test_concurrent_initial_round_creation_is_single_effect(
 
 
 def test_concurrent_initial_rounds_with_distinct_requests_reject_the_loser(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         station_id = setup["stations"]["N1"]["id"]
         path = setup["rounds_path"]
-        with box_staff(
-            admin, database_url, BoxClock(), "counting_officer", [station_id]
-        ) as (peer, _):
+        with box_staff(admin, database_url, BoxClock(), "counting_officer", [station_id]) as (
+            peer,
+            _,
+        ):
             clients = (setup["counter"], peer)
             payloads = [initial_draft(setup), initial_draft(setup)]
             barrier = Barrier(2)
@@ -87,7 +89,8 @@ def test_concurrent_initial_rounds_with_distinct_requests_reject_the_loser(
 
 
 def test_simultaneous_edits_of_same_revision_have_one_winner(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         client, path = setup["counter"], setup["rounds_path"]
@@ -95,9 +98,10 @@ def test_simultaneous_edits_of_same_revision_have_one_winner(
         assert created.status_code == 201, created.text
         round_id = created.json()["id"]
         station_id = setup["stations"]["N1"]["id"]
-        with box_staff(
-            admin, database_url, BoxClock(), "counting_officer", [station_id]
-        ) as (peer, _):
+        with box_staff(admin, database_url, BoxClock(), "counting_officer", [station_id]) as (
+            peer,
+            _,
+        ):
             clients = (client, peer)
             payloads = [
                 initial_draft(
@@ -128,13 +132,12 @@ def test_simultaneous_edits_of_same_revision_have_one_winner(
         assert conflict["detail"]["code"] == "revision_conflict"
         history = client.get(f"{path}/{round_id}").json()["history"]
         assert [row["revision"] for row in history] == [2, 1]
-        assert history[0]["notes"] in {
-            "Concurrent amendment A.", "Concurrent amendment B."
-        }
+        assert history[0]["notes"] in {"Concurrent amendment A.", "Concurrent amendment B."}
 
 
 def test_role_station_candidate_and_reason_ownership_are_enforced(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         path = setup["rounds_path"]
@@ -177,11 +180,13 @@ def test_role_station_candidate_and_reason_ownership_are_enforced(
             path,
             json=initial_draft(
                 setup,
-                invalid_papers=[{
-                    "reason_id": 2_000_000_000,
-                    "reason_revision": 1,
-                    "quantity": 0,
-                }],
+                invalid_papers=[
+                    {
+                        "reason_id": 2_000_000_000,
+                        "reason_revision": 1,
+                        "quantity": 0,
+                    }
+                ],
             ),
         )
         assert bad_reason.status_code == 422
@@ -192,11 +197,13 @@ def test_role_station_candidate_and_reason_ownership_are_enforced(
             path,
             json=initial_draft(
                 setup,
-                invalid_papers=[{
-                    "reason_id": reason["id"],
-                    "reason_revision": reason["revision"] + 1,
-                    "quantity": 0,
-                }],
+                invalid_papers=[
+                    {
+                        "reason_id": reason["id"],
+                        "reason_revision": reason["revision"] + 1,
+                        "quantity": 0,
+                    }
+                ],
             ),
         )
         assert stale_reason.status_code == 409
@@ -204,7 +211,8 @@ def test_role_station_candidate_and_reason_ownership_are_enforced(
 
 
 def test_stale_scope_basis_blocks_writes_but_historical_frozen_basis_remains(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         client, path = setup["counter"], setup["rounds_path"]
@@ -246,7 +254,8 @@ def test_stale_scope_basis_blocks_writes_but_historical_frozen_basis_remains(
 
 
 def test_public_round_storage_and_replay_keep_quantities_above_javascript_safe_integer(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         client, path = setup["counter"], setup["rounds_path"]
@@ -254,10 +263,12 @@ def test_public_round_storage_and_replay_keep_quantities_above_javascript_safe_i
         candidate_id = initial_draft(setup)["candidate_votes"][0]["candidate_id"]
         payload = initial_draft(
             setup,
-            candidate_votes=[{
-                "candidate_id": candidate_id,
-                "quantity": huge,
-            }],
+            candidate_votes=[
+                {
+                    "candidate_id": candidate_id,
+                    "quantity": huge,
+                }
+            ],
             notes="Exact quantity boundary.",
         )
         saved = client.post(path, json=payload)
@@ -274,3 +285,34 @@ def test_public_round_storage_and_replay_keep_quantities_above_javascript_safe_i
         replay = client.post(path, json=payload)
         assert replay.status_code == 200
         assert replay.json() == saved_record
+
+
+def test_real_foreign_election_reason_is_rejected_without_cross_election_effect(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        foreign = create_election(admin)
+        foreign_path = f"/api/elections/{foreign['id']}/invalid-ballot-reasons"
+        before = admin.get(foreign_path)
+        assert before.status_code == 200
+        reason = before.json()["items"][0]
+        assert reason["election_id"] == foreign["id"]
+        assert reason["election_id"] != setup["election"]["id"]
+        response = setup["counter"].post(
+            setup["rounds_path"],
+            json=initial_draft(
+                setup,
+                invalid_papers=[
+                    {
+                        "reason_id": reason["id"],
+                        "reason_revision": reason["revision"],
+                        "quantity": 0,
+                    }
+                ],
+            ),
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "count_invalid_reason_invalid"
+        assert setup["counter"].get(setup["rounds_path"]).json()["rounds"] == []
+        assert admin.get(foreign_path).json() == before.json()
