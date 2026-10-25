@@ -10,6 +10,7 @@ from tests.box_support import READY_PASSWORD
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
+from tests.results_support import result_setup
 from tests.test_constituency_tie_api import _save_tie_round, complete_tie_setup
 
 
@@ -99,3 +100,46 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
         assert after.status_code == 200, after.text
         assert after.json()["resolved_candidate_id"] == before.json()["tie_candidate_ids"][1]
         assert len(after.json()["resolution_history"]) == 1
+
+
+def test_supervisor_result_page_keeps_missing_contributions_null_and_unresolvable(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    with result_setup(admin, database_url) as setup:
+        https_server.clock.value = setup["clock"].value
+        result_path = f"/api/workspace/constituencies/{setup['constituency_id']}/results"
+        before = setup["clients"]["supervisor"].get(result_path)
+        assert before.status_code == 200, before.text
+        assert before.json()["complete"] is False
+        assert any(row["quantity"] is None for row in before.json()["candidate_totals"])
+
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": READY_PASSWORD,
+                "station_id": setup["stations"]["N1"]["id"],
+                "locale": "en",
+            },
+            """
+            results = controller.property('constituencyResults')
+            assert results is not None
+            click('constituencyResultsNavigation')
+            wait(lambda: not results.property('state')['busy'])
+            state = results.property('state')
+            record = state['result']
+            assert record['complete'] is False
+            assert record['provisional'] is True
+            assert any(row['code'] == 'selected_count_missing' for row in record['pending'])
+            assert all(row['quantity'] is None for row in record['candidate_totals'])
+            for row in record['candidate_totals']:
+                displayed = control(
+                    'constituencyResultCandidateVotes_' + str(row['candidate_id'])
+                ).property('text')
+                assert displayed == '—'
+            assert control('constituencyResultsTiePanel').property('visible') is False
+            """,
+        )
