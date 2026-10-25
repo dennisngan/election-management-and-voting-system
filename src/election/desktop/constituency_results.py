@@ -8,6 +8,7 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest
+from election.desktop.event_times import format_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
@@ -218,6 +219,10 @@ class ConstituencyResultsController(QObject):
         ):
             return
         self._load(background=True)
+
+    @Slot(str, result=str)
+    def formatTime(self, value: str) -> str:
+        return format_event_time(value)
 
     def _can_review(self) -> bool:
         result = self._state["result"]
