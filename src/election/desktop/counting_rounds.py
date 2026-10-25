@@ -1085,7 +1085,9 @@ class CountingRoundsController(QObject):
 
         self._send(path, "POST" if correction else "PUT", payload, saved)
 
-    def _workflow(self, action: str, password: str | None = None) -> None:
+    def _workflow(
+        self, action: str, password: str | None = None, *, extra: dict[str, Any] | None = None
+    ) -> None:
         role = "counting_officer" if action == "submit" else "supervisor"
         if self._state["role"] != role:
             self._error(role + "_required")
@@ -1109,6 +1111,8 @@ class CountingRoundsController(QObject):
             "expected_revision": selected["revision"],
             "scope_revision": self._state["edit_scope_revision"],
         }
+        if extra:
+            payload.update(extra)
         if action == "select":
             pointer = selected.get("selection")
             payload["expected_selection_revision"] = pointer["revision"] if pointer else 0
@@ -1159,11 +1163,32 @@ class CountingRoundsController(QObject):
                         "submit": "count_submitted",
                         "approve": "count_approved",
                         "select": "count_selected",
-                    }[action]
+                    }.get(action, "physical_difference_accepted")
 
             self._send(self._path() + f"/{row['id']}", "GET", None, reviewed)
 
         self._send(path, "POST", command, saved)
+
+    @Slot(str, str, str)
+    def acceptPhysicalDifference(self, source: str, reason: str, password: str) -> None:
+        if self._state["role"] != "supervisor":
+            self._error("supervisor_required")
+            return
+        if source not in ("stock", "turnout"):
+            self._error("physical_difference_unavailable")
+            return
+        if not reason.strip() or len(reason) > 2000:
+            self._error("physical_difference_reason_required")
+            return
+        selected = self._state["selected"]
+        revisions = [
+            row["revision"] for row in selected.get("physical_decisions", [])
+            if row["source"] == source
+        ]
+        self._workflow(
+            "physical-differences/" + source + "/accept", password,
+            extra={"reason": reason, "expected_decision_revision": max(revisions, default=0)},
+        )
 
     @Slot()
     def submitCount(self) -> None:

@@ -20,7 +20,9 @@ ColumnLayout {
     readonly property bool supervisor: editorState.role === "supervisor"
     readonly property bool editable: !!selected.id && writer && !working
         && !editorState.historical && !editorState.newer_revision
-        && selected.status === "draft" && !!selected.f1_complete
+        && (selected.status === "draft" || editorState.correction_stage === "f2")
+        && (!editorState.correction_stage || editorState.correction_stage === "f2")
+        && !!selected.f1_complete
         && !!selected.source_current && editorState.context.election
         && editorState.context.election.status === "active"
         && (!editorState.dirty_stage || editorState.dirty_stage === "f2")
@@ -31,6 +33,7 @@ ColumnLayout {
     property string reasonKey: ""
     property string comparisonKey: ""
     property string pendingWorkflow: ""
+    property string physicalSource: ""
     signal reveal(var control)
     Layout.fillWidth: true
     spacing: 20
@@ -132,7 +135,12 @@ ColumnLayout {
         target: panel.countingRounds
         function onStateChanged() {
             panel.syncRows()
-            if (!panel.editorState.role) workflowPassword.clear()
+            if (!panel.editorState.role) {
+                workflowPassword.clear()
+                physicalPassword.clear()
+                physicalReason.clear()
+                panel.physicalSource = ""
+            }
         }
     }
 
@@ -360,8 +368,9 @@ ColumnLayout {
             Action {
                 objectName: "f2Save"
                 visible: panel.writer && !!panel.selected.id && !!panel.selected.f1_complete
-                    && panel.selected.status === "draft"
-                text: panel.t("f2_save")
+                    && (panel.selected.status === "draft" || panel.editorState.correction_stage === "f2")
+                text: panel.t(panel.editorState.correction_stage === "f2"
+                    ? "count_save_correction" : "f2_save")
                 highlighted: true
                 working: panel.working
                 enabled: panel.editable && !!panel.editorState.dirty
@@ -445,11 +454,12 @@ ColumnLayout {
             Repeater {
                 model: panel.comparisonRows
                 ColumnLayout {
+                    id: comparisonRow
                     required property var modelData
                     Layout.fillWidth: true
                     spacing: 6
                     FormCaption {
-                        text: panel.t("f2_source_" + modelData.source) + " · "
+                        text: panel.t("f2_source_" + comparisonRow.modelData.source) + " · "
                             + panel.statusText(modelData)
                     }
                     FormCaption {
@@ -462,6 +472,64 @@ ColumnLayout {
                             + panel.exact(modelData, "difference_quantity")
                         wrapMode: Text.WordWrap
                     }
+                    FormCaption {
+                        visible: !!comparisonRow.modelData.acceptance
+                        text: comparisonRow.modelData.acceptance
+                            ? panel.t("count_decision_reason") + " · "
+                                + comparisonRow.modelData.acceptance.reason + "\n"
+                                + panel.t("count_decision_actor") + " "
+                                + comparisonRow.modelData.acceptance.actor_id + " · "
+                                + panel.countingRounds.formatTime(comparisonRow.modelData.acceptance.accepted_at)
+                            : ""
+                    }
+                    Action {
+                        objectName: "countAcceptPhysical_" + comparisonRow.modelData.source
+                        visible: panel.supervisor && panel.selected.status === "submitted"
+                            && comparisonRow.modelData.status === "pending"
+                        text: panel.t("physical_accept") + " · "
+                            + panel.t("f2_source_" + comparisonRow.modelData.source)
+                        enabled: !panel.working && !panel.editorState.dirty
+                            && !panel.editorState.historical && !panel.editorState.newer_revision
+                            && !!panel.selected.source_current && !!panel.selected.count_inputs_complete
+                            && panel.editorState.context.election
+                            && panel.editorState.context.election.status === "active"
+                        onClicked: {
+                            if (panel.physicalSource !== comparisonRow.modelData.source)
+                                physicalReason.clear()
+                            panel.physicalSource = comparisonRow.modelData.source
+                            physicalDialog.open()
+                        }
+                    }
+                }
+            }
+            Heading {
+                visible: !!(panel.selected.physical_decisions || []).length
+                text: panel.t("count_decision_history")
+            }
+            Repeater {
+                model: panel.selected.physical_decisions || []
+                FormCaption {
+                    required property var modelData
+                    text: panel.t("f2_source_" + modelData.source) + " · "
+                        + panel.t("revision") + " " + modelData.revision + " · "
+                        + panel.t(modelData.valid ? "count_decision_current" : "count_decision_obsolete")
+                        + "\n" + modelData.reason + "\n"
+                        + panel.t("count_decision_actor") + " " + modelData.actor_id + " · "
+                        + panel.countingRounds.formatTime(modelData.accepted_at) + " · "
+                        + panel.t("count_decision_reviewed_revision") + " " + modelData.reviewed_revision
+                }
+            }
+            FormCaption {
+                visible: !!(panel.selected.approved_physical_decisions || []).length
+                text: panel.t("count_decision_approved_snapshot")
+            }
+            Repeater {
+                model: panel.selected.approved_physical_decisions || []
+                FormCaption {
+                    required property var modelData
+                    text: panel.t("f2_source_" + modelData.source) + " · " + modelData.reason
+                        + " · " + panel.t("count_decision_actor") + " " + modelData.actor_id
+                        + " · " + panel.countingRounds.formatTime(modelData.accepted_at)
                 }
             }
             Heading { text: panel.t("f2_approval_blockers") }
@@ -553,6 +621,76 @@ ColumnLayout {
                     enabled: panel.workflowEnabled("select")
                     onClicked: panel.openWorkflow("select")
                 }
+            }
+        }
+    }
+
+    Dialog {
+        id: physicalDialog
+        objectName: "countPhysicalAcceptanceDialog"
+        modal: true; focus: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(520, Overlay.overlay.width - 40)
+        implicitWidth: Math.max(0, width)
+        title: panel.t("physical_accept")
+        header: Label {
+            text: physicalDialog.title; textFormat: Text.PlainText; wrapMode: Text.WordWrap
+            padding: 24; bottomPadding: 0; font.pixelSize: Material.dialogTitleFontPixelSize
+        }
+        onOpened: physicalReason.forceActiveFocus()
+        onRejected: physicalPassword.clear()
+        onAccepted: {
+            var password = physicalPassword.text
+            physicalPassword.clear()
+            panel.countingRounds.acceptPhysicalDifference(panel.physicalSource, physicalReason.text, password)
+        }
+        onClosed: physicalPassword.clear()
+        contentItem: ColumnLayout {
+            spacing: 12
+            FormCaption { text: panel.t("physical_accept_hint") }
+            FormCaption {
+                text: panel.t("f2_source_" + panel.physicalSource) + " · "
+                    + panel.t("f2_dialog_revision") + " " + panel.exact(panel.selected, "revision")
+            }
+            FormCaption {
+                text: {
+                    var row = panel.comparisonRows.find(function(item) { return item.source === panel.physicalSource })
+                    return row ? panel.t("f2_expected") + " " + panel.exact(row, "expected_quantity")
+                        + " · " + panel.t("f2_actual") + " " + panel.exact(row, "actual_quantity")
+                        + " · " + panel.t("f2_difference") + " " + panel.exact(row, "difference_quantity") : ""
+                }
+            }
+            FormCaption { text: panel.t("count_decision_reason") }
+            TextArea {
+                id: physicalReason
+                objectName: "countPhysicalReason"
+                Layout.fillWidth: true
+                implicitHeight: 96
+                textFormat: TextEdit.PlainText; wrapMode: TextEdit.WordWrap
+                Accessible.name: panel.t("count_decision_reason")
+                selectByMouse: true
+            }
+            FormCaption { text: panel.t("password") }
+            FormField {
+                id: physicalPassword
+                objectName: "countPhysicalPassword"
+                Layout.fillWidth: true
+                echoMode: TextInput.Password; maximumLength: 128
+                Accessible.name: panel.t("password")
+            }
+        }
+        footer: DialogButtonBox {
+            Button {
+                objectName: "countPhysicalCancel"
+                text: panel.t("f2_dialog_cancel")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+            Button {
+                objectName: "countPhysicalConfirm"
+                text: panel.t("f2_dialog_confirm")
+                enabled: physicalPassword.text.length > 0 && physicalReason.text.trim().length > 0
+                    && physicalReason.text.length <= 2000
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
             }
         }
     }

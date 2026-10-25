@@ -19,9 +19,10 @@ ColumnLayout {
     readonly property bool writer: editorState.role === "counting_officer"
     readonly property bool editable: writer && !working && !editorState.historical
         && !editorState.newer_revision && !!scope.count_ready
-        && (!selected.id || selected.status === "draft")
+        && (!selected.id || selected.status === "draft" || editorState.correction_stage === "f1")
+        && (!editorState.correction_stage || editorState.correction_stage === "f1")
         && editorState.dirty_stage !== "f2"
-        && (!selected.id || !!selected.source_current)
+        && (!selected.id || !!selected.source_current || !!editorState.refresh_basis)
         && editorState.context.election && editorState.context.election.status === "active"
     property var candidateRows: []
     property var reasonRows: []
@@ -280,6 +281,77 @@ ColumnLayout {
             }
         }
     }
+    FormPanel {
+        visible: page.writer && !!page.selected.id && !page.editorState.historical
+            && (page.selected.status !== "draft" || !page.selected.source_current
+                || !!page.editorState.correction_stage)
+        implicitHeight: corrections.implicitHeight + 40
+        ColumnLayout {
+            id: corrections
+            anchors.fill: parent; anchors.margins: 20; spacing: 12
+            Heading { text: page.t("count_correction_title") }
+            FormCaption { text: page.t("count_correction_hint") }
+            FormCaption {
+                objectName: "countCorrectionMode"
+                visible: !!page.editorState.correction_stage
+                text: page.t("count_correction_mode") + " · "
+                    + (page.editorState.correction_stage || "").toUpperCase()
+                    + " · " + page.t("revision") + " " + page.editorState.edit_scope_revision
+            }
+            FormCaption {
+                visible: !!page.editorState.refresh_basis
+                text: page.t("count_refresh_basis_hint")
+                color: "#8a5c16"
+            }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: page.width > 700 ? 2 : 1
+                columnSpacing: 12; rowSpacing: 12
+                Action {
+                    objectName: "countCorrectF1"
+                    text: page.t("count_correct_f1")
+                    visible: !page.editorState.correction_stage && !!page.selected.source_current
+                        && page.selected.status !== "draft"
+                    enabled: !page.working && !page.editorState.dirty && !page.editorState.newer_revision
+                        && page.editorState.context.election
+                        && page.editorState.context.election.status === "active"
+                    onClicked: page.countingRounds.startCorrection("f1", false)
+                }
+                Action {
+                    objectName: "countCorrectF2"
+                    text: page.t("count_correct_f2")
+                    visible: !page.editorState.correction_stage && !!page.selected.source_current
+                        && !!page.selected.f1_complete && page.selected.status !== "draft"
+                    enabled: !page.working && !page.editorState.dirty && !page.editorState.newer_revision
+                        && page.editorState.context.election
+                        && page.editorState.context.election.status === "active"
+                    onClicked: page.countingRounds.startCorrection("f2", false)
+                }
+                Action {
+                    objectName: "countRefreshBasisCorrection"
+                    text: page.t("count_refresh_basis")
+                    visible: !page.editorState.correction_stage && !page.selected.source_current
+                    enabled: !page.working && !page.editorState.dirty && !page.editorState.newer_revision
+                        && !!page.editorState.latest_scope.count_ready
+                        && page.editorState.context.election
+                        && page.editorState.context.election.status === "active"
+                    onClicked: refreshBasisDialog.open()
+                }
+                Action {
+                    objectName: "countCancelCorrection"
+                    text: page.t("count_cancel_correction")
+                    visible: !!page.editorState.correction_stage
+                    enabled: !page.working && !page.editorState.uncertain_save
+                    onClicked: cancelCorrectionDialog.open()
+                }
+            }
+        }
+    }
+    FormCaption {
+        objectName: "countDecisionsChanged"
+        visible: !!page.editorState.decisions_changed
+        text: page.t("count_decisions_changed")
+    }
     FormCaption {
         visible: !!page.editorState.selected_scope_id && !page.selected.id
         text: page.t("f1_no_round")
@@ -422,11 +494,13 @@ ColumnLayout {
                     onTextChanged: if (activeFocus) page.countingRounds.setField("amendment_reason", text)
                 }
                 Action {
-                    objectName: "f1Save"; text: page.t("f1_save"); visible: page.writer
+                    objectName: "f1Save"; text: page.t(page.editorState.correction_stage === "f1"
+                        ? "count_save_correction" : "f1_save"); visible: page.writer
                     enabled: page.editable || (page.writer && !page.working && !!page.editorState.uncertain_save)
                     working: page.working
                     onClicked: {
-                        if (page.selected.f2 && page.selected.status === "draft")
+                        if (page.selected.f2 && (page.selected.status === "draft"
+                                || page.editorState.correction_stage === "f1"))
                             discardF2Dialog.open()
                         else
                             page.countingRounds.save()
@@ -577,6 +651,23 @@ ColumnLayout {
         acceptLabel: page.t("f1_discard_f2_confirm")
         rejectLabel: page.t("keep_editing")
         onConfirmed: page.countingRounds.saveDiscardingF2()
+    }
+    ConfirmationDialog {
+        id: refreshBasisDialog
+        objectName: "countRefreshBasisDialog"
+        message: page.t("count_refresh_basis_hint") + "\n"
+            + page.t("revision") + " " + page.editorState.latest_scope.revision
+        acceptLabel: page.t("count_refresh_basis")
+        rejectLabel: page.t("keep_editing")
+        onConfirmed: page.countingRounds.startCorrection("f1", true)
+    }
+    ConfirmationDialog {
+        id: cancelCorrectionDialog
+        objectName: "countCancelCorrectionDialog"
+        message: page.t("f1_discard")
+        acceptLabel: page.t("count_cancel_correction")
+        rejectLabel: page.t("keep_editing")
+        onConfirmed: page.countingRounds.cancelCorrection()
     }
     FileDialog {
         id: exportDialog
