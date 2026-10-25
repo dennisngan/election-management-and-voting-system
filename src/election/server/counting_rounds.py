@@ -15,7 +15,12 @@ from sqlalchemy.orm import Session
 
 from election.server.boxes import utc_time
 from election.server.configuration_models import Candidate
-from election.server.counting_round_models import CountRound, CountRoundRequest, CountRoundRevision
+from election.server.counting_round_models import (
+    CountRound,
+    CountRoundRequest,
+    CountRoundRevision,
+    CountRoundSelection,
+)
 from election.server.counting_scopes import scope_at, scope_options
 from election.server.counting_totals import physical_approval_blockers
 from election.server.invalid_ballot_reasons import invalid_reason_rows
@@ -117,7 +122,7 @@ def round_context(
             .execution_options(populate_existing=True)
         )
     )
-    return {
+    result: dict[str, Any] = {
         "context": options["context"],
         "scope": scope,
         "candidates": [
@@ -145,6 +150,8 @@ def round_context(
             if row["stage"] == "f2" and row["enabled"]
         ],
     }
+    result.update(selection_context(db, scope_id, result))
+    return result
 
 
 def round_view(
@@ -193,7 +200,13 @@ def round_view(
         "approval_valid": bool(
             row.status == "approved" and head and head.id == row.id and not approval_blockers
         ),
-        "selected": False,
+        "selected": bool(
+            options.get("selection")
+            and options["selection"]["valid"]
+            and options["selection"]["round_revision_id"] == row.id
+        ),
+        "selection": options.get("selection"),
+        "selection_history": options.get("selection_history", []),
         "revision_event_at": as_utc(row.event_at),
         "revision_entered_at": as_utc(row.entered_at),
         "revision_actor_id": row.actor_id,
@@ -201,6 +214,45 @@ def round_view(
         "revision_amendment_reason": row.amendment_reason,
         **row.data.get("f1_metadata", {}),
     }
+
+
+def selection_context(db: Session, scope_id: int, options: dict[str, Any]) -> dict[str, Any]:
+    rows = list(
+        db.scalars(
+            select(CountRoundSelection)
+            .where(CountRoundSelection.scope_id == scope_id)
+            .order_by(CountRoundSelection.revision.desc())
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
+    history = []
+    for index, pointer in enumerate(rows):
+        target = db.scalar(
+            select(CountRoundRevision)
+            .where(CountRoundRevision.id == pointer.round_revision_id)
+            .with_for_update()
+        )
+        assert target is not None
+        round = round_at(db, scope_id, target.round_id)
+        target_view = round_view(db, round, target, {**options, "selection": None})
+        history.append(
+            {
+                "id": pointer.id,
+                "revision": pointer.revision,
+                "scope_id": scope_id,
+                "round_id": round.id,
+                "round_number": round.round_number,
+                "round_revision": target.revision,
+                "round_revision_id": target.id,
+                "scope_revision": target.data["scope_revision"],
+                "selected_at": as_utc(pointer.selected_at),
+                "actor_id": pointer.actor_id,
+                "is_current": index == 0,
+                "valid": bool(index == 0 and target_view["approval_valid"]),
+            }
+        )
+    return {"selection": history[0] if history else None, "selection_history": history}
 
 
 def f1_basis(options: dict[str, Any], data: F1Draft) -> dict[str, Any]:

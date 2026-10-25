@@ -53,3 +53,22 @@ class CountRoundRequest(Base):
     actor_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     digest: Mapped[str] = mapped_column(String(64))
     response: Mapped[dict[str, Any]] = mapped_column(SnapshotQuantityJSON)
+
+
+class CountRoundSelection(Base):
+    """Immutable per-scope pointer to one exact approved count revision."""
+
+    __tablename__ = "count_round_selections"
+    __table_args__ = (
+        UniqueConstraint("scope_id", "revision", name="uq_count_scope_selection_revision"),
+        CheckConstraint("revision >= 1", name="ck_count_scope_selection_revision"),
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scope_id: Mapped[int] = mapped_column(ForeignKey("counting_scopes.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    round_revision_id: Mapped[int] = mapped_column(
+        ForeignKey("count_round_revisions.id"), index=True
+    )
+    selected_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
+    actor_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))

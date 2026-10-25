@@ -121,3 +121,75 @@ def test_supervisor_approves_exact_submission_with_fresh_own_password(
 
         public_text = json.dumps(history)
         assert READY_PASSWORD not in public_text and "Incorrect-Password-42!" not in public_text
+
+
+def test_supervisor_explicitly_selects_exact_approved_revision_with_versioned_pointer(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    from tests.box_support import READY_PASSWORD
+
+    with tally_setup(admin, database_url) as setup:
+        client, supervisor, path = (
+            setup["counter"],
+            setup["clients"]["supervisor"],
+            setup["rounds_path"],
+        )
+        options = client.get(path).json()
+        initial = complete_f1_command(options, actual_counted_quantity=5)
+        initial["candidate_votes"][0]["quantity"] = 5
+        created = client.post(path, json=initial)
+        assert created.status_code == 201, created.text
+        target = path + f"/{created.json()['id']}"
+        saved = client.put(target + "/f2", json=complete_f2_command(options))
+        assert saved.status_code == 200, saved.text
+        submitted = client.post(
+            target + "/submit",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 2,
+                "scope_revision": options["scope"]["revision"],
+            },
+        )
+        assert submitted.status_code == 200, submitted.text
+        approved = supervisor.post(
+            target + "/approve",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 3,
+                "scope_revision": options["scope"]["revision"],
+                "password": READY_PASSWORD,
+            },
+        )
+        assert approved.status_code == 200, approved.text
+        assert supervisor.get(path).json()["selection"] is None
+        command = {
+            "request_id": str(uuid4()),
+            "expected_revision": 4,
+            "scope_revision": options["scope"]["revision"],
+            "expected_selection_revision": 0,
+            "password": READY_PASSWORD,
+        }
+        selected = supervisor.post(target + "/select", json=command)
+        assert selected.status_code == 200, selected.text
+        record = selected.json()
+        assert record["selected"] is True and record["revision"] == 4
+        pointer = record["selection"]
+        assert pointer["revision"] == 1 and pointer["valid"] is True
+        assert pointer["round_revision_id"] == approved.json()["revision_id"]
+        assert pointer["round_revision"] == 4 and pointer["round_id"] == record["id"]
+        assert pointer["actor_id"] == setup["accounts"]["supervisor"]["id"]
+        assert supervisor.get(path).json()["selection"] == pointer
+        resumed = supervisor.get(target).json()
+        assert resumed["record"]["selected"] is True
+        assert len(resumed["history"]) == 4
+        replay = supervisor.post(target + "/select", json=command)
+        assert replay.status_code == 200 and replay.json() == record
+        command["password"] = "Incorrect-Password-42!"
+        assert supervisor.post(target + "/select", json=command).status_code == 401
+        stale = {**command, "request_id": str(uuid4()), "password": READY_PASSWORD}
+        rejected = supervisor.post(target + "/select", json=stale)
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["detail"]["code"] == "selection_revision_conflict"
+        assert supervisor.get(target).json()["record"]["selection"] == pointer
+        assert len(supervisor.get(path).json()["selection_history"]) == 1
