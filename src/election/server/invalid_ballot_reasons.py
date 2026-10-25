@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from election.server.configuration_models import Election
 from election.server.invalid_ballot_defaults import DEFAULT_INVALID_REASONS
+from election.server.invalid_ballot_f2_defaults import DEFAULT_F2_INVALID_REASONS
 from election.server.invalid_ballot_models import (
     InvalidBallotReason,
     InvalidBallotReasonRequest,
@@ -65,7 +66,7 @@ def seed_invalid_ballot_reasons(
     actor_id: int | None,
     now: datetime,
 ) -> None:
-    for seed in DEFAULT_INVALID_REASONS:
+    for seed in (*DEFAULT_INVALID_REASONS, *DEFAULT_F2_INVALID_REASONS):
         reason = InvalidBallotReason(
             election_id=election_id,
             code=seed["code"],

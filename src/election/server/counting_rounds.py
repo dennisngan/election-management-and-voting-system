@@ -136,6 +136,11 @@ def round_context(
             )
             if row["stage"] == "f1" and row["enabled"]
         ],
+        "f2_invalid_reasons": [
+            row
+            for row in invalid_reason_rows(db, options["context"]["election"]["id"])
+            if row["stage"] == "f2" and row["enabled"]
+        ],
     }
 
 
@@ -177,6 +182,12 @@ def round_view(
         "is_current": bool(head and head.id == row.id),
         "source_current": source_current,
         "blockers": blockers,
+        "revision_event_at": as_utc(row.event_at),
+        "revision_entered_at": as_utc(row.entered_at),
+        "revision_actor_id": row.actor_id,
+        "revision_notes": row.notes,
+        "revision_amendment_reason": row.amendment_reason,
+        **row.data.get("f1_metadata", {}),
     }
 
 
