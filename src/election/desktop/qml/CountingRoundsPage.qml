@@ -32,7 +32,8 @@ ColumnLayout {
     property var historyOptions: []
     property var reportOptions: []
     property string selectorKey: ""
-    property url exportFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+    property string pendingFormat: "pdf"
+    property string pendingLocale: "tc"
     signal reveal(var control)
     spacing: 20
 
@@ -98,16 +99,14 @@ ColumnLayout {
         }
     }
     function exportReport(format) {
-        var dialog = exportDialogComponent.createObject(page, {
-            exportFormat: format,
-            exportLocale: locale,
-            currentFolder: exportFolder,
-            nameFilters: format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"],
-            defaultSuffix: format,
-            selectedFile: exportFolder.toString() + "/" + (editorState.report_form || "f1") + "-round-"
-                + selected.id + "-revision-" + selected.revision + "-" + locale + "." + format
-        })
-        dialog.open()
+        pendingFormat = format; pendingLocale = locale
+        exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
+        exportDialog.defaultSuffix = format
+        // Native currentFolder can be an absolute path URL without a file scheme.
+        // Resolve it before passing the next suggested filename to the native panel.
+        exportDialog.selectedFile = Qt.resolvedUrl(exportDialog.currentFolder.toString() + "/" + (editorState.report_form || "f1") + "-round-"
+            + selected.id + "-revision-" + selected.revision + "-" + locale + "." + format)
+        exportDialog.open()
     }
     function moveFocus(field, forward) {
         var next = field.nextItemInFocusChain(forward)
@@ -579,22 +578,12 @@ ColumnLayout {
         rejectLabel: page.t("keep_editing")
         onConfirmed: page.countingRounds.saveDiscardingF2()
     }
-    Component {
-        id: exportDialogComponent
-        FileDialog {
-            objectName: "countReportExportDialog"
-            property string exportFormat
-            property string exportLocale
-            fileMode: FileDialog.SaveFile
-            onAccepted: {
-                page.exportFolder = currentFolder
-                page.countingRounds.exportStatement(exportFormat, exportLocale, selectedFile.toString())
-                destroy()
-            }
-            onRejected: {
-                page.exportFolder = currentFolder
-                destroy()
-            }
-        }
+    FileDialog {
+        id: exportDialog
+        objectName: "countReportExportDialog"
+        fileMode: FileDialog.SaveFile
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        onAccepted: page.countingRounds.exportStatement(
+            page.pendingFormat, page.pendingLocale, selectedFile.toString())
     }
 }
