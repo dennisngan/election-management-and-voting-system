@@ -99,3 +99,89 @@ def test_acceptance_preserves_observations_and_allows_exact_revision_approval(
         assert len(history["history"]) == 4
         assert len(history["record"]["physical_decisions"]) == 1
         assert READY_PASSWORD not in json.dumps(history)
+
+
+def _accepted_submission(setup: dict, *, actual: int = 0) -> tuple[dict, str, dict]:
+    counter, supervisor = setup["counter"], setup["clients"]["supervisor"]
+    path = setup["rounds_path"]
+    options = counter.get(path).json()
+    initial = complete_f1_command(options, actual_counted_quantity=actual)
+    initial["candidate_votes"][0]["quantity"] = actual
+    created = counter.post(path, json=initial)
+    assert created.status_code == 201, created.text
+    target = path + f"/{created.json()['id']}"
+    outcomes = counter.put(target + "/f2", json=complete_f2_command(options))
+    assert outcomes.status_code == 200, outcomes.text
+    submitted = counter.post(
+        target + "/submit",
+        json={
+            "request_id": str(uuid4()),
+            "expected_revision": 2,
+            "scope_revision": options["scope"]["revision"],
+        },
+    )
+    assert submitted.status_code == 200, submitted.text
+    accepted = supervisor.post(
+        target + "/physical-differences/stock/accept",
+        json={
+            "request_id": str(uuid4()),
+            "expected_revision": 3,
+            "scope_revision": options["scope"]["revision"],
+            "expected_decision_revision": 0,
+            "password": READY_PASSWORD,
+            "reason": "Reviewed the exact physical figures against the signed paper log.",
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    return options, target, accepted.json()
+
+
+def test_later_physical_review_does_not_change_an_earlier_count_revision(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        _, target, accepted = _accepted_submission(setup)
+        assert accepted["revision"] == 3
+        old = setup["clients"]["supervisor"].get(target + "/revisions/2")
+        assert old.status_code == 200, old.text
+        historical = old.json()
+        assert historical["revision"] == 2 and historical["status"] == "draft"
+        stock = next(row for row in historical["physical_comparisons"] if row["source"] == "stock")
+        assert stock["status"] == "pending"
+        assert "acceptance" not in stock
+        assert historical["physical_decisions"][0]["reviewed_revision"] == 3
+        assert historical["physical_decisions"][0]["valid"] is False
+
+
+def test_physical_decision_preserves_large_quantities_in_history_and_approval(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        actual = 900719925474099312345
+        options, target, accepted = _accepted_submission(setup, actual=actual)
+        expected_difference = 900719925474099312340
+        stock = next(row for row in accepted["physical_comparisons"] if row["source"] == "stock")
+        assert stock["actual_quantity"] == actual
+        assert stock["difference_quantity"] == expected_difference
+        decision = stock["acceptance"]
+        assert type(decision["actual_quantity"]) is int
+        assert decision["actual_quantity"] == actual
+        assert decision["difference_quantity"] == expected_difference
+        approved = setup["clients"]["supervisor"].post(
+            target + "/approve",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 3,
+                "scope_revision": options["scope"]["revision"],
+                "password": READY_PASSWORD,
+            },
+        )
+        assert approved.status_code == 200, approved.text
+        record = setup["clients"]["supervisor"].get(target).json()["record"]
+        assert record["approval_valid"] is True
+        assert record["actual_counted_quantity"] == actual
+        assert record["physical_decisions"][0]["difference_quantity"] == expected_difference
+        report = setup["clients"]["supervisor"].get(target + "/revisions/4/f4").json()
+        assert report["record"]["physical_decisions"][0]["actual_quantity"] == actual
