@@ -55,6 +55,23 @@ def test_administrator_reads_verified_f1_sources_and_project_other(admin: TestCl
     assert other["enabled"] is True and other["explanation_required"] is True
 
 
+def test_administrator_can_filter_the_stage_specific_reason_catalog(admin: TestClient) -> None:
+    election = create_election(admin)
+    path = f"/api/elections/{election['id']}/invalid-ballot-reasons"
+    f1 = admin.get(path)
+    f2 = admin.get(path, params={"stage": "f2"})
+    assert f1.status_code == 200 and f2.status_code == 200
+    assert [row["stage"] for row in f1.json()["items"]] == ["f1"] * 8
+    assert [row["code"] for row in f2.json()["items"]] == [
+        "gc-f2-h",
+        "gc-f2-i",
+        "gc-f2-j",
+        "gc-f2-k",
+        "other-f2",
+    ]
+    assert all(row["stage"] == "f2" for row in f2.json()["items"])
+
+
 def catalog_input(**changes: object) -> dict:
     return {
         "request_id": str(uuid4()),
@@ -93,6 +110,47 @@ def test_administrator_creates_project_reason_and_replays_one_saved_effect(
     duplicate = admin.post(path, json={**payload, "request_id": str(uuid4())})
     assert duplicate.status_code == 409
     assert duplicate.json()["detail"]["code"] == "invalid_reason_code_exists"
+
+
+def test_administrator_creates_and_edits_project_f2_reason_without_changing_stage(
+    admin: TestClient,
+) -> None:
+    election = create_election(admin)
+    path = f"/api/elections/{election['id']}/invalid-ballot-reasons"
+    created = admin.post(
+        path,
+        json=catalog_input(code="project-f2-note", stage="f2"),
+    )
+    assert created.status_code == 201, created.text
+    reason = created.json()
+    assert reason["stage"] == "f2" and reason["code"] == "project-f2-note"
+    assert reason["source"] == "project_configured" and reason["source_english"] == ""
+    assert [row["id"] for row in admin.get(path).json()["items"]].count(reason["id"]) == 0
+    f2 = admin.get(path, params={"stage": "f2"}).json()["items"]
+    assert reason["id"] in {row["id"] for row in f2}
+    edited = admin.put(
+        f"{path}/{reason['id']}",
+        json=catalog_input(
+            expected_revision=1,
+            label_en="F2 display wording",
+            label_tc="F2 顯示文字",
+            label_sc="F2 显示文字",
+        ),
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["stage"] == "f2" and edited.json()["revision"] == 2
+    assert edited.json()["label_en"] == "F2 display wording"
+    assert admin.get(f"{path}/{reason['id']}").json()["record"] == edited.json()
+    forged_stage = admin.put(
+        f"{path}/{reason['id']}",
+        json=catalog_input(
+            expected_revision=2,
+            request_id=str(uuid4()),
+            stage="f1",
+        ),
+    )
+    assert forged_stage.status_code == 422
+    assert admin.get(f"{path}/{reason['id']}").json()["record"] == edited.json()
 
 
 def test_admin_revises_display_labels_without_replacing_verified_source_history(
@@ -207,10 +265,15 @@ def test_station_catalog_is_assigned_operational_and_enabled_f1_only(
     for role in ("polling_officer", "counting_officer", "supervisor"):
         with turnout_staff(admin, database_url, TurnoutClock(), [station_id], role) as (client, _):
             response = client.get(station_path)
+            f2_response = client.get(station_path, params={"stage": "f2"})
             assert response.status_code == 200, response.text
+            assert f2_response.status_code == 200, f2_response.text
             items = response.json()["items"]
+            f2_items = f2_response.json()["items"]
             assert len(items) == 8
             assert all(row["enabled"] and row["stage"] == "f1" for row in items)
+            assert len(f2_items) == 5
+            assert all(row["enabled"] and row["stage"] == "f2" for row in f2_items)
             assert disabled["id"] not in {row["id"] for row in items}
             assert custom.json()["id"] in {row["id"] for row in items}
             denied = client.get(path)
@@ -235,7 +298,7 @@ def test_station_catalog_is_assigned_operational_and_enabled_f1_only(
         {"label_sc": " "},
         {"code": " \n "},
         {"code": "x" * 65},
-        {"stage": "f2"},
+        {"stage": "f3"},
         {"enabled": "false"},
         {"explanation_required": 1},
         {"source_english": "Unverified official wording"},

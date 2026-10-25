@@ -45,7 +45,7 @@ class ReasonInput(BaseModel):
 
 class ReasonCreate(ReasonInput):
     code: str = Field(min_length=1, max_length=64)
-    stage: Literal["f1"] = "f1"
+    stage: Literal["f1", "f2"] = "f1"
 
     @field_validator("code")
     @classmethod
@@ -176,7 +176,6 @@ def catalog_reason(db: Session, election_id: int, reason_id: int) -> InvalidBall
         .where(
             InvalidBallotReason.id == reason_id,
             InvalidBallotReason.election_id == election_id,
-            InvalidBallotReason.stage == "f1",
         )
         .with_for_update()
         .execution_options(populate_existing=True)
@@ -211,20 +210,30 @@ def invalid_ballot_reasons_router(
     Ready = Annotated[Account, Depends(ready_account)]
 
     @router.get("/api/elections/{election_id}/invalid-ballot-reasons")
-    def read(election_id: int, db: Database, actor: Admin) -> dict[str, Any]:
+    def read(
+        election_id: int,
+        db: Database,
+        actor: Admin,
+        stage: Literal["f1", "f2"] = "f1",
+    ) -> dict[str, Any]:
         catalog_election(db, election_id)
         return {
-            "items": [row for row in invalid_reason_rows(db, election_id) if row["stage"] == "f1"]
+            "items": [row for row in invalid_reason_rows(db, election_id) if row["stage"] == stage]
         }
 
     @router.get("/api/workspace/stations/{station_id}/invalid-ballot-reasons")
-    def station_catalog(station_id: int, db: Database, actor: Ready) -> dict[str, Any]:
+    def station_catalog(
+        station_id: int,
+        db: Database,
+        actor: Ready,
+        stage: Literal["f1", "f2"] = "f1",
+    ) -> dict[str, Any]:
         scope = turnout_scope(db, actor, station_id)
         return {
             "items": [
                 row
                 for row in invalid_reason_rows(db, scope["election"]["id"])
-                if row["stage"] == "f1" and row["enabled"]
+                if row["stage"] == stage and row["enabled"]
             ]
         }
 
