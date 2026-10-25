@@ -18,6 +18,17 @@ from election.server.models import Account
 from election.server.stock_reports import ReportLocale
 from election.server.turnout_reports import hong_kong_time
 
+_F1_OBSERVATION_NOTES: dict[ReportLocale, str] = {
+    "tc": "本節列出點票記錄中的 F1 觀察部分；輪次狀態另行列出。",
+    "sc": "本节列出点票记录中的 F1 观察部分；轮次状态另行列出。",
+    "en": "This section shows the F1 observation portion of the count record.",
+}
+_ROUND_STATUS_LABELS: dict[ReportLocale, dict[str, str]] = {
+    "tc": {"submitted": "已提交", "approved": "已核准"},
+    "sc": {"submitted": "已提交", "approved": "已批准"},
+    "en": {"submitted": "Submitted", "approved": "Approved"},
+}
+
 
 def _value(key: str, value: Any, labels: dict[str, str]) -> str:
     if value is None or value == "":
@@ -83,7 +94,8 @@ def _tables(report: dict[str, Any]) -> list[HistoryTable]:
         _table(
             labels["f1_summary"],
             [
-                [labels["report_scope"], labels["draft_note"]],
+                [labels["status"], labels[str(record["status"])]],
+                [labels["report_scope"], _F1_OBSERVATION_NOTES[report["locale"]]],
                 [labels["coverage"], labels["mixed_note"]],
                 *_pairs(
                     record,
@@ -109,6 +121,7 @@ def _tables(report: dict[str, Any]) -> list[HistoryTable]:
             labels,
         )
     ]
+    f1_blockers = record.get("f1_blockers", record["blockers"])
     blockers = [
         [
             labels[row["code"]],
@@ -119,7 +132,7 @@ def _tables(report: dict[str, Any]) -> list[HistoryTable]:
             )
             or labels["none"],
         ]
-        for row in record["blockers"]
+        for row in f1_blockers
     ]
     tables.append(
         _table(
@@ -307,7 +320,7 @@ def f1_reports_router(
             "locale": locale,
             "context": options["context"],
             "record": round_view(db, round, row, options),
-            "labels": LABELS[locale],
+            "labels": {**LABELS[locale], **_ROUND_STATUS_LABELS[locale]},
             "title": LABELS[locale]["title"],
             "generated_at": timestamp().replace(tzinfo=UTC),
             "generation_timezone": "Asia/Hong_Kong",
