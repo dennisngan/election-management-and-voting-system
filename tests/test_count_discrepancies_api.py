@@ -185,3 +185,56 @@ def test_physical_decision_preserves_large_quantities_in_history_and_approval(
         assert record["physical_decisions"][0]["difference_quantity"] == expected_difference
         report = setup["clients"]["supervisor"].get(target + "/revisions/4/f4").json()
         assert report["record"]["physical_decisions"][0]["actual_quantity"] == actual
+
+
+def test_approved_physical_snapshot_survives_a_successor_scope_basis(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        options, target, accepted = _accepted_submission(setup)
+        supervisor, counter = setup["clients"]["supervisor"], setup["counter"]
+        approved = supervisor.post(
+            target + "/approve",
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 3,
+                "scope_revision": options["scope"]["revision"],
+                "password": READY_PASSWORD,
+            },
+        )
+        assert approved.status_code == 200, approved.text
+        original = approved.json()
+        assert original["approved_physical_decisions"] == accepted["physical_decisions"]
+        scope_path = setup["paths"]["n1_counting_scopes"] + f"/{setup['scope']['id']}"
+        amended = counter.put(
+            scope_path,
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": setup["scope"]["revision"],
+                "reference": setup["scope"]["reference"],
+                "event_at": "2026-11-15T23:30:00+08:00",
+                "box_revisions": [
+                    {
+                        "box_id": setup["boxes"]["local_n1"]["id"],
+                        "revision": setup["boxes"]["local_n1"]["revision"],
+                    }
+                ],
+                "accounting_revisions": [
+                    {"station_id": setup["stations"]["N1"]["id"], "revision": 1}
+                ],
+                "amendment_reason": "Corrected scope context from the retained handover log.",
+            },
+        )
+        assert amended.status_code == 200, amended.text
+        historical = supervisor.get(target + "/revisions/4")
+        assert historical.status_code == 200, historical.text
+        record = historical.json()
+        assert record["status"] == "approved" and record["approval_valid"] is False
+        assert record["source_current"] is False
+        assert record["approved_physical_decisions"] == original["approved_physical_decisions"]
+        assert record["reviewed_physical_comparisons"] == original["physical_comparisons"]
+        frozen = record["approved_physical_decisions"][0]
+        assert frozen["difference_quantity"] == -5
+        assert frozen["reason"] == accepted["physical_decisions"][0]["reason"]
+        assert frozen["reviewed_revision"] == 3
