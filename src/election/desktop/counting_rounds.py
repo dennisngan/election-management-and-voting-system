@@ -67,10 +67,20 @@ class CountingRoundsController(QObject):
             "edit_scope_revision": 0,
             "candidates": [],
             "invalid_reasons": [],
+            "f2_invalid_reasons": [],
             "rounds": [],
             "selected": {},
             "history": [],
             "forms": empty_forms(),
+            "f2_forms": {
+                "event_at": "",
+                "determination_started_at": "",
+                "notes": "",
+                "amendment_reason": "",
+            },
+            "accepted_inputs": [],
+            "rejected_inputs": [],
+            "dirty_stage": "",
             "candidate_inputs": [],
             "invalid_inputs": [],
             "dirty": False,
@@ -171,7 +181,7 @@ class CountingRoundsController(QObject):
             and type(row.get("revision")) is int
             and row["revision"] > 0
             and type(row.get("scope_id")) is int
-            and row.get("status") == "draft"
+            and row.get("status") in ("draft", "submitted", "approved")
             and isinstance(row.get("candidate_votes"), list)
             and isinstance(row.get("invalid_papers"), list)
             and isinstance(row.get("blockers"), list)
@@ -207,7 +217,14 @@ class CountingRoundsController(QObject):
             )
         saved_reasons = {row["reason_id"]: row for row in record.get("invalid_papers", [])}
         historical = bool(record and not record["is_current"])
-        frozen_view = bool(record and (historical or self._state["role"] != "counting_officer"))
+        frozen_view = bool(
+            record
+            and (
+                historical
+                or record["status"] != "draft"
+                or self._state["role"] != "counting_officer"
+            )
+        )
         reasons = record["invalid_papers"] if frozen_view else self._state["invalid_reasons"]
         invalid_inputs = []
         known: set[int] = set()
@@ -245,6 +262,7 @@ class CountingRoundsController(QObject):
                 "scope_revision", self._state["scope"].get("revision", 0)
             ),
         )
+        self._f2_forms_for(record)
         self._clear_report()
 
     def _history_loaded(self, data: dict[str, Any], *, foreground: bool) -> None:
@@ -325,6 +343,7 @@ class CountingRoundsController(QObject):
             latest_scope=deepcopy(data["scope"]),
             candidates=deepcopy(data["candidates"]),
             invalid_reasons=deepcopy(data["invalid_reasons"]),
+            f2_invalid_reasons=deepcopy(data.get("f2_invalid_reasons", [])),
             rounds=deepcopy(data["rounds"]),
             context={**self._state["context"], **deepcopy(data["context"])},
         )
@@ -454,6 +473,16 @@ class CountingRoundsController(QObject):
             rounds=[],
             candidates=[],
             invalid_reasons=[],
+            f2_invalid_reasons=[],
+            accepted_inputs=[],
+            rejected_inputs=[],
+            f2_forms={
+                "event_at": "",
+                "determination_started_at": "",
+                "notes": "",
+                "amendment_reason": "",
+            },
+            dirty_stage="",
             candidate_inputs=[],
             invalid_inputs=[],
             forms=empty_forms(),
@@ -520,12 +549,21 @@ class CountingRoundsController(QObject):
             and self._state["selected_scope_id"]
             and not self._state["busy"]
             and not self._state["historical"]
+            and self._state["selected"].get("status", "draft") == "draft"
+            and self._state["dirty_stage"] in ("", "f1")
             and self._state["context"].get("election", {}).get("status") == "active"
         )
 
-    def _changed(self) -> None:
+    def _changed(self, stage: str = "f1") -> None:
         self._pending = None
-        self._state.update(dirty=True, error="", error_origin="", notice="", uncertain_save=False)
+        self._state.update(
+            dirty=True,
+            dirty_stage=stage,
+            error="",
+            error_origin="",
+            notice="",
+            uncertain_save=False,
+        )
         self._clear_report()
         self.stateChanged.emit()
 
@@ -634,7 +672,7 @@ class CountingRoundsController(QObject):
         }
 
     @Slot()
-    def save(self) -> None:
+    def save(self, discard_f2: bool = False) -> None:
         if self._state["role"] != "counting_officer":
             self._error("counting_officer_required")
             return
@@ -653,6 +691,8 @@ class CountingRoundsController(QObject):
         if payload is None:
             return
         selected = self._state["selected"]
+        if discard_f2:
+            payload["discard_f2"] = True
         signature = json.dumps(
             {
                 "station": self._state["station_id"],
@@ -702,6 +742,312 @@ class CountingRoundsController(QObject):
             payload,
             saved,
         )
+
+    @Slot()
+    def saveDiscardingF2(self) -> None:
+        self.save(True)
+
+    def _f2_forms_for(self, record: dict[str, Any]) -> None:
+        saved = record.get("f2") or {}
+        forms = {
+            key: saved.get(key, "") for key in ("event_at", "determination_started_at", "notes")
+        }
+        for key in ("event_at", "determination_started_at"):
+            forms[key] = format_event_time(forms[key]).removesuffix(" HKT") if forms[key] else ""
+        forms["amendment_reason"] = ""
+        votes = {row["candidate_id"]: row for row in saved.get("accepted_votes", [])}
+        candidates = record.get("candidate_votes") or self._state["candidates"]
+        accepted = []
+        for candidate in candidates:
+            identity = candidate.get("candidate_id", candidate.get("id"))
+            accepted.append(
+                {
+                    **candidate,
+                    "candidate_id": identity,
+                    "quantity": quantity_input(votes.get(identity, {}).get("quantity")),
+                }
+            )
+        frozen_reasons = {row["reason_id"]: row for row in saved.get("rejected_papers", [])}
+        frozen_view = bool(
+            record
+            and (
+                not record["is_current"]
+                or record["status"] != "draft"
+                or self._state["role"] != "counting_officer"
+            )
+        )
+        reasons = (
+            list(frozen_reasons.values())
+            if frozen_view and saved
+            else self._state["f2_invalid_reasons"]
+        )
+        rejected = []
+        known = set()
+        for reason in reasons:
+            identity = reason.get("reason_id", reason.get("id"))
+            known.add(identity)
+            old = frozen_reasons.get(identity, {})
+            rejected.append(
+                {
+                    **reason,
+                    "reason_id": identity,
+                    "reason_revision": reason["reason_revision"]
+                    if "reason_revision" in reason
+                    else reason["revision"],
+                    "quantity": quantity_input(old.get("quantity")),
+                    "explanation": old.get("explanation", ""),
+                    "current_catalog": True,
+                }
+            )
+        for identity, reason in frozen_reasons.items():
+            if identity not in known:
+                rejected.append(
+                    {
+                        **reason,
+                        "quantity": quantity_input(reason["quantity"]),
+                        "current_catalog": False,
+                    }
+                )
+        self._state.update(
+            f2_forms=forms, accepted_inputs=accepted, rejected_inputs=rejected, dirty_stage=""
+        )
+
+    def _f2_editable(self) -> bool:
+        selected = self._state["selected"]
+        return bool(
+            self._state["role"] == "counting_officer"
+            and selected
+            and selected["status"] == "draft"
+            and selected["f1_complete"]
+            and selected["source_current"]
+            and not self._state["busy"]
+            and not self._state["historical"]
+            and self._state["dirty_stage"] in ("", "f2")
+            and self._state["context"].get("election", {}).get("status") == "active"
+        )
+
+    @Slot(str, str)
+    def setF2Field(self, name: str, value: str) -> None:
+        if self._f2_editable() and name in self._state["f2_forms"] and isinstance(value, str):
+            if self._state["f2_forms"][name] != value:
+                self._state["f2_forms"][name] = value
+                self._changed("f2")
+
+    @Slot(int, str)
+    def setAcceptedQuantity(self, candidate_id: int, value: str) -> None:
+        if not self._f2_editable() or not isinstance(value, str):
+            return
+        row = next(
+            (row for row in self._state["accepted_inputs"] if row["candidate_id"] == candidate_id),
+            None,
+        )
+        if row is None:
+            self._error("count_candidate_invalid")
+        elif row["quantity"] != value:
+            row["quantity"] = value
+            self._changed("f2")
+
+    def _set_rejected(self, reason_id: int, field: str, value: str) -> None:
+        if not self._f2_editable() or not isinstance(value, str):
+            return
+        row = next(
+            (row for row in self._state["rejected_inputs"] if row["reason_id"] == reason_id), None
+        )
+        if row is None:
+            self._error("count_invalid_reason_invalid")
+        elif row[field] != value:
+            row[field] = value
+            self._changed("f2")
+
+    @Slot(int, str)
+    def setRejectedQuantity(self, reason_id: int, value: str) -> None:
+        self._set_rejected(reason_id, "quantity", value)
+
+    @Slot(int, str)
+    def setRejectedExplanation(self, reason_id: int, value: str) -> None:
+        self._set_rejected(reason_id, "explanation", value)
+
+    @Slot()
+    def saveF2(self) -> None:
+        if not self._f2_editable():
+            return
+        selected, forms = self._state["selected"], self._state["f2_forms"]
+        prior = selected.get("f2") or {}
+        try:
+            event_at = parse_event_time(forms["event_at"], prior.get("event_at"))
+            start = (
+                parse_event_time(
+                    forms["determination_started_at"], prior.get("determination_started_at")
+                )
+                if forms["determination_started_at"].strip()
+                else None
+            )
+        except ValueError, OverflowError:
+            self._error("f2_time_invalid")
+            return
+        try:
+            accepted = [
+                {"candidate_id": row["candidate_id"], "quantity": self._quantity(row["quantity"])}
+                for row in self._state["accepted_inputs"]
+            ]
+            rejected = []
+            for row in self._state["rejected_inputs"]:
+                quantity = self._quantity(row["quantity"])
+                if not row["current_catalog"]:
+                    if quantity:
+                        self._error("invalid_reason_revision_conflict")
+                        return
+                    continue
+                if quantity and row["explanation_required"] and not row["explanation"].strip():
+                    self._error("invalid_reason_explanation_required")
+                    return
+                rejected.append(
+                    {
+                        "reason_id": row["reason_id"],
+                        "reason_revision": row["reason_revision"],
+                        "quantity": quantity,
+                        "explanation": row["explanation"],
+                    }
+                )
+        except ValueError:
+            self._error("f2_quantity_invalid")
+            return
+        if any(len(forms[key]) > 2000 for key in ("notes", "amendment_reason")) or any(
+            len(row["explanation"]) > 2000 for row in rejected
+        ):
+            self._error("f2_validation")
+            return
+        payload = {
+            "expected_revision": selected["revision"],
+            "scope_revision": self._state["edit_scope_revision"],
+            "event_at": event_at,
+            "determination_started_at": start,
+            "accepted_votes": accepted,
+            "rejected_papers": rejected,
+            "notes": forms["notes"],
+            "amendment_reason": forms["amendment_reason"],
+        }
+        path = self._path() + f"/{selected['id']}/f2"
+        signature = json.dumps([path, payload], sort_keys=True, ensure_ascii=False)
+        retry = bool(
+            self._state["uncertain_save"] and self._pending and self._pending[0] == signature
+        )
+        if self._state["newer_revision"] and not retry:
+            self._error("revision_conflict")
+            return
+        if not self._pending or self._pending[0] != signature:
+            self._pending = signature, str(uuid4())
+        payload["request_id"] = self._pending[1]
+        self._state.update(error="", error_origin="", notice="")
+
+        def saved(row: dict[str, Any]) -> None:
+            if not self._valid_record(row) or row["id"] != selected["id"]:
+                self._error("invalid_response", "write")
+                return
+            self._state["selected"] = deepcopy(row)
+            self._forms_for(row)
+
+            def reviewed(body: dict[str, Any]) -> None:
+                self._history_loaded(body, foreground=False)
+                if not self._state["error"]:
+                    self._pending = None
+                    self._state["notice"] = "f2_saved"
+
+            self._send(self._path() + f"/{row['id']}", "GET", None, reviewed)
+
+        self._send(path, "PUT", payload, saved)
+
+    def _workflow(self, action: str, password: str | None = None) -> None:
+        role = "counting_officer" if action == "submit" else "supervisor"
+        if self._state["role"] != role:
+            self._error(role + "_required")
+            return
+        if self._state["busy"]:
+            return
+        if self._state["dirty"]:
+            self._error("unsaved_count_changes")
+            return
+        selected = self._state["selected"]
+        if not selected:
+            self._error("count_round_not_found")
+            return
+        if self._state["historical"]:
+            self._error("count_round_read_only")
+            return
+        if self._state["context"].get("election", {}).get("status") != "active":
+            self._error("active_election_required")
+            return
+        payload = {
+            "expected_revision": selected["revision"],
+            "scope_revision": self._state["edit_scope_revision"],
+        }
+        if action == "select":
+            pointer = selected.get("selection")
+            payload["expected_selection_revision"] = pointer["revision"] if pointer else 0
+        path = self._path() + f"/{selected['id']}/{action}"
+        # A background read can reveal a committed selection whose reply was
+        # lost. Retry its original credential-free command, not a new pointer CAS.
+        if self._state["uncertain_save"] and self._pending:
+            try:
+                pending = json.loads(self._pending[0])
+                if isinstance(pending, list) and len(pending) == 2 and pending[0] == path:
+                    payload = pending[1]
+            except ValueError, TypeError:
+                pass
+        signature = json.dumps([path, payload], sort_keys=True, ensure_ascii=False)
+        retry = bool(
+            self._state["uncertain_save"] and self._pending and self._pending[0] == signature
+        )
+        if self._state["newer_revision"] and not retry:
+            self._error("revision_conflict")
+            return
+        if not selected["source_current"] and not retry:
+            self._error("count_round_basis_stale")
+            return
+        if action != "submit" and (
+            not isinstance(password, str) or not password or len(password) > 128
+        ):
+            self._error("invalid_credentials")
+            return
+        if not self._pending or self._pending[0] != signature:
+            self._pending = signature, str(uuid4())
+        command: dict[str, Any] = {**payload, "request_id": self._pending[1]}
+        if action != "submit":
+            command["password"] = password
+        self._state.update(error="", error_origin="", notice="")
+
+        def saved(row: dict[str, Any]) -> None:
+            if not self._valid_record(row) or row["id"] != selected["id"]:
+                self._error("invalid_response", "write")
+                return
+            self._state["selected"] = deepcopy(row)
+            self._forms_for(row)
+
+            def reviewed(body: dict[str, Any]) -> None:
+                self._history_loaded(body, foreground=False)
+                if not self._state["error"]:
+                    self._pending = None
+                    self._state["notice"] = {
+                        "submit": "count_submitted",
+                        "approve": "count_approved",
+                        "select": "count_selected",
+                    }[action]
+
+            self._send(self._path() + f"/{row['id']}", "GET", None, reviewed)
+
+        self._send(path, "POST", command, saved)
+
+    @Slot()
+    def submitCount(self) -> None:
+        self._workflow("submit")
+
+    @Slot(str)
+    def approveCount(self, password: str) -> None:
+        self._workflow("approve", password)
+
+    @Slot(str)
+    def selectApproved(self, password: str) -> None:
+        self._workflow("select", password)
 
     def _report_path(self, locale: str, extension: str = "") -> str | None:
         row = self._state["selected"]
