@@ -564,6 +564,15 @@ ColumnLayout {
         anchors.centerIn: Overlay.overlay
         width: Math.min(460, Overlay.overlay.width - 40)
         title: panel.t(pendingWorkflow === "approve" ? "f2_approve_dialog" : "f2_select_dialog")
+        header: Label {
+            text: workflowDialog.title
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            padding: 16
+            font.pixelSize: 20
+            font.weight: Font.Medium
+            color: "#25344b"
+        }
         onOpened: workflowPassword.forceActiveFocus()
         onRejected: workflowPassword.clear()
         onAccepted: {
