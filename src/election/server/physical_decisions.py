@@ -27,7 +27,7 @@ def comparison_fingerprint(data: dict[str, Any], comparison: dict[str, Any]) -> 
 
 
 def physical_review(
-    db: Session, round_id: int, data: dict[str, Any], *, source_current: bool
+    db: Session, round_id: int, data: dict[str, Any], *, revision: int, source_current: bool
 ) -> dict[str, Any]:
     comparisons = physical_comparisons(data)
     by_source = {row["source"]: row for row in comparisons}
@@ -41,18 +41,22 @@ def physical_review(
         )
     )
     latest: dict[str, int] = {}
+    eligible: dict[str, int] = {}
+    for row in rows:
+        latest.setdefault(row.source, row.id)
+        if row.data["reviewed_revision"] <= revision:
+            eligible.setdefault(row.source, row.id)
     decisions = []
     accepted: dict[str, dict[str, Any]] = {}
     for row in rows:
-        latest.setdefault(row.source, row.id)
         comparison = by_source[row.source]
-        valid = bool(
-            source_current
-            and latest[row.source] == row.id
+        applies = bool(
+            eligible.get(row.source) == row.id
             and comparison["available"]
             and comparison["difference_quantity"] != 0
             and row.fingerprint == comparison_fingerprint(data, comparison)
         )
+        valid = bool(source_current and applies)
         decision = {
             **row.data,
             "id": row.id,
@@ -65,6 +69,7 @@ def physical_review(
             "reason": row.reason,
             "fingerprint": row.fingerprint,
             "is_current": latest[row.source] == row.id,
+            "applies_to_revision": applies,
             "valid": valid,
         }
         decisions.append(decision)

@@ -177,7 +177,9 @@ def round_view(
     blockers = list(row.data["blockers"])
     if not source_current:
         blockers.append({"code": "count_round_basis_stale"})
-    review = physical_review(db, round.id, row.data, source_current=source_current)
+    review = physical_review(
+        db, round.id, row.data, revision=row.revision, source_current=source_current
+    )
     approval_blockers = [
         *blockers,
         *physical_approval_blockers(row.data, comparisons=review["physical_comparisons"]),
@@ -205,6 +207,13 @@ def round_view(
         "count_inputs_complete": row.data.get("count_inputs_complete", False),
         "count_complete": row.data.get("completed_at") is not None,
         **review,
+        "approved_physical_decisions": (
+            row.data.get("approved_physical_decisions", row.data.get("physical_decisions", []))
+            if row.status == "approved" else []
+        ),
+        "reviewed_physical_comparisons": (
+            row.data.get("physical_comparisons", []) if row.status == "approved" else []
+        ),
         "completed_at": row.data.get("completed_at"),
         "approval_blockers": approval_blockers,
         "approval_valid": bool(

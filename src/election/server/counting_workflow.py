@@ -219,7 +219,9 @@ def counting_workflow_router(
             raise HTTPException(409, detail={"code": "count_physical_difference_unaccepted"})
         frozen.update(
             physical_comparisons=view["physical_comparisons"],
-            physical_decisions=view["physical_decisions"],
+            approved_physical_decisions=[
+                decision for decision in view["physical_decisions"] if decision["valid"]
+            ],
             approved_at=as_utc(now),
             approved_by=actor.id,
             reviewed_revision=current.revision,

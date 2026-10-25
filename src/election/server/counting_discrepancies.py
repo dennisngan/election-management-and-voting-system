@@ -153,10 +153,12 @@ def counting_discrepancies_router(
                     "round_id": round.id,
                     "source": source,
                     "reviewed_revision_id": current.id,
+                    "decision_id": row.id,
                     "decision_revision": row.revision,
+                    "reviewed_revision": current.revision,
+                    "scope_revision": data.scope_revision,
                     "reason": data.reason,
                     "fingerprint": row.fingerprint,
-                    **snapshot,
                 },
             )
         )
