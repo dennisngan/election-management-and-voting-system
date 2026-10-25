@@ -90,6 +90,9 @@ ColumnLayout {
         return parts.join(" · ")
     }
     function sourceStatus(value) {
+        if (value === "received") return words.box_received_status || t("constituency_results_not_recorded")
+        if (value === "departed") return words.box_departed_status || t("constituency_results_not_recorded")
+        if (value === "prepared") return t("constituency_results_box_prepared_status")
         return words[value] || t("constituency_results_not_recorded")
     }
     function exportReport(format) {
@@ -135,10 +138,12 @@ ColumnLayout {
         id: detail
         required property string caption
         required property string value
+        property string valueObjectName: ""
         Layout.fillWidth: true
         spacing: 4
         FormCaption { text: detail.caption }
         Label {
+            objectName: detail.valueObjectName
             text: detail.value
             textFormat: Text.PlainText
             color: "#25344b"
@@ -232,12 +237,16 @@ ColumnLayout {
                     value: (page.constituency.code || "") + " · " + (page.constituency.name || "")
                 }
                 Detail {
+                    valueObjectName: "constituencyResultsCompleteValue"
                     caption: page.t("constituency_results_complete")
-                    value: page.result.complete ? page.t("yes") : page.t("no")
+                    value: page.result.complete ? page.t("constituency_results_yes")
+                        : page.t("constituency_results_no")
                 }
                 Detail {
+                    valueObjectName: "constituencyResultsProvisionalValue"
                     caption: page.t("constituency_results_provisional")
-                    value: page.result.provisional ? page.t("yes") : page.t("no")
+                    value: page.result.provisional ? page.t("constituency_results_yes")
+                        : page.t("constituency_results_no")
                 }
                 Detail {
                     caption: page.t("constituency_results_leaders")
@@ -408,9 +417,11 @@ ColumnLayout {
                         }
                         Label {
                             text: page.t("constituency_results_source_current") + ": "
-                                + (modelData.source_current ? page.t("yes") : page.t("no"))
+                                + (modelData.source_current ? page.t("constituency_results_yes")
+                                    : page.t("constituency_results_no"))
                                 + " · " + page.t("constituency_results_approval_valid") + ": "
-                                + (modelData.approval_valid ? page.t("yes") : page.t("no"))
+                                + (modelData.approval_valid ? page.t("constituency_results_yes")
+                                    : page.t("constituency_results_no"))
                                 + " · " + page.t("constituency_results_stock_estimate") + ": "
                                 + page.exact(modelData.summary || ({}), "estimated_box_from_stock_quantity")
                                 + " · " + page.t("constituency_results_turnout_estimate") + ": "
@@ -464,6 +475,9 @@ ColumnLayout {
                 currentIndex: page.selectedCandidateIndex()
                 enabled: page.canEdit
                 Accessible.name: page.t("constituency_results_choose_candidate")
+                onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+                    if (tieCandidatePicker.activeFocus) page.reveal(tieCandidatePicker)
+                })
                 onActivated: index => {
                     if (index >= 0 && index < page.tieRows.length)
                         page.results.setResolutionCandidate(page.tieRows[index].candidate_id)
@@ -572,12 +586,16 @@ ColumnLayout {
                             value: modelData.basis_digest
                         }
                         Detail {
+                            valueObjectName: "constituencyResultsDecisionCurrent_" + modelData.revision
                             caption: page.t("constituency_results_is_current")
-                            value: modelData.is_current ? page.t("yes") : page.t("no")
+                            value: modelData.is_current ? page.t("constituency_results_yes")
+                                : page.t("constituency_results_no")
                         }
                         Detail {
+                            valueObjectName: "constituencyResultsDecisionValid_" + modelData.revision
                             caption: page.t("constituency_results_is_valid")
-                            value: modelData.valid ? page.t("yes") : page.t("no")
+                            value: modelData.valid ? page.t("constituency_results_yes")
+                                : page.t("constituency_results_no")
                         }
                     }
                 }
