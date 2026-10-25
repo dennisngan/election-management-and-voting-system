@@ -75,6 +75,42 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "first_box_opening": "開啟第一個票箱",
         "questionable_determination_start": "開始判定問題選票",
         "page": "頁",
+        "round_events": "點票輪次工作事件",
+        "round_boundary": "點票輪次事件的範圍",
+        "round_notice": (
+            "每項事件只屬於其票箱範圍及點票輪次，並不表示整個票站已完成點票。"
+            "手動票站工作事項分開保留。"
+        ),
+        "field": "欄位",
+        "value": "已記錄值",
+        "determination_start": "問題選票判定開始",
+        "round_count_completion": "輪次點票完成",
+        "scope_id": "點票範圍編號",
+        "station_id": "事件所屬票站編號",
+        "scope_reference": "點票範圍識別資料",
+        "scope_revision": "凍結點票範圍版本",
+        "round_id": "輪次記錄編號",
+        "round_number": "點票輪次",
+        "round_revision": "事件來源點票版本",
+        "round_revision_id": "事件來源點票版本記錄編號",
+        "current_round_revision": "目前點票版本",
+        "current_round_revision_id": "目前點票版本記錄編號",
+        "event_id": "事件識別資料",
+        "occurrence": "目前／歷史事件",
+        "current_occurrence": "目前保留事件",
+        "historical_occurrence": "歷史事件",
+        "source_basis": "來源依據",
+        "source_current": "來源依據仍有效",
+        "source_stale": "來源依據已變更",
+        "round_status_submitted": "已提交待覆核",
+        "round_status_approved": "已核准",
+        "approval": "核准狀態",
+        "approval_valid": "核准目前有效",
+        "approval_invalid": "目前沒有有效核准",
+        "selection": "輪次選定狀態",
+        "selected": "已明確選定",
+        "not_selected": "未選定",
+        "selection_revision": "選定版本",
     },
     "sc": {
         "title": "票箱交收及点票工作时间表",
@@ -129,6 +165,42 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "first_box_opening": "开启第一个票箱",
         "questionable_determination_start": "开始判定问题选票",
         "page": "页",
+        "round_events": "点票轮次工作事件",
+        "round_boundary": "点票轮次事件的范围",
+        "round_notice": (
+            "每项事件只属于其票箱范围及点票轮次，并不表示整个票站已完成点票。"
+            "手动票站工作事项分开保留。"
+        ),
+        "field": "字段",
+        "value": "已记录值",
+        "determination_start": "问题选票判定开始",
+        "round_count_completion": "轮次点票完成",
+        "scope_id": "点票范围编号",
+        "station_id": "事件所属票站编号",
+        "scope_reference": "点票范围识别资料",
+        "scope_revision": "冻结点票范围版本",
+        "round_id": "轮次记录编号",
+        "round_number": "点票轮次",
+        "round_revision": "事件来源点票版本",
+        "round_revision_id": "事件来源点票版本记录编号",
+        "current_round_revision": "当前点票版本",
+        "current_round_revision_id": "当前点票版本记录编号",
+        "event_id": "事件识别资料",
+        "occurrence": "当前／历史事件",
+        "current_occurrence": "当前保留事件",
+        "historical_occurrence": "历史事件",
+        "source_basis": "来源依据",
+        "source_current": "来源依据仍有效",
+        "source_stale": "来源依据已变更",
+        "round_status_submitted": "已提交待复核",
+        "round_status_approved": "已核准",
+        "approval": "核准状态",
+        "approval_valid": "核准当前有效",
+        "approval_invalid": "当前没有有效核准",
+        "selection": "轮次选定状态",
+        "selected": "已明确选定",
+        "not_selected": "未选定",
+        "selection_revision": "选定版本",
     },
     "en": {
         "title": "Ballot-box handover and counting timeline",
@@ -183,6 +255,42 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "first_box_opening": "First box opening",
         "questionable_determination_start": "Questionable-paper determination started",
         "page": "Page",
+        "round_events": "Count round workflow events",
+        "round_boundary": "Scope of round workflow events",
+        "round_notice": (
+            "Each event belongs to its box scope and count round; it does not mean the whole "
+            "station has completed counting. Manual station milestones are retained separately."
+        ),
+        "field": "Field",
+        "value": "Recorded value",
+        "determination_start": "Questionable-paper determination started",
+        "round_count_completion": "Round counting completed",
+        "scope_id": "Counting scope ID",
+        "station_id": "Event station ID",
+        "scope_reference": "Counting scope reference",
+        "scope_revision": "Frozen scope revision",
+        "round_id": "Round ID",
+        "round_number": "Count round",
+        "round_revision": "Origin count revision",
+        "round_revision_id": "Origin count revision record ID",
+        "current_round_revision": "Current count revision",
+        "current_round_revision_id": "Current count revision record ID",
+        "event_id": "Event identity",
+        "occurrence": "Current / historical occurrence",
+        "current_occurrence": "Current occurrence",
+        "historical_occurrence": "Historical occurrence",
+        "source_basis": "Source basis",
+        "source_current": "Source basis remains current",
+        "source_stale": "Source basis changed",
+        "round_status_submitted": "Submitted for review",
+        "round_status_approved": "Approved",
+        "approval": "Approval status",
+        "approval_valid": "Approval currently valid",
+        "approval_invalid": "No current valid approval",
+        "selection": "Round selection status",
+        "selected": "Explicitly selected",
+        "not_selected": "Not selected",
+        "selection_revision": "Selection revision",
     },
 }
 
@@ -208,18 +316,92 @@ def metadata_rows(report: dict[str, Any]) -> list[list[str]]:
         ("basis", labels["current_server"]),
         ("box_count", str(len(report["items"]))),
         ("counting_applicable", labels["yes" if report["counting_applicable"] else "no"]),
-        (
-            "count_completion",
-            hong_kong_time(report["count_completion"])
-            if report["count_completion"]
-            else labels["not_recorded"]
-            if report["counting_applicable"]
-            else labels["not_applicable"],
-        ),
+    ]
+    if report["count_events"]:
+        values.append(("round_boundary", labels["round_notice"]))
+    else:
+        values.append(
+            (
+                "count_completion",
+                hong_kong_time(report["count_completion"])
+                if report["count_completion"]
+                else labels["not_recorded"]
+                if report["counting_applicable"]
+                else labels["not_applicable"],
+            )
+        )
+    values += [
         ("generated_at", hong_kong_time(report["generated_at"])),
         ("time_basis", "Asia/Hong_Kong (UTC+08:00)"),
     ]
     return [[labels[key], value] for key, value in values]
+
+
+def round_event_tables(report: dict[str, Any]) -> list[HistoryTable]:
+    """Render server-projected occurrences without deriving workflow or station totals."""
+    labels = report["labels"]
+    tables = []
+    for event in report["count_events"]:
+        kind = "round_count_completion" if event["kind"] == "count_completion" else event["kind"]
+        values = [
+            (key, str(event[key]))
+            for key in (
+                "event_id",
+                "station_id",
+                "scope_id",
+                "scope_reference",
+                "scope_revision",
+                "round_id",
+                "round_number",
+                "round_revision",
+                "round_revision_id",
+                "current_round_revision",
+                "current_round_revision_id",
+            )
+        ]
+        values += [
+            ("kind", labels[kind]),
+            ("event_at", hong_kong_time(event["event_at"])),
+            ("entered_at", hong_kong_time(event["entered_at"])),
+            ("actor_id", str(event["actor_id"])),
+            ("reason", event["amendment_reason"] or labels["none"]),
+            (
+                "occurrence",
+                labels["current_occurrence" if event["is_current"] else "historical_occurrence"],
+            ),
+            (
+                "source_basis",
+                labels["source_current" if event["source_current"] else "source_stale"],
+            ),
+            (
+                "status",
+                labels[
+                    "draft" if event["status"] == "draft" else "round_status_" + event["status"]
+                ],
+            ),
+            (
+                "approval",
+                labels["approval_valid" if event["approval_valid"] else "approval_invalid"],
+            ),
+            ("selection", labels["selected" if event["selected"] else "not_selected"]),
+            (
+                "selection_revision",
+                str(event["selection_revision"])
+                if event["selection_revision"] is not None
+                else labels["none"],
+            ),
+        ]
+        tables.append(
+            HistoryTable(
+                labels["round_events"] + " · " + labels[kind],
+                [
+                    [labels["field"], labels["value"]],
+                    *[[labels[key], value] for key, value in values],
+                ],
+                (0.35, 0.65),
+            )
+        )
+    return tables
 
 
 def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
@@ -348,7 +530,7 @@ def report_tables(report: dict[str, Any]) -> list[HistoryTable]:
             (0.14, 0.06, 0.13, 0.13, 0.07, 0.11, 0.12, 0.24),
             labels["empty_milestones"] if not report["milestone_history"] else "",
         ),
-    ]
+    ] + round_event_tables(report)
 
 
 def preview_lines(report: dict[str, Any]) -> list[str]:

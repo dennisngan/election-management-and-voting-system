@@ -375,6 +375,87 @@ ColumnLayout {
     }
 
     FormPanel {
+        visible: page.editorState.count_events.length > 0
+        implicitHeight: roundEventsLayout.implicitHeight + 40
+        ColumnLayout {
+            id: roundEventsLayout
+            anchors.fill: parent; anchors.margins: 20; spacing: 16
+            Heading { objectName: "boxCountRoundEventsTitle"; text: page.t("box_round_events") }
+            FormCaption { objectName: "boxRoundEventNotice"; text: page.t("box_round_notice") }
+            Repeater {
+                model: page.editorState.count_events
+                delegate: Rectangle {
+                    id: roundEvent
+                    required property var modelData
+                    objectName: "boxRoundEventCard_" + modelData.event_id
+                    Layout.fillWidth: true
+                    implicitHeight: roundEventLayout.implicitHeight + 32
+                    radius: 12; color: "#f4f7fb"; border.color: "#dce4ef"
+                    ColumnLayout {
+                        id: roundEventLayout
+                        anchors.fill: parent; anchors.margins: 16; spacing: 8
+                        FormCaption {
+                            objectName: "boxRoundEventOccurrence_" + roundEvent.modelData.event_id
+                            text: page.t("box_round_" + roundEvent.modelData.kind)
+                                + " · " + page.t(roundEvent.modelData.is_current
+                                    ? "box_round_current" : "box_round_historical")
+                            font.weight: Font.Medium; color: "#25344b"
+                        }
+                        FormCaption {
+                            text: page.t("box_round_station") + " " + roundEvent.modelData.station_id
+                                + " · " + page.t("box_round_scope") + " #" + roundEvent.modelData.scope_id
+                                + " · " + roundEvent.modelData.scope_reference + " · "
+                                + page.t("box_round_scope_revision") + " " + roundEvent.modelData.scope_revision
+                        }
+                        FormCaption {
+                            text: page.t("box_round_number") + " " + roundEvent.modelData.round_number
+                                + " · " + page.t("box_round_id") + " " + roundEvent.modelData.round_id
+                        }
+                        FormCaption {
+                            objectName: "boxRoundEventOrigin_" + roundEvent.modelData.event_id
+                            text: page.t("box_round_origin_revision") + " " + roundEvent.modelData.round_revision
+                                + " · " + page.t("box_round_record_id") + " " + roundEvent.modelData.round_revision_id
+                        }
+                        FormCaption {
+                            text: page.t("box_round_current_revision") + " " + roundEvent.modelData.current_round_revision
+                                + " · " + page.t("box_round_record_id") + " " + roundEvent.modelData.current_round_revision_id
+                        }
+                        FormCaption {
+                            objectName: "boxRoundEventTime_" + roundEvent.modelData.event_id
+                            text: page.t("box_round_event_time") + " · "
+                                + page.boxes.formatEventTime(roundEvent.modelData.event_at)
+                        }
+                        FormCaption {
+                            text: page.t("box_round_entry_time") + " · "
+                                + page.boxes.formatEventTime(roundEvent.modelData.entered_at)
+                        }
+                        FormCaption { text: page.t("box_round_actor") + " · " + roundEvent.modelData.actor_id }
+                        FormCaption {
+                            text: page.t("box_round_reason") + " · " + (roundEvent.modelData.amendment_reason
+                                || page.t("box_round_no_reason"))
+                        }
+                        FormCaption {
+                            objectName: "boxRoundEventWorkflow_" + roundEvent.modelData.event_id
+                            text: page.t(roundEvent.modelData.source_current
+                                    ? "box_round_source_current" : "box_round_source_stale")
+                                + " · " + page.t("box_round_status_" + roundEvent.modelData.status)
+                                + " · " + page.t(roundEvent.modelData.approval_valid
+                                    ? "box_round_approval_valid" : "box_round_approval_invalid")
+                        }
+                        FormCaption {
+                            objectName: "boxRoundEventSelection_" + roundEvent.modelData.event_id
+                            text: page.t(roundEvent.modelData.selected ? "box_round_selected" : "box_round_not_selected")
+                                + " · " + page.t("box_round_selection_revision") + " "
+                                + (roundEvent.modelData.selection_revision || page.t("box_round_no_selection"))
+                        }
+                        FormCaption { text: page.t("box_round_event_id") + " · " + roundEvent.modelData.event_id }
+                    }
+                }
+            }
+        }
+    }
+
+    FormPanel {
         visible: !!page.editorState.station_id
         implicitHeight: milestoneLayout.implicitHeight + 40
         ColumnLayout {
@@ -383,8 +464,14 @@ ColumnLayout {
             Heading { text: page.t("box_milestones") }
             FormCaption { visible: !page.editorState.counting_applicable; text: page.t("box_milestones_not_applicable") }
             FormCaption {
+                objectName: "boxCountCompletion"
+                visible: page.editorState.count_events.length === 0
                 text: page.t("box_count_completion") + " · " + (page.editorState.count_completion
                     ? page.boxes.formatTime(page.editorState.count_completion) : page.t("box_count_unrecorded"))
+            }
+            FormCaption {
+                visible: page.editorState.count_events.length > 0
+                text: page.t("box_round_manual_independent")
             }
             FormCaption { visible: page.editorState.counting_applicable; text: page.t("box_milestone_kind") }
             ComboBox {
