@@ -643,3 +643,44 @@ def test_two_desktops_share_queue_updates_while_preserving_an_unsaved_observatio
             assert first.reload(True)
             wait_for(qt_app, lambda: setup_idle(first))
             assert first.property("state")["current"] == second.property("state")["current"]
+
+
+@pytest.mark.parametrize("opened", [False, True])
+def test_count_scope_polling_does_not_block_clean_queue_station_selection(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    opened: bool,
+) -> None:
+    stations = active_queue_stations(admin)
+    first, second = [row["station"]["id"] for row in stations]
+    account = queue_account(admin, [first, second])
+    clock = QueueClock()
+    https_server.clock.value = clock.value
+    with queue_client(database_url, account, clock) as api:
+        saved = api.post(
+            f"/api/workspace/stations/{second}/queue", json=observation(clock, band="60_90")
+        )
+        assert saved.status_code == 201
+        with queue_editor(https_server, qt_app, account, first) as (client, editor):
+            scopes = client.property("countingScopes")
+            if opened:
+                scopes.open()
+                wait_for(qt_app, lambda: setup_idle(scopes))
+                assert scopes.property("state")["scopes"] == []
+            assert editor.open(0, "polling_officer")
+            scopes.refresh()
+            assert scopes.property("state")["busy"] is False
+            assert client.property("workspace").property("selectionGuarded") is False
+            client.property("workspace").selectStation(second)
+            wait_for(
+                qt_app,
+                lambda: (
+                    setup_idle(client.property("workspace"))
+                    and setup_idle(editor)
+                    and editor.property("state")["station_id"] == second
+                ),
+            )
+            assert editor.property("state")["current"] == saved.json()
+            assert client.property("workspace").property("state")["error"] == ""
