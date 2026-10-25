@@ -157,6 +157,7 @@ def test_material_outcome_check_resolves_committed_backup_after_lost_tls_reply(
             },
         },
         """
+        import re
         click('serverBackupsNavigation')
         page = controller.property('serverBackups')
         wait(lambda: not page.property('state')['refreshing'])
