@@ -29,7 +29,7 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
         "invalid_reason_translation_provenance": "顯示翻譯來源",
         "invalid_reason_project_translation": "項目翻譯",
         "invalid_reason_source_note": (
-            "來源核對只確認所列英文原文；繁體、簡體及可編輯英文顯示文字屬項目翻譯。"
+            "來源核對只確認所列英文原文；繁體及簡體是項目翻譯，可編輯英文屬項目顯示用語。"
             "「其他」是項目選項，不代表官方代號。"
         ),
         "invalid_reason_other_note": "「其他」不可停用，並必須要求說明。",
@@ -76,7 +76,7 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
         "invalid_reason_translation_provenance": "显示翻译来源",
         "invalid_reason_project_translation": "项目翻译",
         "invalid_reason_source_note": (
-            "来源核对只确认所列英文原文；繁体、简体及可编辑英文显示文字属于项目翻译。"
+            "来源核对只确认所列英文原文；繁体及简体是项目翻译，可编辑英文属于项目显示用语。"
             "“其他”是项目选项，不代表官方代号。"
         ),
         "invalid_reason_other_note": "“其他”不可停用，并必须要求说明。",
@@ -128,7 +128,8 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
         "invalid_reason_project_translation": "Project translation",
         "invalid_reason_source_note": (
             "Verification applies only to the displayed original English source wording. "
-            "Traditional, Simplified and editable English display labels are project translations. "
+            "Chinese display labels are project translations; "
+            "editable English labels are project wording. "
             "Other is a project option and does not claim an official code."
         ),
         "invalid_reason_other_note": "Other must remain enabled and require an explanation.",
