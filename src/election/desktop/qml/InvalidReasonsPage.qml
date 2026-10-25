@@ -42,12 +42,13 @@ ColumnLayout {
         var history = (state.history || []).map(function(row) {
             return {revision: row.revision, label: page.historyLabel(row)}
         })
+        // Plain value snapshots notify the picker when a refreshed label changes.
         if (!electionPicker.popup.visible
                 && JSON.stringify(electionRows) !== JSON.stringify(elections))
-            electionRows = elections.slice()
+            electionRows = JSON.parse(JSON.stringify(elections))
         if (!reasonPicker.popup.visible
                 && JSON.stringify(reasonRows) !== JSON.stringify(reasons))
-            reasonRows = reasons.slice()
+            reasonRows = JSON.parse(JSON.stringify(reasons))
         if (!historyPicker.popup.visible
                 && JSON.stringify(historyRows) !== JSON.stringify(history))
             historyRows = history
@@ -229,8 +230,9 @@ ColumnLayout {
                 objectName: "invalidReasonPicker"
                 model: page.reasonRows
                 currentIndex: page.indexOf(page.reasonRows, page.selected.id)
-                displayText: currentIndex >= 0
-                    ? page.reasonLabel(model[currentIndex]) : page.t("invalid_reason_select")
+                displayText: currentIndex >= 0 && currentIndex < page.reasonRows.length
+                    ? page.reasonLabel(page.reasonRows[currentIndex])
+                    : page.t("invalid_reason_select")
                 Accessible.name: page.t("invalid_reason_select")
                 delegate: ItemDelegate {
                     id: option

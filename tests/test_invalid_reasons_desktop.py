@@ -124,6 +124,14 @@ def test_admin_edits_display_labels_creates_project_reason_and_reads_history(
         assert changed['translation_provenance'] == 'project_translation'
         assert setup['source_english'] in control('invalidReasonSourceEnglish').property('text')
         assert control('invalidReasonHistory').property('visible') is True
+        frame()
+        expected_display = {
+            'tc': '本地顯示繁體', 'sc': '本地显示简体', 'en': 'Local display English'
+        }[setup['locale']]
+        assert expected_display in control('invalidReasonPicker').property('displayText'), (
+            control('invalidReasonPicker').property('displayText'),
+            catalog.property('state')['selected']['label_en'],
+        )
         choose('invalidReasonHistory', 1)
         wait(lambda: catalog.property('state')['selected']['revision'] == 1)
         assert catalog.property('state')['historical'] is True
