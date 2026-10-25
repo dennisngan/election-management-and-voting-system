@@ -4,7 +4,7 @@ COUNT_DISCREPANCY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
         "count_correction_reason_label": "修訂原因（必填）",
         "count_cancel_correction_hint": (
-            "捨棄尚未儲存的修訂，並還原所覆核的點票紀錄？"
+            "捨棄尚未儲存的修訂，並還原已儲存的點票紀錄？"
         ),
         "count_correction_title": "點票紀錄修訂",
         "count_correction_hint": (
@@ -45,7 +45,7 @@ COUNT_DISCREPANCY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "sc": {
         "count_correction_reason_label": "修订原因（必填）",
         "count_cancel_correction_hint": (
-            "舍弃尚未保存的修订，并还原所复核的点票记录？"
+            "舍弃尚未保存的修订，并还原已保存的点票记录？"
         ),
         "count_correction_title": "点票记录修订",
         "count_correction_hint": (
@@ -86,7 +86,7 @@ COUNT_DISCREPANCY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
         "count_correction_reason_label": "Correction reason (required)",
         "count_cancel_correction_hint": (
-            "Discard unsaved corrections and restore the reviewed count record?"
+            "Discard unsaved corrections and restore the saved count record?"
         ),
         "count_correction_title": "Correct a count record",
         "count_correction_hint": (
