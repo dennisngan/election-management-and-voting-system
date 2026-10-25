@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from tests.outcomes_support import complete_f2_command
 from tests.tally_support import complete_f1_command, tally_setup
 from tests.test_counting_scopes_api import (
     clear_private_active_pointer as clear_private_active_pointer,
@@ -71,3 +72,48 @@ def test_counting_officer_saves_and_resumes_partial_f2_without_changing_f1(
         assert resumed.json()["history"][1]["candidate_votes"] == f1["candidate_votes"]
         replay = client.put(path + f"/{f1['id']}/f2", json=payload)
         assert replay.status_code == 200 and replay.json() == record
+
+
+def test_balanced_f2_derives_f3_f4_without_double_counting_questionable_papers(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        client, path = setup["counter"], setup["rounds_path"]
+        options = client.get(path).json()
+        f1_command = complete_f1_command(
+            options, questionable_quantity=3, actual_counted_quantity=5
+        )
+        f1_command["candidate_votes"][0]["quantity"] = 2
+        first = client.post(path, json=f1_command)
+        assert first.status_code == 201, first.text
+        f1 = first.json()
+        command = complete_f2_command(
+            options, determination_started_at="2026-11-15T23:18:12.123456+08:00"
+        )
+        command["accepted_votes"][0]["quantity"] = 2
+        uncertainty = next(row for row in options["f2_invalid_reasons"] if row["code"] == "gc-f2-k")
+        next(row for row in command["rejected_papers"] if row["reason_id"] == uncertainty["id"])[
+            "quantity"
+        ] = 1
+        saved = client.put(path + f"/{f1['id']}/f2", json=command)
+        assert saved.status_code == 200, saved.text
+        record = saved.json()
+        assert record["status"] == "draft"
+        assert record["f2_complete"] is True
+        # Reconciled inputs do not complete the workflow before submission.
+        assert record["count_complete"] is False
+        assert record["count_inputs_complete"] is True
+        assert record["accepted_questionable_quantity"] == 2
+        assert record["rejected_questionable_quantity"] == 1
+        assert record["final_candidate_votes"][0]["quantity"] == 4
+        assert record["final_valid_quantity"] == 4
+        assert record["final_invalid_quantity"] == 1
+        assert record["final_accounted_quantity"] == 5
+        assert record["actual_counted_quantity"] == 5
+        assert record["final_arithmetic_valid"] is True
+        assert record["completed_at"] is None
+        assert record["blockers"] == []
+        assert record["event_at"] == f1["event_at"]
+        resumed = client.get(path + f"/{f1['id']}")
+        assert resumed.status_code == 200 and resumed.json()["record"] == record

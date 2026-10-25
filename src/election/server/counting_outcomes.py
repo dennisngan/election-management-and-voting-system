@@ -23,6 +23,7 @@ from election.server.counting_rounds import (
     round_context,
     round_view,
 )
+from election.server.counting_totals import f2_summary
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
 from election.server.polling import as_utc
@@ -206,10 +207,8 @@ def counting_outcomes_router(
             },
             f1_blockers=deepcopy(current.data.get("f1_blockers", current.data["blockers"])),
             f2=f2,
-            f2_complete=False,
-            count_complete=False,
-            final_accounted_quantity=None,
         )
+        frozen.update(f2_summary(frozen))
         row = CountRoundRevision(
             round_id=round.id,
             revision=data.expected_revision + 1,

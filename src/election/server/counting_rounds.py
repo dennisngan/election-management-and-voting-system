@@ -182,6 +182,7 @@ def round_view(
         "is_current": bool(head and head.id == row.id),
         "source_current": source_current,
         "blockers": blockers,
+        "completed_at": row.data.get("completed_at"),
         "revision_event_at": as_utc(row.event_at),
         "revision_entered_at": as_utc(row.entered_at),
         "revision_actor_id": row.actor_id,
