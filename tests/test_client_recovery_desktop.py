@@ -17,6 +17,12 @@ from tests.test_counting_rounds_desktop import (
 from tests.test_counting_rounds_desktop import (
     f1_editor,
 )
+from tests.test_counting_rounds_desktop import (
+    private_active_pointer as private_active_pointer,
+)
+from tests.test_counting_scopes_api import (
+    clear_private_active_pointer as clear_private_active_pointer,
+)
 from tests.test_counting_workflow_retry_desktop import (
     LostSelectionResponse,
 )
