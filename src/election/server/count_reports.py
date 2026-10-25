@@ -177,9 +177,10 @@ def _f2_tables(
     *,
     include_outcomes: bool = True,
 ) -> list[HistoryTable]:
+    section_title = labels["f2_section" if include_outcomes else "f2_event_record"]
     f2 = record.get("f2")
     if f2 is None:
-        return [_table(labels["f2_section"], [[labels["form"], labels["not_recorded"]]], labels)]
+        return [_table(section_title, [[labels["form"], labels["not_recorded"]]], labels)]
     f2_metadata = {
         **f2,
         "accepted_questionable_quantity": record.get("accepted_questionable_quantity"),
@@ -208,7 +209,7 @@ def _f2_tables(
         )
     tables = [
         _table(
-            labels["f2_section"],
+            section_title,
             _pairs(f2_metadata, tuple(metadata_fields), labels),
             labels,
         )
