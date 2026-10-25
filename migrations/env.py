@@ -18,6 +18,7 @@ from election.server import (  # noqa: F401 -- register tables with Base.metadat
     invalid_ballot_models,
     lifecycle_models,
     models,
+    outage_models,
     polling_models,
     queue_models,
     special_paper_models,
