@@ -348,10 +348,14 @@ ColumnLayout {
                 onTextChanged: if (activeFocus)
                     panel.countingRounds.setF2Field("notes", text)
             }
-            FormCaption { text: panel.t("f2_amendment_reason") }
+            FormCaption {
+                text: panel.t(panel.editorState.correction_stage === "f2"
+                    ? "count_correction_reason_label" : "f2_amendment_reason")
+            }
             Notes {
                 objectName: "f2AmendmentReason"
-                caption: panel.t("f2_amendment_reason")
+                caption: panel.t(panel.editorState.correction_stage === "f2"
+                    ? "count_correction_reason_label" : "f2_amendment_reason")
                 text: panel.forms.amendment_reason || ""
                 onTextChanged: if (activeFocus)
                     panel.countingRounds.setF2Field("amendment_reason", text)

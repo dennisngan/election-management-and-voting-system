@@ -487,9 +487,14 @@ ColumnLayout {
                     objectName: "f1Notes"; caption: page.t("f1_notes"); text: page.form.notes || ""
                     onTextChanged: if (activeFocus) page.countingRounds.setField("notes", text)
                 }
-                FormCaption { text: page.t("f1_amendment_reason") }
+                FormCaption {
+                    text: page.t(page.editorState.correction_stage === "f1"
+                        ? "count_correction_reason_label" : "f1_amendment_reason")
+                }
                 Notes {
-                    objectName: "f1AmendmentReason"; caption: page.t("f1_amendment_reason")
+                    objectName: "f1AmendmentReason"
+                    caption: page.t(page.editorState.correction_stage === "f1"
+                        ? "count_correction_reason_label" : "f1_amendment_reason")
                     text: page.form.amendment_reason || ""
                     onTextChanged: if (activeFocus) page.countingRounds.setField("amendment_reason", text)
                 }
@@ -664,7 +669,7 @@ ColumnLayout {
     ConfirmationDialog {
         id: cancelCorrectionDialog
         objectName: "countCancelCorrectionDialog"
-        message: page.t("f1_discard")
+        message: page.t("count_cancel_correction_hint")
         acceptLabel: page.t("count_cancel_correction")
         rejectLabel: page.t("keep_editing")
         onConfirmed: page.countingRounds.cancelCorrection()
