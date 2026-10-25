@@ -296,6 +296,30 @@ _LABELS: dict[str, tuple[str, str, str]] = {
         "清除 F2 并保存 F1",
         "Discard current F2 and save F1",
     ),
+    "count_report_invalid": (
+        "請選擇 F1、F2、F3、F4 或完整點票記錄。",
+        "请选择 F1、F2、F3、F4 或完整点票记录。",
+        "Choose F1, F2, F3, F4, or the complete count record.",
+    ),
+    "count_report_ready": (
+        "已載入所選點票表格預覽",
+        "已加载所选点票表格预览",
+        "Selected count form preview ready",
+    ),
+    "count_exported": ("已匯出所選點票表格", "已导出所选点票表格", "Selected count form exported"),
+    "count_export_failed": (
+        "無法儲存點票表格，請檢查目的地並重試。",
+        "无法保存点票表格，请检查目标位置并重试。",
+        "Unable to save the count form. Check the destination and retry.",
+    ),
+    "count_reports": ("點票表格及匯出", "点票表格及导出", "Count forms and exports"),
+    "count_report_form": ("點票表格", "点票表格", "Count form"),
+    "count_form_f1": ("F1 初步點票", "F1 初步点票", "F1 initial tally"),
+    "count_form_f2": ("F2 問題選票判定", "F2 问题选票判定", "F2 questionable-paper determination"),
+    "count_form_f3": ("F3 無效選票總覽", "F3 无效选票总览", "F3 invalid paper breakdown"),
+    "count_form_f4": ("F4 最終點票總覽", "F4 最终点票总览", "F4 final count"),
+    "count_form_count": ("完整點票記錄", "完整点票记录", "Complete count record"),
+    "count_preview": ("預覽所選點票表格", "预览所选点票表格", "Preview selected count form"),
 }
 
 COUNT_OUTCOME_TRANSLATIONS: dict[str, dict[str, str]] = {

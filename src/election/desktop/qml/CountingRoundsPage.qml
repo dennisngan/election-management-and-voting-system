@@ -30,6 +30,7 @@ ColumnLayout {
     property var scopeOptions: []
     property var roundOptions: []
     property var historyOptions: []
+    property var reportOptions: []
     property string selectorKey: ""
     property string pendingFormat: "pdf"
     property string pendingLocale: "tc"
@@ -60,6 +61,11 @@ ColumnLayout {
         return -1
     }
     function syncRows() {
+        var forms = ["f1", "f2", "f3", "f4", "count"].map(function(form) {
+            return {form: form, label: page.t("count_form_" + form)}
+        })
+        if (!reportFormPicker.popup.visible && JSON.stringify(reportOptions) !== JSON.stringify(forms))
+            reportOptions = forms
         var candidates = (editorState.candidate_inputs || []).map(function(row) {
             return {candidate_id: row.candidate_id, name: row.name, ballot_number: row.ballot_number}
         })
@@ -96,7 +102,7 @@ ColumnLayout {
         pendingFormat = format; pendingLocale = locale
         exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
         exportDialog.defaultSuffix = format
-        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/f1-round-"
+        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/" + (editorState.report_form || "f1") + "-round-"
             + selected.id + "-revision-" + selected.revision + "-" + locale + "." + format
         exportDialog.open()
     }
@@ -512,12 +518,25 @@ ColumnLayout {
         ColumnLayout {
             id: reports
             anchors.fill: parent; anchors.margins: 20; spacing: 14
-            Heading { text: page.t("f1_report") }
+            Heading { text: page.t(page.editorState.report_form === "f1" ? "f1_report" : "count_reports") }
+            FormCaption { text: page.t("count_report_form") }
+            Picker {
+                id: reportFormPicker
+                objectName: "countReportForm"
+                model: page.reportOptions
+                currentIndex: page.indexFor(page.reportOptions, "form", page.editorState.report_form)
+                displayText: page.t("count_form_" + (page.editorState.report_form || "f1"))
+                Accessible.name: page.t("count_report_form")
+                enabled: !page.working && !page.editorState.dirty
+                onActivated: index => {
+                    if (index >= 0) page.countingRounds.selectReportForm(model[index].form)
+                }
+            }
             GridLayout {
                 Layout.fillWidth: true; columns: page.width > 800 ? 3 : 1
                 columnSpacing: 12; rowSpacing: 12
                 Action {
-                    objectName: "f1Preview"; text: page.t("f1_preview")
+                    objectName: "f1Preview"; text: page.t(page.editorState.report_form === "f1" ? "f1_preview" : "count_preview")
                     enabled: !page.working && !page.editorState.dirty
                     onClicked: page.countingRounds.preview(page.locale)
                 }

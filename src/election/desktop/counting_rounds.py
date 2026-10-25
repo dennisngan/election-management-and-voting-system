@@ -93,6 +93,7 @@ class CountingRoundsController(QObject):
             "refresh_error": "",
             "notice": "",
             "uncertain_save": False,
+            "report_form": "f1",
             "report": {},
             "report_text": "",
             "export_path": "",
@@ -299,19 +300,44 @@ class CountingRoundsController(QObject):
             return
         catalog = {row["id"]: row["revision"] for row in self._state["invalid_reasons"]}
         editable_catalog = (
-            self._state["role"] == "counting_officer" and not self._state["historical"]
+            self._state["role"] == "counting_officer"
+            and not self._state["historical"]
+            and selected["status"] == "draft"
         )
         current_inputs = {
             row["reason_id"]
             for row in self._state["invalid_inputs"]
             if row.get("current_catalog", True)
         }
-        stale_catalog = editable_catalog and (
-            current_inputs != set(catalog)
-            or any(
-                catalog.get(row["reason_id"]) != row["reason_revision"]
-                for row in self._state["invalid_inputs"]
-                if row.get("current_catalog", True)
+        stale_catalog = (
+            editable_catalog
+            and self._state["dirty_stage"] != "f2"
+            and (
+                current_inputs != set(catalog)
+                or any(
+                    catalog.get(row["reason_id"]) != row["reason_revision"]
+                    for row in self._state["invalid_inputs"]
+                    if row.get("current_catalog", True)
+                )
+            )
+        )
+        f2_catalog = {row["id"]: row["revision"] for row in self._state["f2_invalid_reasons"]}
+        f2_inputs = {
+            row["reason_id"]
+            for row in self._state["rejected_inputs"]
+            if row.get("current_catalog", True)
+        }
+        stale_f2_catalog = bool(
+            editable_catalog
+            and self._state["dirty_stage"] != "f1"
+            and (selected.get("f2") is not None or self._state["dirty_stage"] == "f2")
+            and (
+                f2_inputs != set(f2_catalog)
+                or any(
+                    f2_catalog.get(row["reason_id"]) != row["reason_revision"]
+                    for row in self._state["rejected_inputs"]
+                    if row.get("current_catalog", True)
+                )
             )
         )
         self._state.update(
@@ -324,7 +350,8 @@ class CountingRoundsController(QObject):
                     != self._state["edit_scope_revision"]
                 )
             )
-            or stale_catalog,
+            or stale_catalog
+            or stale_f2_catalog,
         )
 
     def _rounds_loaded(self, data: dict[str, Any], *, foreground: bool) -> None:
@@ -1055,16 +1082,35 @@ class CountingRoundsController(QObject):
     def selectApproved(self, password: str) -> None:
         self._workflow("select", password)
 
+    @Slot(str, result=bool)
+    def selectReportForm(self, form: str) -> bool:
+        if form not in ("f1", "f2", "f3", "f4", "count"):
+            self._error("count_report_invalid")
+            return False
+        if self._state["busy"]:
+            return False
+        if self._state["dirty"]:
+            self._error("unsaved_count_changes")
+            return False
+        if form != self._state["report_form"]:
+            self._state["report_form"] = form
+            self._clear_report()
+            self._state.update(error="", error_origin="", notice="")
+            self.stateChanged.emit()
+        return True
+
     def _report_path(self, locale: str, extension: str = "") -> str | None:
         row = self._state["selected"]
         if self._state["busy"] or not row or locale not in ("tc", "sc", "en"):
             self._error("count_round_not_found")
             return None
         if self._state["dirty"]:
-            self._error("unsaved_f1_changes")
+            self._error("unsaved_count_changes")
             return None
+        form = self._state["report_form"]
+        endpoint = "statement" if form == "f1" else form
         return (
-            f"{self._path()}/{row['id']}/revisions/{row['revision']}/statement"
+            f"{self._path()}/{row['id']}/revisions/{row['revision']}/{endpoint}"
             f"{extension}?locale={locale}"
         )
 
@@ -1078,6 +1124,7 @@ class CountingRoundsController(QObject):
         if path is None:
             return
         selected = self._state["selected"]
+        form = self._state["report_form"]
         identity = (
             self._state["station_id"],
             self._state["selected_scope_id"],
@@ -1097,26 +1144,33 @@ class CountingRoundsController(QObject):
             if not (
                 observed == identity
                 and body.get("locale") == locale
+                and (form == "f1" or body.get("form") == form)
                 and isinstance(lines, list)
                 and lines
                 and all(isinstance(line, str) for line in lines)
             ):
                 self._error("invalid_response", "read")
                 return
-            self._state.update(report=body, report_text="\n".join(lines), notice="f1_report_ready")
+            self._state.update(
+                report=body,
+                report_text="\n".join(lines),
+                notice="f1_report_ready" if form == "f1" else "count_report_ready",
+            )
 
         self._send(path, "GET", None, loaded)
 
     @Slot(str, str, str)
     def exportStatement(self, format: str, locale: str, filepath: str) -> None:
+        form = self._state["report_form"]
+        error_code = "f1_export_failed" if form == "f1" else "count_export_failed"
         if format not in ("pdf", "csv") or self._download is None:
-            self._error("f1_export_failed")
+            self._error(error_code)
             return
         path, destination = self._report_path(locale, "." + format), report_destination(filepath)
         if path is None:
             return
         if destination is None:
-            self._error("f1_export_failed")
+            self._error(error_code)
             return
         self._generation += 1
         generation, report_generation = self._generation, self._report_generation
@@ -1134,9 +1188,13 @@ class CountingRoundsController(QObject):
             if generation != self._generation or report_generation != self._report_generation:
                 return
             if not save_report(body, destination, format):
-                failed("f1_export_failed")
+                failed(error_code)
                 return
-            self._state.update(busy=False, export_path=destination, notice="f1_exported")
+            self._state.update(
+                busy=False,
+                export_path=destination,
+                notice="f1_exported" if form == "f1" else "count_exported",
+            )
             self.stateChanged.emit()
 
         self._download(path, loaded, failed)
