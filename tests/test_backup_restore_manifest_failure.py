@@ -121,6 +121,7 @@ def test_restore_survives_final_manifest_failure_after_target_import(
             json={"username": source_account["username"], "password": source_admin_password},
         )
         assert login.status_code == 200, login.text
+        source_auth.headers["Authorization"] = "Bearer " + login.json()["token"]
         password_change = source_auth.post(
             "/api/auth/password",
             json={
@@ -265,6 +266,9 @@ def test_restore_survives_final_manifest_failure_after_target_import(
         ):
             if secret:
                 assert secret not in combined_output
+        assert process.returncode == 0, (
+            f"Restore CLI exit={process.returncode}; stdout={stdout}; stderr={stderr}"
+        )
         result = json.loads(stdout)
         assert result == {
             "status": "succeeded",
