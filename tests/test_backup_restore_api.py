@@ -348,6 +348,7 @@ def test_backup_manifest_restores_public_count_state_and_known_request_once(
                     },
                 )
                 assert admin_login.status_code == 200, admin_login.text
+                restored_admin.headers["Authorization"] = "Bearer " + admin_login.json()["token"]
                 changed = restored_admin.post(
                     "/api/auth/password",
                     json={
