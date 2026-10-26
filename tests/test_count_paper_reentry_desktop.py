@@ -121,7 +121,10 @@ def test_counting_officer_selects_pending_paper_and_submits_it_once_in_material(
             assert editor.selectScope({setup['scope']['id']}) is True
             wait(lambda: not editor.property('state')['busy'])
             assert editor.selectRound({round_id}) is True
-            wait(lambda: not editor.property('state')['busy'])
+            wait(lambda: not editor.property('state')['busy']
+                and not editor.property('state')['paper_loading']
+                and any(row['id'] == setup['paper_id']
+                    for row in editor.property('state')['paper_records']))
             draft = editor.property('state')['selected']
             assert draft['status'] == 'draft'
             assert draft['revision'] == 2
@@ -146,6 +149,7 @@ def test_counting_officer_selects_pending_paper_and_submits_it_once_in_material(
             editor.setF2Field('notes', setup['f2_notes'])
             click('f2Save')
             wait(lambda: not editor.property('state')['busy']
+                and not editor.property('state')['paper_loading']
                 and editor.property('state')['selected'].get('f2', {{}}).get('notes')
                 == setup['f2_notes'])
             still_selected = editor.property('state')
