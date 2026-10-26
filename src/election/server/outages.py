@@ -815,7 +815,10 @@ def outage_router(
         digest = _digest("paper_amend", station_id, paper_id, actor.id, data)
         receipt = _receipt(db, data.request_id)
         if receipt:
-            return _replay(receipt, digest)
+            replay = _replay(receipt, digest)
+            if replay.get("outage_id") != outage_id:
+                raise HTTPException(404, detail={"code": "outage_paper_not_found"})
+            return replay
         outage = _get_outage(db, station_id, outage_id, lock=True)
         outage_revision = latest_outage_revision(db, outage.id, lock=True)
         if outage_revision is None or outage_revision.revision != data.expected_outage_revision:
