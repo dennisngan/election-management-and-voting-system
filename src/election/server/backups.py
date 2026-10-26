@@ -3,7 +3,6 @@
 import hashlib
 import json
 import os
-import stat
 import tempfile
 from collections.abc import Callable
 from datetime import datetime
@@ -17,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
+from election.private_paths import private_directory, private_file_descriptor
 from election.server.backup_models import ServerBackup
 from election.server.models import Account, AuditEvent
 from election.server.mysql_backup_tools import BackupToolError, dump_mysql
@@ -69,11 +69,15 @@ def _source_hash() -> str:
 
 
 def _private_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    if not private_directory(path.parent):
+        raise OSError("Private manifest directory unavailable")
     descriptor, name = tempfile.mkstemp(prefix="." + path.name + ".", dir=path.parent)
     staged = Path(name)
     published = False
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            if not private_file_descriptor(output.fileno()):
+                raise OSError("Private manifest file unavailable")
             json.dump(manifest, output, ensure_ascii=False, indent=2)
             output.write("\n")
             output.flush()
@@ -149,7 +153,7 @@ def backups_router(
         try:
             directory = settings.backup_directory
             directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if stat.S_IMODE(directory.stat().st_mode) & 0o077:
+            if not private_directory(directory):
                 raise BackupToolError("backup_directory_not_private")
             nontransactional = db.scalar(
                 text(

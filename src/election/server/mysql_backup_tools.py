@@ -5,7 +5,6 @@ import ipaddress
 import os
 import re
 import shutil
-import stat
 import subprocess
 import tempfile
 from collections.abc import Iterator
@@ -14,6 +13,8 @@ from typing import BinaryIO, NoReturn
 
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
+
+from election.private_paths import private_directory, private_file, private_file_descriptor
 
 
 class BackupToolError(RuntimeError):
@@ -187,6 +188,8 @@ def _private_options_file(directory: Path, contents: bytes) -> Iterator[str]:
     try:
         temp_path = Path(temporary.name)
         temp_path.chmod(0o700)
+        if not private_directory(temp_path):
+            raise OSError("Private credential directory unavailable")
         path = temp_path / "client.cnf"
         descriptor = os.open(
             path,
@@ -194,6 +197,8 @@ def _private_options_file(directory: Path, contents: bytes) -> Iterator[str]:
             0o600,
         )
         with os.fdopen(descriptor, "wb") as file:
+            if not private_file_descriptor(file.fileno()):
+                raise OSError("Private credential file unavailable")
             file.write(contents)
             file.flush()
             os.fsync(file.fileno())
@@ -214,18 +219,19 @@ def _private_options_file(directory: Path, contents: bytes) -> Iterator[str]:
 
 def _private_restore_source(source: Path) -> BinaryIO:
     try:
-        parent = source.parent.resolve(strict=True)
-        if not parent.is_dir() or stat.S_IMODE(parent.stat().st_mode) & 0o077:
+        parent = source.parent
+        parent.stat()
+        if not private_directory(parent):
             _fail("restore_directory_not_private")
+        parent = parent.resolve(strict=True)
         path = parent / source.name
-        mode = path.lstat().st_mode
-        if not stat.S_ISREG(mode) or stat.S_IMODE(mode) != 0o600:
+        if not private_file(path):
             _fail("restore_source_not_private")
         descriptor = os.open(
             path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         )
         opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode) or stat.S_IMODE(opened.st_mode) != 0o600:
+        if not private_file_descriptor(descriptor):
             os.close(descriptor)
             _fail("restore_source_not_private")
         if opened.st_size <= 0:
@@ -454,11 +460,12 @@ def _publish(partial: Path, destination: Path) -> None:
         os.link(partial, destination, follow_symlinks=False)
         published = True
         partial.unlink()
-        directory = os.open(destination.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        if os.name != "nt":
+            directory = os.open(destination.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     except FileExistsError:
         _fail("backup_artifact_exists")
     except OSError:
@@ -495,9 +502,11 @@ def dump_mysql(
     version = _client_version(command, environment)
 
     try:
-        parent = destination.parent.resolve(strict=True)
-        if not parent.is_dir() or stat.S_IMODE(parent.stat().st_mode) & 0o077:
+        parent = destination.parent
+        parent.stat()
+        if not private_directory(parent):
             _fail("backup_directory_not_private")
+        parent = parent.resolve(strict=True)
         destination = parent / destination.name
         if not destination.name or destination.name in (".", "..") or destination.exists():
             _fail("backup_artifact_exists")
@@ -530,8 +539,16 @@ def dump_mysql(
             f"--host={host}",
             f"--port={port}",
         ]
-        with os.fdopen(descriptor, "wb") as output, tempfile.TemporaryFile(mode="w+b") as stderr:
-            descriptor = None
+        output_file = os.fdopen(descriptor, "wb")
+        descriptor = None
+        with (
+            output_file as output,
+            tempfile.TemporaryFile(mode="w+b", dir=parent) as stderr,
+        ):
+            if not private_file_descriptor(output.fileno()) or not private_file_descriptor(
+                stderr.fileno()
+            ):
+                _fail("backup_io_failed")
             if container is None:
                 with _private_options_file(parent, options) as defaults_file:
                     argv = [
@@ -646,9 +663,11 @@ def restore_mysql(
     try:
         with _private_restore_source(source) as dump:
             _validate_restore_dump(dump)
-            with tempfile.TemporaryFile(mode="w+b") as stderr:
+            directory = source.parent.resolve(strict=True)
+            with tempfile.TemporaryFile(mode="w+b", dir=directory) as stderr:
+                if not private_file_descriptor(stderr.fileno()):
+                    _fail("restore_io_failed")
                 if container is None:
-                    directory = source.parent.resolve(strict=True)
                     with _private_options_file(directory, options) as defaults:
                         argv = [
                             binary,

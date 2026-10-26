@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -436,3 +437,49 @@ def test_backup_manifest_restores_public_count_state_and_known_request_once(
                         row["revision"] for row in current_round.json()["history"]
                     ] == [4, 3, 2, 1]
                     assert current_round.json() == expected_count_history
+
+
+def test_restore_reports_private_stderr_failure_before_import(
+    admin: TestClient,
+    database_url: str,
+    backup_directory: Path,
+    restore_database_url: str,
+) -> None:
+    backup = admin.post("/api/backups", json={"request_id": str(uuid4())})
+    assert backup.status_code == 200, backup.text
+    assert backup.json()["status"] == "succeeded"
+    manifest = backup_directory / (backup.json()["id"] + ".manifest.json")
+    script = """
+import tempfile
+from election.server.backup_restore import main
+
+def unavailable_stderr(*args, **kwargs):
+    raise PermissionError("Injected private stderr creation failure")
+
+tempfile.TemporaryFile = unavailable_stderr
+raise SystemExit(main())
+"""
+    result = subprocess.run(
+        [
+            sys.executable, "-c", script,
+            "--manifest", str(manifest),
+            "--target-schema", TARGET_SCHEMA,
+            "--mysql-container", "election-system-mysql",
+        ],
+        env={
+            **os.environ,
+            "ELECTION_DATABASE_URL": database_url,
+            "ELECTION_RESTORE_DATABASE_URL": restore_database_url,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1, result.stdout
+    failure = json.loads(result.stderr.splitlines()[-1])
+    assert failure == {
+        "status": "failed",
+        "error_code": "backup_io_failed",
+        "phase": "validated",
+    }
+    assert result.stdout == ""
