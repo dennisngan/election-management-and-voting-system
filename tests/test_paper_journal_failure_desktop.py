@@ -180,7 +180,7 @@ def test_committed_count_keeps_paper_locked_until_journal_outcome_can_be_checked
                 assert endpoint.request_count("POST", submit_path) == 1
 
                 state = editor.property("state")
-                assert state["error"] == "recovery_journal_unavailable"
+                assert state["error"] == "recovery_journal_outcome_unavailable"
                 assert state["uncertain_save"] is True
                 assert state["paper_binding_locked"] is True
                 assert state["paper_record"]["id"] == paper["id"]
