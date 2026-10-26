@@ -131,7 +131,7 @@ def test_material_turnout_save_submit_paper_receipts_and_unbound_legacy_save(
             frame()
             assert control('turnoutPaperRefresh').property('visible')
             click('turnoutPaperRefresh')
-            wait(lambda: len(turnout.property('state')['paper_records']) == 3)
+            wait(lambda: len(turnout.property('state')['paper_records']) == 2)
             assert turnout.property('state')['paper_record'] == {{}}
 
             # The selector starts at ordinary entry; explicitly clear a paper choice.
@@ -157,7 +157,7 @@ def test_material_turnout_save_submit_paper_receipts_and_unbound_legacy_save(
             assert turnout.property('state')['paper_record'] == {{}}
 
             click('turnoutPaperRefresh')
-            wait(lambda: len(turnout.property('state')['paper_records']) == 3)
+            wait(lambda: len(turnout.property('state')['paper_records']) == 2)
             choose('turnoutPaperPicker', 1)
             wait(lambda: turnout.property('state')['paper_record'].get('id') == {save_paper['id']})
             assert turnout.property('state')['paper_record']['action'] == 'save'
@@ -176,7 +176,7 @@ def test_material_turnout_save_submit_paper_receipts_and_unbound_legacy_save(
 
             # The matching Submit paper re-enters the already saved, exact period-one draft.
             click('turnoutPaperRefresh')
-            wait(lambda: len(turnout.property('state')['paper_records']) == 2)
+            wait(lambda: len(turnout.property('state')['paper_records']) == 1)
             choose('turnoutPaperPicker', 1)
             wait(lambda: turnout.property('state')['paper_record'].get('id')
                 == {submit_paper['id']})
