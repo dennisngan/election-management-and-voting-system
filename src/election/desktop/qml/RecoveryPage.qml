@@ -67,13 +67,17 @@ ColumnLayout {
         var receipt = row.receipt || ({})
         return receipt.record || ({})
     }
+    function receiptStatus(value) {
+        return value === "recorded" ? page.t("recovery_recorded")
+            : page.t(value || "recovery_unknown_error")
+    }
     function receiptSummary(row) {
         var record = page.receiptRecord(row)
         if (!Object.keys(record).length) return page.t("recovery_no_receipt")
         if (row.workflow === "count")
             return page.t("recovery_round") + " #" + (record.round_number || "—")
                 + " · " + page.t("recovery_revision") + " " + (record.revision || "—")
-                + " · " + page.t(record.status || "recovery_unknown_error")
+                + " · " + page.receiptStatus(record.status)
         if (row.workflow === "allocation")
             return page.t("recovery_allocation") + " #" + (record.id || "—")
                 + " · " + page.t("recovery_revision") + " " + (record.revision || "—")
@@ -82,7 +86,7 @@ ColumnLayout {
         if (row.workflow === "turnout")
             return page.t("recovery_period") + " #" + (record.period_index || "—")
                 + " · " + page.t("recovery_revision") + " " + (record.revision || "—")
-                + " · " + page.t(record.status || "recovery_unknown_error")
+                + " · " + page.receiptStatus(record.status)
         return page.t("recovery_no_receipt")
     }
     function exact(row, key) {
