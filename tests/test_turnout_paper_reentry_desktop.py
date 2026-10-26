@@ -168,7 +168,11 @@ def test_material_turnout_save_submit_paper_receipts_and_unbound_legacy_save(
             assert turnout.property('state')['paper_record']['id'] == {save_paper['id']}
             assert turnout.property('state')['error']
             assert control('turnoutSave').property('enabled') is True
+            assert turnout.selectPaperRecord({save_paper['id']}) is True
+            assert turnout.property('state')['error'] == ''
             click('turnoutSave')
+            wait(lambda: turnout.property('state')['busy']
+                or turnout.property('state')['selected'].get('revision') == 2)
             wait(lambda: not turnout.property('state')['busy'])
             save_state = turnout.property('state')
             assert save_state['selected'].get('revision') == 2, {{
