@@ -83,6 +83,12 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
                     return {item.property('text') for item in page.findChildren(QObject)
                             if isinstance(item.property('text'), str)}
                 wait(lambda: expected_captions <= result_captions())
+                expected_votes_caption = {
+                    'en': 'Candidate valid votes', 'tc': '候選人有效票', 'sc': '候选人有效票'
+                }[locale]
+                wait(lambda: sum(item.property('text') == expected_votes_caption
+                                 for item in page.findChildren(QObject))
+                     == len(record['contributions']))
             controller.setLocale('en')
             received_box = control(
                 'constituencyResultBox_' + str(setup['transferred_box_id'])
