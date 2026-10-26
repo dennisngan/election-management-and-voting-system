@@ -20,6 +20,7 @@ from election.server.counting_scopes import scope_options
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account
 from election.server.polling import as_utc
+from election.server.recount_state import scope_recount_state
 from election.server.station_models import PollingStation
 from election.server.stock import stock_scope
 
@@ -207,7 +208,18 @@ def constituency_result(db: Session, actor: Account, constituency_id: int) -> di
             round_options, selected = _selected_round(db, actor, station.id, scope_id)
             pointer = round_options.get("selection")
             state["selection"] = pointer
-            if pointer is None:
+            recount = scope_recount_state(db, scope_id, pointer)
+            if recount["pending"]:
+                instruction = recount["latest_instruction"]
+                pending.append(
+                    _pending(
+                        "recount_pending", station_id=station.id, scope_id=scope_id,
+                        box_ids=box_ids, instruction_id=instruction["id"],
+                        new_round_id=instruction["new_round_id"],
+                        source_round_id=instruction["source_round_id"],
+                    )
+                )
+            elif pointer is None:
                 pending.append(
                     _pending(
                         "selected_count_missing",
