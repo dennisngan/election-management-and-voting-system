@@ -1,6 +1,7 @@
 """Dirty-basis and uncertain-retry edges for constituency tie decisions."""
 
 from collections.abc import Iterator
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from tests.box_support import READY_PASSWORD, box_staff
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
+from tests.results_support import result_setup
 from tests.test_constituency_tie_api import _save_tie_round, complete_tie_setup
 from tests.test_counting_workflow_retry_desktop import (
     LostSelectionResponse,
@@ -325,3 +327,180 @@ def test_report_preview_rejects_peer_tie_resolution_on_same_count_basis(
                 assert refreshed['report'] == {}
                 """,
             )
+
+
+def test_tie_conflict_codes_render_localized_form_notices(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    with complete_tie_setup(admin, database_url) as setup:
+        _save_tie_round(setup, [0, 0])
+        https_server.clock.value = setup["clock"].value
+        supervisor = setup["clients"]["supervisor"]
+        result_path = f"/api/workspace/constituencies/{setup['constituency_id']}/results"
+        before = supervisor.get(result_path)
+        assert before.status_code == 200, before.text
+        result = before.json()
+        candidate_id = result["tie_candidate_ids"][0]
+
+        stale_digest = ("1" if result["basis_digest"][0] != "1" else "2") + result["basis_digest"][
+            1:
+        ]
+        stale = supervisor.post(
+            result_path + "/tie-resolutions",
+            json={
+                "request_id": str(uuid4()),
+                "expected_resolution_revision": 0,
+                "basis_digest": stale_digest,
+                "candidate_id": candidate_id,
+                "reason": "Review the current result basis.",
+                "password": READY_PASSWORD,
+            },
+        )
+        assert stale.status_code == 409, stale.text
+        stale_code = stale.json()["detail"]["code"]
+        assert stale_code == "constituency_result_basis_stale"
+
+        resolved = supervisor.post(
+            result_path + "/tie-resolutions",
+            json={
+                "request_id": str(uuid4()),
+                "expected_resolution_revision": 0,
+                "basis_digest": result["basis_digest"],
+                "candidate_id": candidate_id,
+                "reason": "Supervisor records the explicitly selected tied candidate.",
+                "password": READY_PASSWORD,
+            },
+        )
+        assert resolved.status_code == 200, resolved.text
+        revision_conflict = supervisor.post(
+            result_path + "/tie-resolutions",
+            json={
+                "request_id": str(uuid4()),
+                "expected_resolution_revision": 0,
+                "basis_digest": result["basis_digest"],
+                "candidate_id": candidate_id,
+                "reason": "A stale revision must be explained to the Supervisor.",
+                "password": READY_PASSWORD,
+            },
+        )
+        assert revision_conflict.status_code == 409, revision_conflict.text
+        revision_code = revision_conflict.json()["detail"]["code"]
+        assert revision_code == "tie_resolution_revision_conflict"
+
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": READY_PASSWORD,
+                "station_id": setup["stations"]["N1"]["id"],
+                "locale": "en",
+                "api_error_codes": [stale_code, revision_code],
+            },
+            """
+            from pathlib import Path
+            from PySide6.QtQml import QQmlComponent
+
+            notice_component = QQmlComponent(engine)
+            notice_component.loadUrl(QUrl.fromLocalFile(
+                str(Path('src/election/desktop/qml/FormNotice.qml').resolve())
+            ))
+            wait(lambda: notice_component.status() != QQmlComponent.Status.Loading)
+            assert notice_component.status() == QQmlComponent.Status.Ready
+
+            def text_items(root):
+                pending = list(root.childItems())
+                values = []
+                while pending:
+                    item = pending.pop()
+                    value = item.property('text')
+                    if isinstance(value, str):
+                        values.append(value)
+                    pending.extend(item.childItems())
+                return values
+
+            for locale in ('tc', 'sc', 'en'):
+                controller.setLocale(locale)
+                wait(lambda: controller.property('state')['locale'] == locale)
+                words = controller.texts
+                for code in setup['api_error_codes']:
+                    notice = notice_component.createWithInitialProperties({
+                        'words': words, 'error': code, 'notice': ''
+                    })
+                    assert notice is not None, notice_component.errorString()
+                    notice.setParentItem(window.contentItem())
+                    notice.setWidth(window.width())
+                    notice.setHeight(100)
+                    wait(lambda: notice.property('visible'))
+                    displayed = text_items(notice)
+                    message = words.get(code, code)
+                    assert message in displayed
+                    assert message != code
+                    assert code not in displayed
+                    assert '_' not in message
+                    if locale in ('tc', 'sc'):
+                        assert any('\u4e00' <= char <= '\u9fff' for char in message)
+                    notice.deleteLater()
+                    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+                    application.processEvents()
+            """,
+        )
+
+
+def test_unreceived_scope_blocker_uses_selected_language_in_statement(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with result_setup(admin, database_url) as setup:
+        receiver = setup["clients"]["receiveronly"]
+        scope_path = setup["scope_path"]
+        station_id = setup["stations"]["N2"]["id"]
+        options = receiver.get(scope_path)
+        assert options.status_code == 200, options.text
+        source = next(
+            row["record"]
+            for row in options.json()["source_accounting"]
+            if row["station"]["id"] == station_id
+        )
+        unreceived = setup["boxes"]["unreceived_n2"]
+        draft = receiver.post(
+            scope_path,
+            json={
+                "request_id": str(uuid4()),
+                "expected_revision": 0,
+                "reference": "Scope with an unreceived physical box " + uuid4().hex[:8],
+                "event_at": "2026-11-15T23:10:00+08:00",
+                "box_revisions": [{"box_id": unreceived["id"], "revision": unreceived["revision"]}],
+                "accounting_revisions": [
+                    {"station_id": station_id, "revision": source["revision"]}
+                ],
+            },
+        )
+        assert draft.status_code == 201, draft.text
+        pending_scope_id = draft.json()["id"]
+        result_path = f"/api/workspace/constituencies/{setup['constituency_id']}/results/statement"
+        localized_blockers = {
+            "tc": "尚未記錄選票箱接收。",
+            "sc": "尚未记录选票箱接收。",
+            "en": "Ballot-box receipt is not recorded.",
+        }
+        supervisor = setup["clients"]["supervisor"]
+        for locale, label in localized_blockers.items():
+            response = supervisor.get(result_path, params={"locale": locale})
+            assert response.status_code == 200, response.text
+            report = response.json()
+            scope_pending = next(
+                row
+                for row in report["result"]["pending"]
+                if row.get("scope_id") == pending_scope_id and row["code"] == "scope_not_ready"
+            )
+            assert "box_receipt_missing" in [
+                blocker["code"] for blocker in scope_pending["blockers"]
+            ]
+            rendered = " ".join(
+                cell for table in report["tables"] for row in table["rows"] for cell in row
+            )
+            assert label in rendered
+            assert "box_receipt_missing" not in rendered
