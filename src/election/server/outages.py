@@ -926,7 +926,9 @@ def outage_router(
         digest = _digest(f"paper_link_receipt:{outage_id}", station_id, paper_id, actor.id, data)
         previous = _receipt(db, data.request_id)
         if previous:
-            return _replay(previous, digest)
+            replay = _replay(previous, digest)
+            _check_operational_role(actor, replay["workflow"])
+            return replay
         outage = _get_outage(db, station_id, outage_id, lock=True)
         outage_revision = latest_outage_revision(db, outage.id, lock=True)
         if outage_revision is None or outage_revision.revision != data.expected_outage_revision:
