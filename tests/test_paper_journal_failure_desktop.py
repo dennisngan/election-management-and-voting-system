@@ -20,6 +20,10 @@ from election.server.app import create_app
 from tests.box_support import READY_PASSWORD
 from tests.desktop_support import TLS_DIRECTORY, ControlledClock, wait_for, wait_for_editor_idle
 from tests.tally_support import tally_setup
+from tests.test_allocation_paper_reentry_desktop import _register_paper
+from tests.test_allocation_paper_reentry_desktop import (
+    allocation_base_setup as allocation_base_setup,
+)
 from tests.test_client_recovery_contract_desktop import _draft_count
 from tests.test_outage_reconciliation_edges_api import _create_outage_and_paper
 from tests.test_outage_reports_desktop import (
@@ -217,3 +221,100 @@ def test_committed_count_keeps_paper_locked_until_journal_outcome_can_be_checked
             finally:
                 endpoint.release.set()
                 journal_path.chmod(0o600)
+
+
+def test_committed_allocation_keeps_paper_locked_until_journal_outcome_can_be_checked(
+    allocation_base_setup: dict,
+    qt_app: QCoreApplication,
+    completed_write_server: CompletedWriteServer,
+    private_command_directory: Path,
+) -> None:
+    setup = allocation_base_setup
+    endpoint = completed_write_server
+    endpoint.clock.value = setup["clock"].value
+    station_id = setup["station"]["id"]
+    outage_path, paper = _register_paper(
+        setup, action="create", target={"counter_id": setup["counter"]["id"]},
+    )
+    write_path = setup["base"] + "/allocations"
+    with signed_in_client(endpoint, setup["account"]["username"], station_id, qt_app) as client:
+        editor = client.property("allocations")
+        editor.open()
+        wait_for_editor_idle(qt_app, editor)
+        editor.setField("counter_id", str(setup["counter"]["id"]))
+        wait_for_editor_idle(qt_app, editor)
+        editor.refreshPaperRecords()
+        wait_for_editor_idle(qt_app, editor)
+        assert [row["id"] for row in editor.property("state")["paper_records"]] == [paper["id"]]
+        assert editor.selectPaperRecord(paper["id"]) is True
+        for name, value in {
+            "series": setup["series"], "serial_from": "000001", "serial_to": "000002",
+        }.items():
+            editor.setField(name, value)
+        endpoint.hold_path = write_path
+        editor.save()
+        wait_for(qt_app, endpoint.entered.is_set)
+        files = list(private_command_directory.glob("*.json"))
+        assert len(files) == 1
+        journal_path = files[0]
+        original = json.loads(journal_path.read_text())
+        assert original["status"] == "pending"
+        assert original["payload"]["paper_record_id"] == paper["id"]
+        try:
+            journal_path.chmod(0o400)
+            endpoint.release.set()
+            wait_for(qt_app, lambda: not editor.property("state")["busy"])
+            entered = setup["polling"].get(outage_path)
+            assert entered.status_code == 200, entered.text
+            linked = entered.json()["record"]["paper_records"][0]
+            assert linked["status"] == "entered"
+            assert linked["reentry"]["request_id"] == original["request_id"]
+            record = linked["reentry"]["record"]
+            assert record["status"] == "recorded"
+            assert record["quantity"] == 2
+            history_path = write_path + f"/{record['id']}/history"
+            committed = setup["polling"].get(history_path)
+            assert committed.status_code == 200, committed.text
+            assert len(committed.json()["items"]) == 1
+            assert endpoint.request_count("POST", write_path) == 1
+
+            state = editor.property("state")
+            assert state["error"] == "recovery_journal_unavailable"
+            assert state["paper_uncertain"] is True
+            assert state["paper_record"]["id"] == paper["id"]
+            assert editor.selectPaperRecord(0) is False
+            editor.save()
+            assert endpoint.request_count("POST", write_path) == 1
+            workspace = client.property("workspace")
+            assert workspace.property("unresolvedRequest") is True
+            workspace.selectStation(0, True)
+            assert workspace.property("state")["error"] == "workspace_uncertain_request"
+            assert workspace.property("state")["selected"]["station"]["id"] == station_id
+
+            journal_path.chmod(0o600)
+            recovery = client.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            command = next(row for row in recovery.property("state")["commands"]
+                           if row["request_id"] == original["request_id"])
+            assert command["payload"] == original["payload"]
+            assert command["status"] == "pending"
+            recovery.checkOutcome(command["request_id"])
+            wait_for(qt_app, lambda: (
+                not recovery.property("state")["busy"]
+                and next(row for row in recovery.property("state")["commands"]
+                         if row["request_id"] == command["request_id"])["status"] == "committed"
+            ))
+            wait_for_editor_idle(qt_app, editor)
+            settled = editor.property("state")
+            assert settled["paper_uncertain"] is False
+            assert settled["paper_record"] == {}
+            assert settled["selected"]["id"] == record["id"]
+            assert workspace.property("unresolvedRequest") is False
+            assert endpoint.request_count("POST", write_path) == 1
+            after_check = setup["polling"].get(history_path)
+            assert after_check.status_code == 200, after_check.text
+            assert after_check.json() == committed.json()
+        finally:
+            endpoint.release.set()
+            journal_path.chmod(0o600)
