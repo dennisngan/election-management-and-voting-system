@@ -6,6 +6,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
@@ -170,6 +171,7 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 "submitted": "已提交",
                 "round_field": "點票輪次",
                 "record_id_field": "原始業務記錄編號",
+                "later_link_field": "後續收據連結請求編號",
             },
             "sc": {
                 "section": "不可变更收据内容",
@@ -177,6 +179,7 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 "submitted": "已提交",
                 "round_field": "点票轮次",
                 "record_id_field": "原始业务记录编号",
+                "later_link_field": "后续收据链接请求编号",
             },
             "en": {
                 "section": "Immutable receipt details",
@@ -184,6 +187,7 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 "submitted": "Submitted",
                 "round_field": "Round number",
                 "record_id_field": "Original business record ID",
+                "later_link_field": "Later receipt link request ID",
             },
         }
         reports = {}
@@ -223,6 +227,7 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 if section["title"] == receipt_contract["section"]
             )
             assert [receipt_contract["status_field"], receipt_contract["submitted"]] in receipt_rows
+            assert not any(row[0] == receipt_contract["later_link_field"] for row in receipt_rows)
             assert [
                 receipt_contract["round_field"],
                 str(submitted.json()["round_number"]),
@@ -294,3 +299,221 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
         )
         assert forbidden.status_code == 403, forbidden.text
         assert forbidden.json()["detail"]["code"] == "station_access_denied"
+
+
+def _link_original_count_receipt(setup: dict) -> dict:
+    officer = setup["counter"]
+    rounds_path = setup["rounds_path"]
+    options = officer.get(rounds_path).json()
+    initial = officer.post(rounds_path, json=complete_f1_command(options))
+    assert initial.status_code == 201, initial.text
+    round_path = rounds_path + f"/{initial.json()['id']}"
+    f2 = officer.put(round_path + "/f2", json=complete_f2_command(options))
+    assert f2.status_code == 200, f2.text
+    setup["clock"].value = datetime(2026, 11, 15, 16, 0, 0, 123456, tzinfo=UTC)
+    original_request_id = str(uuid4())
+    submitted = officer.post(
+        round_path + "/submit",
+        json={
+            "request_id": original_request_id,
+            "expected_revision": f2.json()["revision"],
+            "scope_revision": options["scope"]["revision"],
+        },
+    )
+    assert submitted.status_code == 200, submitted.text
+    original_record = submitted.json()
+    station_id = setup["stations"]["N1"]["id"]
+    outcome_path = f"/api/workspace/stations/{station_id}/request-outcomes/{original_request_id}"
+    original_outcome = officer.get(outcome_path, params={"workflow": "count"})
+    assert original_outcome.status_code == 200, original_outcome.text
+
+    setup["clock"].value = datetime(2026, 11, 15, 16, 30, 0, 234567, tzinfo=UTC)
+    outage_path = f"/api/workspace/stations/{station_id}/outages"
+    outage = officer.post(
+        outage_path,
+        json={
+            "request_id": str(uuid4()),
+            "reference": "LATER-LINK-" + uuid4().hex[:10],
+            "kind": "network",
+            "started_at": "2026-11-15T23:00:00+08:00",
+            "ended_at": "2026-11-15T23:30:00+08:00",
+            "notes": "The count was committed before its paper reference was registered.",
+        },
+    )
+    assert outage.status_code == 201, outage.text
+    record_path = outage_path + f"/{outage.json()['id']}"
+    paper = officer.post(
+        record_path + "/paper-records",
+        json={
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "paper_reference": "LATER-COUNT-" + uuid4().hex[:10],
+            "workflow": "count",
+            "action": "submit",
+            "original_event_at": "2026-11-15T23:25:33.123456+08:00",
+            "target": {"scope_id": setup["scope"]["id"], "round_id": original_record["id"]},
+            "notes": "Preserve the signed original return beside its existing receipt.",
+        },
+    )
+    assert paper.status_code == 201, paper.text
+    paper_path = record_path + f"/paper-records/{paper.json()['id']}"
+    checked = officer.get(paper_path + "/receipt", params={"request_id": original_request_id})
+    assert checked.status_code == 200, checked.text
+    link_request_id = str(uuid4())
+    reason = "Compared the signed original return with the committed count."
+    setup["clock"].value = datetime(2026, 11, 15, 16, 45, 0, 345678, tzinfo=UTC)
+    linked = officer.post(
+        paper_path + "/link-receipt",
+        json={
+            "request_id": link_request_id,
+            "expected_outage_revision": 1,
+            "expected_paper_revision": 1,
+            "original_request_id": original_request_id,
+            "expected_receipt_digest": checked.json()["receipt_digest"],
+            "reason": reason,
+        },
+    )
+    assert linked.status_code == 200, linked.text
+    reentry = linked.json()["reentry"]
+    assert reentry["request_id"] == original_request_id
+    assert reentry["record"] == original_record
+    assert reentry["link"] == {
+        "request_id": link_request_id,
+        "reason": reason,
+        "actor_id": original_record["actor_id"],
+        "linked_at": "2026-11-15T16:45:00.345678Z",
+        "receipt_digest": checked.json()["receipt_digest"],
+    }
+    outcome_after = officer.get(outcome_path, params={"workflow": "count"})
+    assert outcome_after.status_code == 200, outcome_after.text
+    assert outcome_after.json() == original_outcome.json()
+    return {
+        "record_path": record_path,
+        "original_request_id": original_request_id,
+        "original_record": original_record,
+        "link": reentry["link"],
+    }
+
+
+def test_outage_preview_separates_later_link_metadata_from_the_original_receipt(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        linked = _link_original_count_receipt(setup)
+        statement = setup["counter"].get(
+            linked["record_path"] + "/statement", params={"locale": "en"},
+        )
+        assert statement.status_code == 200, statement.text
+        rows = next(
+            section["rows"] for section in statement.json()["sections"]
+            if section["title"] == "Immutable receipt details"
+        )
+        assert ["Re-entry request ID", linked["original_request_id"]] in rows
+        assert ["Original business record status", "Submitted"] in rows
+        assert ["Later receipt link request ID", linked["link"]["request_id"]] in rows
+        assert ["Later receipt link reason", linked["link"]["reason"]] in rows
+        assert ["Later receipt link account ID", str(linked["link"]["actor_id"])] in rows
+        assert [
+            "Later receipt link time (Hong Kong time)", "2026-11-16 00:45:00.345678 HKT",
+        ] in rows
+        assert ["Linked original receipt fingerprint", linked["link"]["receipt_digest"]] in rows
+
+
+@pytest.mark.parametrize(
+    ("locale", "labels"),
+    [
+        (
+            "tc",
+            {
+                "section": "不可變更收據內容",
+                "original_request": "重新輸入請求編號",
+                "original_status": "原始業務記錄狀態",
+                "submitted": "已提交",
+                "request": "後續收據連結請求編號",
+                "reason": "後續收據連結原因",
+                "actor": "後續收據連結人員編號",
+                "time": "後續收據連結時間（香港時間）",
+                "digest": "已連結原始收據指紋",
+            },
+        ),
+        (
+            "sc",
+            {
+                "section": "不可变更收据内容",
+                "original_request": "重新输入请求编号",
+                "original_status": "原始业务记录状态",
+                "submitted": "已提交",
+                "request": "后续收据链接请求编号",
+                "reason": "后续收据链接原因",
+                "actor": "后续收据链接人员编号",
+                "time": "后续收据链接时间（香港时间）",
+                "digest": "已链接原始收据指纹",
+            },
+        ),
+        (
+            "en",
+            {
+                "section": "Immutable receipt details",
+                "original_request": "Re-entry request ID",
+                "original_status": "Original business record status",
+                "submitted": "Submitted",
+                "request": "Later receipt link request ID",
+                "reason": "Later receipt link reason",
+                "actor": "Later receipt link account ID",
+                "time": "Later receipt link time (Hong Kong time)",
+                "digest": "Linked original receipt fingerprint",
+            },
+        ),
+    ],
+)
+def test_linked_receipt_provenance_is_translated_in_preview_csv_and_pdf(
+    admin: TestClient,
+    database_url: str,
+    tmp_path: Path,
+    locale: str,
+    labels: dict[str, str],
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        linked = _link_original_count_receipt(setup)
+        expected_rows = [
+            [labels["original_request"], linked["original_request_id"]],
+            [labels["original_status"], labels["submitted"]],
+            [labels["request"], linked["link"]["request_id"]],
+            [labels["reason"], linked["link"]["reason"]],
+            [labels["actor"], str(linked["link"]["actor_id"])],
+            [labels["time"], "2026-11-16 00:45:00.345678 HKT"],
+            [labels["digest"], linked["link"]["receipt_digest"]],
+        ]
+        officer = setup["counter"]
+        statement_path = linked["record_path"] + "/statement"
+        response = officer.get(statement_path, params={"locale": locale})
+        assert response.status_code == 200, response.text
+        report = response.json()
+        receipt_rows = next(
+            section["rows"] for section in report["sections"]
+            if section["title"] == labels["section"]
+        )
+        for expected in expected_rows:
+            assert expected in receipt_rows
+        assert linked["link"]["request_id"] != linked["original_request_id"]
+
+        csv_response = officer.get(statement_path + ".csv", params={"locale": locale})
+        assert csv_response.status_code == 200, csv_response.text
+        csv_rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
+        for expected in expected_rows:
+            assert expected in csv_rows
+
+        pdf_response = officer.get(statement_path + ".pdf", params={"locale": locale})
+        assert pdf_response.status_code == 200, pdf_response.text
+        pages = PdfReader(BytesIO(pdf_response.content)).pages
+        page_texts = [page.extract_text() or "" for page in pages]
+        assert page_texts and all(page_texts)
+        compact_text = "".join("".join(page_texts).split())
+        for label, value in expected_rows:
+            assert "".join(label.split()) in compact_text
+            assert "".join(value.split()) in compact_text
+        assert READY_PASSWORD not in compact_text
+        assert "password" not in compact_text.lower()
+        (tmp_path / ("linked-receipt-" + locale + ".pdf")).write_bytes(pdf_response.content)
+        (tmp_path / ("linked-receipt-" + locale + ".csv")).write_bytes(csv_response.content)
