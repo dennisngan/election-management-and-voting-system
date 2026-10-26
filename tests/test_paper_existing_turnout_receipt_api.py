@@ -367,3 +367,86 @@ def test_existing_turnout_submit_receipt_can_be_linked_without_overwriting_its_o
         after_snapshot = snapshot_after_link.json()
         for key in ("schedule", "period_count", "items", "approved_prefix"):
             assert after_snapshot[key] == turnout_snapshot[key]
+
+
+def test_turnout_submitted_after_paper_registration_cannot_be_linked_as_an_existing_receipt(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    path = scope["path"]
+    clock = TurnoutClock()
+
+    with turnout_staff(admin, database_url, clock, [station_id]) as (officer, _):
+        saved = officer.put(
+            path + "/1",
+            json=turnout_draft(
+                supplied_hourly=7,
+                supplied_cumulative=7,
+                event_at="2026-11-15T09:30:00+08:00",
+            ),
+        )
+        assert saved.status_code == 200, saved.text
+        saved_record = saved.json()
+        assert saved_record["entered_at"] == "2026-11-15T04:00:00Z"
+
+        clock.value += timedelta(minutes=30)
+        outage_path = f"/api/workspace/stations/{station_id}/outages"
+        outage = officer.post(
+            outage_path,
+            json={
+                "request_id": str(uuid4()),
+                "reference": "T25 later turnout submit " + uuid4().hex[:8],
+                "kind": "network",
+                "started_at": "2026-11-15T09:00:00+08:00",
+                "ended_at": "2026-11-15T10:00:00+08:00",
+                "notes": "Register the paper before the pending report is submitted.",
+            },
+        )
+        assert outage.status_code == 201, outage.text
+        outage_record_path = outage_path + f"/{outage.json()['id']}"
+        paper = officer.post(
+            outage_record_path + "/paper-records",
+            json={
+                "request_id": str(uuid4()),
+                "expected_outage_revision": 1,
+                "paper_reference": "T25-LATER-SUBMIT-" + uuid4().hex[:10],
+                "workflow": "turnout",
+                "action": "submit",
+                "original_event_at": "2026-11-15T09:45:00+08:00",
+                "target": {"period_index": 1},
+                "notes": "A later submit must use the normal paper reentry workflow.",
+            },
+        )
+        assert paper.status_code == 201, paper.text
+        paper_record = paper.json()
+        assert paper_record["entered_at"] == "2026-11-15T04:30:00Z"
+        assert paper_record["status"] == "pending"
+
+        clock.value += timedelta(minutes=5)
+        submit_command = turnout_command(saved_record["revision"])
+        submitted = officer.post(path + "/1/submit", json=submit_command)
+        assert submitted.status_code == 200, submitted.text
+        submitted_record = submitted.json()
+        assert submitted_record["entered_at"] == saved_record["entered_at"]
+        assert submitted_record["submitted_at"] == "2026-11-15T04:35:00Z"
+        assert (
+            submitted_record["entered_at"]
+            < paper_record["entered_at"]
+            < submitted_record["submitted_at"]
+        )
+
+        paper_path = outage_record_path + f"/paper-records/{paper_record['id']}"
+        preview = officer.get(
+            paper_path + "/receipt",
+            params={"request_id": submit_command["request_id"]},
+        )
+        assert preview.status_code == 409, preview.text
+        assert preview.json()["detail"]["code"] == "paper_receipt_mismatch"
+        refreshed = officer.get(outage_record_path)
+        assert refreshed.status_code == 200, refreshed.text
+        assert refreshed.json()["record"]["paper_records"] == [paper_record]
+        record_after_preview = officer.get(path + "/1")
+        assert record_after_preview.status_code == 200, record_after_preview.text
+        assert record_after_preview.json() == submitted_record
