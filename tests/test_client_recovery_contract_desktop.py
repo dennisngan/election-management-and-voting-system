@@ -83,9 +83,21 @@ def recovery_fault_server(
         if malformed_success and response.status_code == 200:
             return JSONResponse({"status": "submitted"}, status_code=200)
         if corrupt_outcome and response.status_code == 200:
-            payload = json.loads(response.body)
+            chunks = [chunk async for chunk in response.body_iterator]
+            body = b"".join(chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks)
+            payload = json.loads(body)
             payload["record"]["id"] += 1000000
-            return JSONResponse(payload, status_code=200)
+            preserved_headers = {
+                name: value
+                for name, value in response.headers.items()
+                if name.lower() not in {"content-length", "content-type", "transfer-encoding"}
+            }
+            return JSONResponse(
+                payload,
+                status_code=response.status_code,
+                headers=preserved_headers,
+                background=response.background,
+            )
         return response
 
     server = uvicorn.Server(
@@ -383,6 +395,14 @@ def test_invalid_fresh_password_preserves_original_supervisor_command(
             assert server.request_count("POST", target + "/select") == 2
             assert READY_PASSWORD not in json.dumps(recovery.property("state"))
             assert "Wrong-Recovery-Password-42!" not in json.dumps(recovery.property("state"))
+
+            recovery.checkOutcome(request_id)
+            wait_for_editor_idle(qt_app, recovery)
+            after_denial = recovery.property("state")["commands"][0]
+            assert after_denial["request_id"] == request_id
+            assert after_denial["status"] == "uncertain"
+            assert after_denial["error"] == "request_not_found"
+            assert server.request_count("POST", target + "/select") == 2
 
             recovery.retry(request_id, READY_PASSWORD)
             wait_for_editor_idle(qt_app, recovery)
