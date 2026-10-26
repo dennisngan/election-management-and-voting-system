@@ -51,6 +51,8 @@ class AllocationController(QObject):
         if isinstance(self._recovery, RecoveryController):
             self._recovery.stateChanged.connect(self._recovery_changed)
         self._generation = 0
+        self._paper_generation = 0
+        self._account_id = 0
         self._opened = False
         self._report_active = False
         self._pending: tuple[str, str] | None = None
@@ -64,6 +66,8 @@ class AllocationController(QObject):
 
     def reset(self) -> None:
         self._generation += 1
+        self._paper_generation += 1
+        self._account_id = 0
         self._opened = False
         self._report_active = False
         self._pending = None
@@ -99,20 +103,22 @@ class AllocationController(QObject):
 
     def set_context(self, context: dict[str, Any]) -> None:
         station_id = context.get("station", {}).get("id", 0)
-        changed = station_id != self._state["station_id"]
+        account_id = context.get("account", {}).get("id", 0)
+        changed = (
+            station_id != self._state["station_id"] or account_id != self._account_id
+        )
         if changed:
             opened = self._opened
             self.reset()
             self._opened = opened
+        self._account_id = account_id
         self._state.update(
             station_id=station_id,
             context=deepcopy(context),
             role=context.get("account", {}).get("role", ""),
         )
         if self._state["role"] != "polling_officer":
-            self._state.update(paper_records=[], paper_record={})
-            self._paper_uncertain = False
-            self._state["paper_uncertain"] = False
+            self._clear_paper_options()
         self.stateChanged.emit()
         if changed and station_id and self._opened:
             self.refresh()
@@ -142,6 +148,10 @@ class AllocationController(QObject):
     def _clear_paper_record(self) -> None:
         self._state["paper_record"] = {}
 
+    def _clear_paper_options(self) -> None:
+        self._paper_generation += 1
+        self._state["paper_records"] = []
+
     @Slot()
     def refreshPaperRecords(self) -> None:
         if (
@@ -152,19 +162,35 @@ class AllocationController(QObject):
         ):
             return
         if not self._writable():
-            self._state.update(paper_records=[], paper_record={})
+            self._clear_paper_options()
             self.stateChanged.emit()
             return
         operation = self._paper_target()
         if operation is None:
-            self._state.update(paper_records=[])
+            self._clear_paper_options()
             self._clear_paper_record()
             self.stateChanged.emit()
             return
         action, target = operation
         station_id = self._state["station_id"]
+        generation = self._paper_generation = self._paper_generation + 1
 
         def loaded(snapshot: dict[str, Any]) -> None:
+            if generation != self._paper_generation:
+                if self._opened and self._state["station_id"] and not (
+                    self._state["busy"] or self._state["refreshing"]
+                ):
+                    self.refreshPaperRecords()
+                return
+            operation = self._paper_target()
+            if (
+                station_id != self._state["station_id"]
+                or operation is None
+                or operation != (action, target)
+            ):
+                self._clear_paper_options()
+                self.stateChanged.emit()
+                return
             try:
                 rows = paper_options(
                     snapshot,
@@ -305,6 +331,7 @@ class AllocationController(QObject):
             not isinstance(command, dict)
             or command.get("workflow") != "allocation"
             or command.get("station_id") != self._state["station_id"]
+            or command.get("actor_id") != self._account_id
         ):
             return
         if command.get("status") == "committed":
@@ -515,10 +542,10 @@ class AllocationController(QObject):
         if allocation_id < 0 or not self._can_load(discard):
             return False
         if allocation_id == 0:
+            self._clear_paper_options()
+            self._clear_paper_record()
             self._state.update(
                 selected={},
-                paper_records=[],
-                paper_record={},
                 forms=empty_forms(),
                 quantity_display="—",
                 history=[],
@@ -576,7 +603,8 @@ class AllocationController(QObject):
             target_changed = name == "counter_id"
             self._state["forms"][name] = value
             if target_changed:
-                self._state.update(paper_records=[], paper_record={})
+                self._clear_paper_options()
+                self._clear_paper_record()
             self._state.update(dirty=True, error="", notice="")
             self._clear_report()
             self._calculate()
@@ -652,6 +680,7 @@ class AllocationController(QObject):
 
     def _accept(self, data: dict[str, Any]) -> None:
         self._paper_uncertain = False
+        self._clear_paper_options()
         self._state.update(
             selected=allocation_display(data),
             paper_records=[],
