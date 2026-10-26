@@ -87,29 +87,6 @@ def test_counting_officer_selects_pending_paper_and_submits_it_once_in_material(
         run_workspace_qml(
             {
                 "server": https_server.url,
-                "username": setup["accounts"]["supervisor"]["username"],
-                "password": READY_PASSWORD,
-                "station_id": station_id,
-                "locale": "en",
-            },
-            f"""
-            click('countingRoundsNavigation')
-            editor = controller.countingRounds
-            wait(lambda: not editor.property('state')['busy'])
-            assert editor.selectScope({setup['scope']['id']}) is True
-            wait(lambda: not editor.property('state')['busy'])
-            assert editor.selectRound({round_id}) is True
-            wait(lambda: not editor.property('state')['busy'])
-            assert editor.property('state')['role'] == 'supervisor'
-            picker = control('countRoundPaperRecord')
-            assert picker.property('visible') is False
-            assert editor.selectPaperRecord({paper.json()['id']}) is False
-            """,
-        )
-
-        run_workspace_qml(
-            {
-                "server": https_server.url,
                 "username": setup["accounts"]["receiveronly"]["username"],
                 "password": READY_PASSWORD,
                 "station_id": station_id,
@@ -267,6 +244,135 @@ def test_counting_officer_selects_pending_paper_and_submits_it_once_in_material(
         assert sum(row["status"] == "draft" for row in history) == 3
         assert history[0]["candidate_votes"] == before["candidate_votes"]
         assert history[0]["invalid_papers"] == before["invalid_papers"]
+
+
+def test_supervisor_cannot_select_pending_count_paper_in_material(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        https_server.clock.value = setup["clock"].value
+        officer = setup["counter"]
+        station_id = setup["stations"]["N1"]["id"]
+        rounds_path = setup["rounds_path"]
+        options_response = officer.get(rounds_path)
+        assert options_response.status_code == 200, options_response.text
+        counted = officer.post(
+            rounds_path, json=complete_f1_command(options_response.json())
+        )
+        assert counted.status_code == 201, counted.text
+
+        outages_path = f"/api/workspace/stations/{station_id}/outages"
+        outage = officer.post(
+            outages_path,
+            json={
+                "request_id": str(uuid4()),
+                "reference": "T25 supervisor paper picker " + uuid4().hex[:8],
+                "kind": "network",
+                "started_at": "2026-11-15T23:10:00+08:00",
+                "ended_at": "2026-11-15T23:50:00+08:00",
+                "notes": "The paper count form was retained during the interruption.",
+            },
+        )
+        assert outage.status_code == 201, outage.text
+        paper = officer.post(
+            f"{outages_path}/{outage.json()['id']}/paper-records",
+            json={
+                "request_id": str(uuid4()),
+                "expected_outage_revision": 1,
+                "paper_reference": "T25-PAPER-SUPERVISOR-" + uuid4().hex[:8],
+                "workflow": "count",
+                "action": "submit",
+                "original_event_at": "2026-11-15T23:35:12.345678+08:00",
+                "target": {
+                    "scope_id": setup["scope"]["id"],
+                    "round_id": counted.json()["id"],
+                },
+                "notes": "Count completed on the signed paper tally.",
+            },
+        )
+        assert paper.status_code == 201, paper.text
+
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": "en",
+            },
+            f"""
+            click('countingRoundsNavigation')
+            editor = controller.countingRounds
+            wait(lambda: not editor.property('state')['busy'])
+            assert editor.selectScope({setup['scope']['id']}) is True
+            wait(lambda: not editor.property('state')['busy'])
+            assert editor.selectRound({counted.json()['id']}) is True
+            wait(lambda: not editor.property('state')['busy'])
+            assert editor.property('state')['role'] == 'supervisor'
+            picker = control('countRoundPaperRecord')
+            assert picker.property('visible') is False
+            assert editor.selectPaperRecord({paper.json()['id']}) is False
+            """,
+        )
+
+
+def test_ordinary_count_submit_does_not_add_a_paper_flag(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        https_server.clock.value = setup["clock"].value
+        officer = setup["counter"]
+        station_id = setup["stations"]["N1"]["id"]
+        rounds_path = setup["rounds_path"]
+        options_response = officer.get(rounds_path)
+        assert options_response.status_code == 200, options_response.text
+        options = options_response.json()
+        f1 = officer.post(rounds_path, json=complete_f1_command(options))
+        assert f1.status_code == 201, f1.text
+        round_id = f1.json()["id"]
+        f2 = officer.put(
+            f"{rounds_path}/{round_id}/f2", json=complete_f2_command(options)
+        )
+        assert f2.status_code == 200, f2.text
+
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["receiveronly"]["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": "en",
+                "scope_id": setup["scope"]["id"],
+                "round_id": round_id,
+            },
+            f"""
+            click('countingRoundsNavigation')
+            editor = controller.countingRounds
+            wait(lambda: not editor.property('state')['busy'])
+            assert editor.selectScope({setup['scope']['id']}) is True
+            wait(lambda: not editor.property('state')['busy'])
+            assert editor.selectRound({round_id}) is True
+            wait(lambda: not editor.property('state')['busy'])
+            click('countSubmit')
+            wait(lambda: not editor.property('state')['busy']
+                and editor.property('state')['notice'] == 'count_submitted')
+            recovery = controller.recovery
+            recovery.reload()
+            wait(lambda: not recovery.property('state')['busy'])
+            command = next(row for row in recovery.property('state')['commands']
+                if row['workflow'] == 'count' and row['path'].endswith('/submit'))
+            assert command['status'] == 'committed'
+            assert 'paper_record_id' not in command['payload']
+            """,
+        )
+
+        current = officer.get(f"{rounds_path}/{round_id}")
+        assert current.status_code == 200, current.text
+        assert current.json()["record"]["status"] == "submitted"
 
 
 def test_lost_count_response_keeps_paper_binding_until_matching_outcome_check(
