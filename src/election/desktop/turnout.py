@@ -39,15 +39,6 @@ UNCERTAIN_PAPER_ERRORS = frozenset({
 })
 
 
-def _same_event_time(first: Any, second: Any) -> bool:
-    try:
-        left = datetime.fromisoformat(first.replace("Z", "+00:00"))
-        right = datetime.fromisoformat(second.replace("Z", "+00:00"))
-        return left.tzinfo is not None and right.tzinfo is not None and left == right
-    except (AttributeError, TypeError, ValueError, OverflowError):
-        return False
-
-
 def empty_forms() -> dict[str, str]:
     return {
         "supplied_hourly": "",
@@ -102,6 +93,7 @@ class TurnoutController(QObject):
         self._request = request
         self._download = download
         self._generation = 0
+        self._paper_generation = 0
         self._opened = False
         self._reviewed = False
         self._reviewed_wrapper: dict[str, Any] = {}
@@ -123,6 +115,7 @@ class TurnoutController(QObject):
 
     def reset(self) -> None:
         self._generation += 1
+        self._paper_generation += 1
         self._opened = False
         self._reviewed = False
         self._reviewed_wrapper = {}
@@ -213,9 +206,10 @@ class TurnoutController(QObject):
         if settled:
             changed = changed or self._state["uncertain_save"] or bool(
                 self._paper_pending_request_id
-            )
+            ) or self._state["paper_refreshing"] or bool(self._state["paper_records"])
             self._paper_pending_request_id = ""
             self._paper_pending_identity = {}
+            self._invalidate_paper_read()
             self._state.update(
                 paper_pending_request_id="",
                 uncertain_save=False,
@@ -323,6 +317,10 @@ class TurnoutController(QObject):
             actions=("save", "submit"),
         )
 
+    def _invalidate_paper_read(self) -> None:
+        self._paper_generation += 1
+        self._state.update(paper_records=[], paper_refreshing=False, paper_error="")
+
     @Slot(result=bool)
     def refreshPaperRecords(self) -> bool:
         if (
@@ -331,14 +329,22 @@ class TurnoutController(QObject):
             or self._state["busy"]
         ):
             return False
-        generation = self._generation
+        self._paper_generation += 1
+        generation = self._paper_generation
         station_id = self._state["station_id"]
+        period_index = self._state["selected_period"]
         path = f"/api/workspace/stations/{station_id}/outages"
         self._state.update(paper_refreshing=True, paper_error="")
         self.stateChanged.emit()
 
         def loaded(snapshot: dict[str, Any]) -> None:
-            if generation != self._generation:
+            if generation != self._paper_generation:
+                return
+            if station_id != self._state["station_id"] or period_index != self._state[
+                "selected_period"
+            ]:
+                self._invalidate_paper_read()
+                self.stateChanged.emit()
                 return
             try:
                 rows = self._paper_record_options(snapshot)
@@ -360,7 +366,13 @@ class TurnoutController(QObject):
             self.stateChanged.emit()
 
         def failed(code: str) -> None:
-            if generation != self._generation:
+            if generation != self._paper_generation:
+                return
+            if station_id != self._state["station_id"] or period_index != self._state[
+                "selected_period"
+            ]:
+                self._invalidate_paper_read()
+                self.stateChanged.emit()
                 return
             self._state.update(
                 paper_refreshing=False,
@@ -686,6 +698,7 @@ class TurnoutController(QObject):
         if not self._can_load(discard):
             return False
         self._clear_paper_binding()
+        self._invalidate_paper_read()
         if not any(row["period_index"] == index for row in self._state["items"]):
             self._state["offset"] = ((index - 1) // self._state["limit"]) * self._state["limit"]
         self._reviewed = False
@@ -709,6 +722,7 @@ class TurnoutController(QObject):
         if not self._can_load(discard):
             return False
         self._clear_paper_binding()
+        self._invalidate_paper_read()
         self._reviewed = False
         self._state.update(
             offset=offset,
@@ -730,6 +744,7 @@ class TurnoutController(QObject):
         if not current or revision < 1 or not self._can_load(discard):
             return False
         self._clear_paper_binding()
+        self._invalidate_paper_read()
 
         def loaded(data: dict[str, Any]) -> None:
             if not self._record(data, index) or data["revision"] != revision:
@@ -892,11 +907,6 @@ class TurnoutController(QObject):
                     target={"period_index": self._state["selected_period"]},
                 )
             except ValueError:
-                self._error("paper_reentry_invalid")
-                return
-            if action == "submit" and paper and not _same_event_time(
-                selected.get("event_at"), paper.get("original_event_at")
-            ):
                 self._error("paper_reentry_invalid")
                 return
         values = self._content(amend=action == "amend") if action in ("save", "amend") else {}
