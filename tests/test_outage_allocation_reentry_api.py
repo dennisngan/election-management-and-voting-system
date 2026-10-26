@@ -320,3 +320,114 @@ def test_create_paper_target_time_and_stock_failures_leave_it_pending_then_enter
     record = polling.get(outage_path).json()["record"]["paper_records"][0]
     assert record["status"] == "entered"
     assert record["reentry"]["record"] == created.json()
+
+
+def test_existing_allocation_create_paper_link_requires_the_original_receipt_owner(
+    allocation_paper_setup: dict,
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    setup = allocation_paper_setup
+    polling, allocation_path = setup["polling"], setup["base"] + "/allocations"
+    event_at = "2026-11-15T08:05:00+08:00"
+    command = _allocation_command(setup, event_at=event_at)
+    created = polling.post(allocation_path, json=command)
+    assert created.status_code == 201, created.text
+    original_receipt = created.json()
+    outage_path = _register_outage(setup)
+    paper = _register_allocation_paper(
+        setup, outage_path, action="create",
+        target={"counter_id": setup["counter"]["id"]}, event_at=event_at,
+    )
+
+    with box_staff(
+        admin, database_url, setup["clock"], "polling_officer", [setup["station"]["id"]],
+    ) as (other, _):
+        ordinary_replay = other.post(allocation_path, json=command)
+        assert ordinary_replay.status_code == 200, ordinary_replay.text
+        assert ordinary_replay.json() == original_receipt
+        wrong_owner = other.post(
+            allocation_path, json={**command, "paper_record_id": paper["id"]},
+        )
+        assert wrong_owner.status_code == 409, wrong_owner.text
+        assert wrong_owner.json() == {"detail": {"code": "request_conflict"}}
+
+    after_rejection = polling.get(outage_path)
+    assert after_rejection.status_code == 200, after_rejection.text
+    pending = after_rejection.json()["record"]["paper_records"][0]
+    assert pending["status"] == "pending"
+    assert pending["reentry"] is None
+    linked = polling.post(
+        allocation_path, json={**command, "paper_record_id": paper["id"]},
+    )
+    assert linked.status_code == 200, linked.text
+    assert linked.json() == original_receipt
+    current = polling.get(outage_path).json()["record"]["paper_records"][0]
+    assert current["status"] == "entered"
+    assert current["reentry"]["actor_id"] == setup["account"]["id"]
+    assert current["reentry"]["request_id"] == command["request_id"]
+    assert current["reentry"]["record"] == original_receipt
+    allocations = polling.get(allocation_path).json()["items"]
+    assert [row for row in allocations if row["series"] == setup["series"]] == [original_receipt]
+
+
+def test_existing_allocation_amendment_paper_link_requires_the_original_receipt_owner(
+    allocation_paper_setup: dict,
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    setup = allocation_paper_setup
+    polling, allocation_path = setup["polling"], setup["base"] + "/allocations"
+    created = polling.post(
+        allocation_path,
+        json=_allocation_command(setup, event_at="2026-11-15T08:05:00+08:00"),
+    )
+    assert created.status_code == 201, created.text
+    target_path = allocation_path + f"/{created.json()['id']}"
+    event_at = "2026-11-15T08:06:00+08:00"
+    command = _allocation_command(
+        setup, event_at=event_at, revision=1, serial_from="000002", serial_to="000004",
+        reason="Corrected from the signed allocation return.",
+    )
+    amended = polling.put(target_path, json=command)
+    assert amended.status_code == 200, amended.text
+    original_receipt = amended.json()
+    assert original_receipt["revision"] == 2
+    outage_path = _register_outage(setup)
+    paper = _register_allocation_paper(
+        setup, outage_path, action="amend",
+        target={"counter_id": setup["counter"]["id"], "allocation_id": created.json()["id"]},
+        event_at=event_at,
+    )
+
+    with box_staff(
+        admin, database_url, setup["clock"], "polling_officer", [setup["station"]["id"]],
+    ) as (other, _):
+        ordinary_replay = other.put(target_path, json=command)
+        assert ordinary_replay.status_code == 200, ordinary_replay.text
+        assert ordinary_replay.json() == original_receipt
+        wrong_owner = other.put(
+            target_path, json={**command, "paper_record_id": paper["id"]},
+        )
+        assert wrong_owner.status_code == 409, wrong_owner.text
+        assert wrong_owner.json() == {"detail": {"code": "request_conflict"}}
+
+    after_rejection = polling.get(outage_path)
+    assert after_rejection.status_code == 200, after_rejection.text
+    pending = after_rejection.json()["record"]["paper_records"][0]
+    assert pending["status"] == "pending"
+    assert pending["reentry"] is None
+    linked = polling.put(target_path, json={**command, "paper_record_id": paper["id"]})
+    assert linked.status_code == 200, linked.text
+    assert linked.json() == original_receipt
+    replay = polling.put(target_path, json={**command, "paper_record_id": paper["id"]})
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == original_receipt
+    current = polling.get(outage_path).json()["record"]["paper_records"][0]
+    assert current["status"] == "entered"
+    assert current["reentry"]["actor_id"] == setup["account"]["id"]
+    assert current["reentry"]["request_id"] == command["request_id"]
+    assert current["reentry"]["record"] == original_receipt
+    history = polling.get(target_path + "/history")
+    assert history.status_code == 200, history.text
+    assert history.json()["items"] == [created.json(), original_receipt]
