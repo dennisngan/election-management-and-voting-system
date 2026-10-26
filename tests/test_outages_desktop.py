@@ -14,6 +14,12 @@ from tests.box_support import READY_PASSWORD, BoxClock, box_staff, box_stations
 from tests.desktop_support import TLS_DIRECTORY, HttpsServer, wait_for, wait_for_editor_idle
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.stock_support import stock_payload
+from tests.test_client_recovery_contract_desktop import (
+    RecoveryFaultServer,
+)
+from tests.test_client_recovery_contract_desktop import (
+    recovery_fault_server as recovery_fault_server,
+)
 
 
 @pytest.fixture(scope="session")
@@ -213,3 +219,171 @@ def test_polling_officer_records_and_supervisor_reconciles_allocation_paper(
             assert "password" not in json.dumps(state, ensure_ascii=False).lower()
         finally:
             supervisor_desktop.shutdown()
+
+
+def test_uncertain_reconciliation_retries_original_request_with_fresh_password(
+    admin: TestClient,
+    database_url: str,
+    recovery_fault_server: RecoveryFaultServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "outage-approval-journal"))
+    stations = box_stations(admin)
+    station_id = stations["N1"]["id"]
+    clock = BoxClock()
+    recovery_fault_server.clock.value = clock.value
+    base = f"/api/workspace/stations/{station_id}"
+
+    with (
+        box_staff(admin, database_url, clock, "polling_officer", [station_id]) as (
+            polling,
+            _polling_account,
+        ),
+        box_staff(admin, database_url, clock, "supervisor", [station_id]) as (
+            _supervisor_api,
+            supervisor_account,
+        ),
+    ):
+        options = polling.get(base + "/allocations")
+        assert options.status_code == 200, options.text
+        counter_id = options.json()["counters"][0]["id"]
+        series = "T25-APPROVAL-" + uuid4().hex[:8]
+        received = polling.post(
+            base + "/stock",
+            json=stock_payload(
+                series=series,
+                event_at="2026-11-15T08:00:00+08:00",
+            ),
+        )
+        assert received.status_code == 201, received.text
+
+        outage = polling.post(
+            base + "/outages",
+            json={
+                "request_id": str(uuid4()),
+                "reference": "T25 uncertain reconciliation outage " + uuid4().hex[:8],
+                "kind": "network",
+                "started_at": "2026-11-15T08:00:00+08:00",
+                "ended_at": "2026-11-15T08:30:00+08:00",
+                "notes": "Allocation was recorded on the signed paper sheet.",
+            },
+        )
+        assert outage.status_code == 201, outage.text
+        outage_id = outage.json()["id"]
+        outage_path = f"{base}/outages/{outage_id}"
+        paper = polling.post(
+            outage_path + "/paper-records",
+            json={
+                "request_id": str(uuid4()),
+                "expected_outage_revision": 1,
+                "paper_reference": "T25-APPROVAL-PAPER-" + uuid4().hex[:8],
+                "workflow": "allocation",
+                "action": "create",
+                "original_event_at": "2026-11-15T08:15:00+08:00",
+                "target": {"counter_id": counter_id},
+                "notes": "Signed allocation return for the outage.",
+            },
+        )
+        assert paper.status_code == 201, paper.text
+        paper_id = paper.json()["id"]
+        allocation = polling.post(
+            base + "/allocations",
+            json={
+                "request_id": str(uuid4()),
+                "counter_id": counter_id,
+                "series": series,
+                "serial_from": "000001",
+                "serial_to": "000002",
+                "event_at": "2026-11-15T08:15:00+08:00",
+                "paper_record_id": paper_id,
+            },
+        )
+        assert allocation.status_code == 201, allocation.text
+        entered = polling.get(outage_path).json()["record"]["paper_records"][0]
+        assert entered["status"] == "entered"
+        assert entered["reentry"]["record"] == allocation.json()
+
+        desktop = DesktopController(recovery_fault_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            desktop.signIn(
+                recovery_fault_server.url, supervisor_account["username"], READY_PASSWORD
+            )
+            wait_for(qt_app, lambda: desktop.property("state")["phase"] == "workspace")
+            workspace = desktop.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            workspace.selectStation(station_id)
+            wait_for_editor_idle(qt_app, workspace)
+            outages = desktop.property("outages")
+            assert isinstance(outages, QObject)
+            outages.open()
+            wait_for_editor_idle(qt_app, outages)
+            assert outages.loadOutage(outage_id, False) is True
+            wait_for_editor_idle(qt_app, outages)
+
+            approval_path = outage_path + "/approve"
+            reason = "Supervisor checked the allocation paper against the entered receipt."
+            recovery_fault_server.fail_after_path = approval_path
+            outages.approveReconciliation(READY_PASSWORD, reason)
+            wait_for_editor_idle(qt_app, outages)
+            first_state = outages.property("state")
+            assert first_state["uncertain_save"] is True
+            assert first_state["dirty"] is True
+            request_id = first_state["pending_request_id"]
+            assert request_id
+            assert recovery_fault_server.request_count("POST", approval_path) == 1
+
+            committed = polling.get(outage_path)
+            assert committed.status_code == 200, committed.text
+            committed_record = committed.json()["record"]
+            assert committed_record["reconciled"] is True
+            assert len(committed_record["reconciliation_history"]) == 1
+            committed_reconciliation = committed_record["reconciliation_history"][0]
+            assert committed_reconciliation["valid"] is True
+            assert committed_reconciliation["basis"]["paper_revisions"] == [
+                {"paper_id": paper_id, "revision": 1}
+            ]
+
+            # The first response was deliberately lost after commit. Later retries
+            # must retain the same credential-free operation identity and basis.
+            recovery_fault_server.fail_after_path = ""
+            outages.approveReconciliation("Wrong-Password-Only-84!", reason)
+            wait_for_editor_idle(qt_app, outages)
+            wrong_password_state = outages.property("state")
+            assert recovery_fault_server.request_count("POST", approval_path) == 2
+            assert wrong_password_state["error"] == "invalid_credentials"
+            assert wrong_password_state["uncertain_save"] is True
+            assert wrong_password_state["pending_request_id"] == request_id
+            wrong_state_json = json.dumps(wrong_password_state, ensure_ascii=False).lower()
+            assert "wrong-password-only-84!" not in wrong_state_json
+            assert READY_PASSWORD.lower() not in wrong_state_json
+            assert "password" not in wrong_state_json
+            still_once = polling.get(outage_path).json()["record"]["reconciliation_history"]
+            assert len(still_once) == 1
+            assert still_once[0]["basis_digest"] == committed_reconciliation["basis_digest"]
+
+            outages.approveReconciliation(READY_PASSWORD, reason)
+            wait_for_editor_idle(qt_app, outages)
+            final_state = outages.property("state")
+            assert recovery_fault_server.request_count("POST", approval_path) == 3
+            assert final_state["selected"]["reconciled"] is True
+            assert (
+                final_state["selected"]["reconciliation"]["basis_digest"]
+                == (committed_reconciliation["basis_digest"])
+            )
+            assert final_state["uncertain_save"] is False
+            assert final_state["pending_request_id"] == ""
+            final_state_json = json.dumps(final_state, ensure_ascii=False).lower()
+            assert READY_PASSWORD.lower() not in final_state_json
+            assert "password" not in final_state_json
+            final_record = polling.get(outage_path).json()["record"]
+            assert len(final_record["reconciliation_history"]) == 1
+            assert (
+                final_record["reconciliation_history"][0]["basis_digest"]
+                == (committed_reconciliation["basis_digest"])
+            )
+            assert final_record["reconciliation_history"][0]["reason"] == reason
+        finally:
+            recovery_fault_server.fail_after_path = ""
+            desktop.shutdown()
