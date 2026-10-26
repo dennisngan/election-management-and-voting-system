@@ -100,6 +100,7 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
             candidate_id = record['tie_candidate_ids'][1]
             assert results.property('state')['selected_candidate_id'] == candidate_id
             enter('constituencyResultTieReason', setup['reason'])
+            assert_multiline_inside_border('constituencyResultTieReason')
             click('constituencyResultDiscard')
             click_confirmation(
                 window.findChild(QObject, 'constituencyResultDiscardDialog'),
@@ -180,5 +181,47 @@ def test_supervisor_result_page_keeps_missing_contributions_null_and_unresolvabl
                 ).property('text')
                 assert displayed == '—'
             assert control('constituencyResultsTiePanel').property('visible') is False
+            """,
+        )
+
+
+def test_invalid_tie_password_feedback_survives_background_result_refresh(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    with complete_tie_setup(admin, database_url) as setup:
+        _save_tie_round(setup, [0, 0])
+        https_server.clock.value = setup["clock"].value
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": READY_PASSWORD,
+                "station_id": setup["stations"]["N1"]["id"],
+                "locale": "en",
+            },
+            """
+            from PySide6.QtCore import QObject
+            results = controller.property('constituencyResults')
+            click('constituencyResultsNavigation')
+            wait(lambda: not results.property('state')['busy'])
+            choose('constituencyResultTieCandidate', 1)
+            enter('constituencyResultTieReason', 'Keep this reviewed reason after a denied password.')
+            click('constituencyResultResolveTie')
+            enter('constituencyResultsPassword', 'Wrong-Tie-Review-Password-42!')
+            click_confirmation(
+                window.findChild(QObject, 'constituencyResultsPasswordDialog'),
+                controller.texts['constituency_results_confirm'],
+            )
+            wait(lambda: results.property('state')['error'] == 'invalid_credentials')
+            assert control('constituencyResultsNotice').property('visible') is True
+            results.refresh()
+            wait(lambda: not results.property('state')['refreshing'])
+            assert results.property('state')['error'] == 'invalid_credentials'
+            assert results.property('state')['dirty'] is True
+            assert control('constituencyResultsNotice').property('visible') is True
+            assert control('constituencyResultsPassword').property('text') == ''
             """,
         )
