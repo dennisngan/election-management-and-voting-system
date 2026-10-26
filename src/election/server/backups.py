@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import stat
+import tempfile
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -68,12 +69,33 @@ def _source_hash() -> str:
 
 
 def _private_manifest(path: Path, manifest: dict[str, Any]) -> None:
-    with path.open("x", encoding="utf-8") as output:
-        path.chmod(0o600)
-        json.dump(manifest, output, ensure_ascii=False, indent=2)
-        output.write("\n")
-        output.flush()
-        os.fsync(output.fileno())
+    descriptor, name = tempfile.mkstemp(prefix="." + path.name + ".", dir=path.parent)
+    staged = Path(name)
+    published = False
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(manifest, output, ensure_ascii=False, indent=2)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        # Link only the complete, private staged file. Unlike replace(), this
+        # preserves exclusive publication and never overwrites an old receipt.
+        os.link(staged, path)
+        published = True
+        if os.name != "nt":
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        try:
+            staged.unlink(missing_ok=True)
+        except OSError:
+            # A completed receipt remains valid if the directory becomes
+            # read-only after publication; retain the private staging artifact.
+            if not published:
+                raise
 
 
 def backups_router(
