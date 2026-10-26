@@ -117,10 +117,11 @@ class LocalRecountsController(QObject):
         return bool(
             isinstance(context, dict) and isinstance(scope, dict)
             and all(isinstance(context.get(key), dict)
-                    for key in ("station", "election", "account"))
+                    for key in ("station", "election", "constituency"))
             and context["station"].get("id") == self._state["station_id"]
             and context["election"].get("id") == self._state["election_id"]
-            and context["account"].get("id") == self._state["actor_id"]
+            and context["constituency"].get("id")
+            == self._state["context"].get("constituency", {}).get("id")
             and scope.get("id") == self._state["scope_id"]
             and _positive(scope.get("revision")) and _positive(scope.get("revision_id"))
             and (body.get("selection") is None or isinstance(body.get("selection"), dict))
@@ -132,6 +133,7 @@ class LocalRecountsController(QObject):
         )
 
     def _adopt_read(self, body: dict[str, Any]) -> None:
+        # The read DTO has no account; retain the trusted parent context and actor.
         self._read_allowed = body["can_instruct"]
         self._state.update(
             scope=deepcopy(body["scope"]), selection=deepcopy(body.get("selection") or {}),
@@ -162,7 +164,7 @@ class LocalRecountsController(QObject):
                     self._error("local_recount_outcome_unconfirmed")
                     return
                 self._adopt_read(body)
-                self._settled(matches[0])
+                self._settled()
                 return
             if self._state["dirty"] or self._state["uncertain_save"] or self._state["newer_basis"]:
                 old = self._basis(
@@ -287,13 +289,12 @@ class LocalRecountsController(QObject):
                     for row in round["invalid_papers"])
         )
 
-    def _settled(self, instruction: dict[str, Any]) -> None:
+    def _settled(self) -> None:
         self._pending = None
-        self._read_allowed = False
         self._state.update(
             busy=False, refreshing=False, dirty=False, uncertain_save=False, newer_basis=False,
             pending_request_id="", forms={"event_at": "", "reason": ""}, error="",
-            notice="local_recount_instructed", latest_instruction=deepcopy(instruction),
+            notice="local_recount_instructed",
         )
         self.stateChanged.emit()
         self.instructed.emit()
@@ -354,9 +355,11 @@ class LocalRecountsController(QObject):
                 self._error("local_recount_invalid_response")
                 return
             instruction = body["instruction"]
+            self._read_allowed = False
             self._state["instructions"] = [deepcopy(instruction), *self._state["instructions"]]
             self._state["pending"] = True
-            self._settled(instruction)
+            self._state["latest_instruction"] = deepcopy(instruction)
+            self._settled()
 
         def failed(code: str) -> None:
             if generation == self._generation:
