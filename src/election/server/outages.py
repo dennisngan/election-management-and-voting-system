@@ -12,6 +12,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from election.server.allocation_models import StockAllocation
 from election.server.counting_round_models import CountRound
 from election.server.counting_scope_models import CountingScope
 from election.server.models import Account, AuditEvent
@@ -25,9 +26,11 @@ from election.server.outage_models import (
     PaperReentry,
 )
 from election.server.polling import as_utc
+from election.server.reporting_periods import period_bounds
 from election.server.security import verify_password
+from election.server.station_models import IssuanceCounter
 from election.server.stock import stock_scope
-from election.server.turnout_basis import turnout_scope
+from election.server.turnout_basis import locked_schedule, turnout_scope
 
 OutageKind = Literal["network", "backend", "database", "unknown"]
 Workflow = Literal["count", "turnout", "allocation"]
@@ -228,12 +231,7 @@ def paper_record_view(db: Session, paper: OutagePaperRecord) -> dict[str, Any]:
     revision = latest_paper_revision(db, paper.id)
     if revision is None:
         raise HTTPException(409, detail={"code": "paper_revision_missing"})
-    entry = db.scalar(
-        select(PaperReentry)
-        .where(PaperReentry.paper_id == paper.id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    entry = _paper_entry_at(db, paper.id)
     data = revision.data
     entered = bool(entry and entry.paper_revision_id == revision.id)
     return {
@@ -449,6 +447,57 @@ def _validate_original_time(value: datetime, now: datetime) -> None:
         raise HTTPException(422, detail={"code": "paper_time_in_future"})
 
 
+
+def _paper_entry_at(db: Session, paper_id: int) -> PaperReentry | None:
+    return db.scalar(
+        select(PaperReentry).where(PaperReentry.paper_id == paper_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+
+
+def _validate_paper_target(
+    db: Session, actor: Account, station_id: int, workflow: str,
+    action: str, target: dict[str, Any],
+) -> dict[str, int]:
+    if workflow == "count":
+        return _validate_count_target(db, station_id, action, target)
+    if workflow == "turnout":
+        if action not in {"save", "submit"} or set(target) != {"period_index"}:
+            raise HTTPException(422, detail={"code": "paper_target_invalid"})
+        index = target["period_index"]
+        if type(index) is not int or index < 1:
+            raise HTTPException(422, detail={"code": "paper_target_invalid"})
+        scope = stock_scope(db, actor, station_id)
+        schedule = locked_schedule(db, scope["election"]["id"])
+        try:
+            period_bounds(schedule, index)
+        except IndexError:
+            raise HTTPException(422, detail={"code": "paper_target_invalid"}) from None
+        return {"period_index": index}
+    keys = {"counter_id"} if action == "create" else {"counter_id", "allocation_id"}
+    if workflow != "allocation" or action not in {"create", "amend"} or set(target) != keys:
+        raise HTTPException(422, detail={"code": "paper_target_invalid"})
+    if any(type(value) is not int or value < 1 for value in target.values()):
+        raise HTTPException(422, detail={"code": "paper_target_invalid"})
+    counter = db.scalar(
+        select(IssuanceCounter).where(
+            IssuanceCounter.id == target["counter_id"], IssuanceCounter.station_id == station_id,
+        ).with_for_update().execution_options(populate_existing=True)
+    )
+    if counter is None:
+        raise HTTPException(404, detail={"code": "paper_target_not_found"})
+    if action == "amend":
+        allocation = db.scalar(
+            select(StockAllocation).where(
+                StockAllocation.id == target["allocation_id"],
+                StockAllocation.station_id == station_id,
+            ).with_for_update().execution_options(populate_existing=True)
+        )
+        if allocation is None:
+            raise HTTPException(404, detail={"code": "paper_target_not_found"})
+    return {key: target[key] for key in keys}
+
+
 def _validate_count_target(
     db: Session, station_id: int, action: str, target: dict[str, Any]
 ) -> dict[str, int]:
@@ -632,12 +681,12 @@ def outage_router(
         response: Response,
     ) -> dict[str, Any]:
         _check_operational_role(actor, data.workflow)
-        if data.workflow != "count":
-            raise HTTPException(422, detail={"code": "paper_workflow_not_supported"})
         turnout_scope(db, actor, station_id, writable=True)
         now = timestamp()
         _validate_original_time(data.original_event_at, now)
-        target = _validate_count_target(db, station_id, data.action, data.target)
+        target = _validate_paper_target(
+            db, actor, station_id, data.workflow, data.action, data.target
+        )
         digest = _digest("paper_create", station_id, outage_id, actor.id, data)
         receipt = _receipt(db, data.request_id)
         if receipt:
@@ -739,12 +788,14 @@ def outage_router(
         if paper is None:
             raise HTTPException(404, detail={"code": "outage_paper_not_found"})
         _check_operational_role(actor, paper.workflow)
-        if db.get(PaperReentry, paper.id) is not None:
+        if _paper_entry_at(db, paper.id) is not None:
             raise HTTPException(409, detail={"code": "paper_already_entered"})
         current = latest_paper_revision(db, paper.id, lock=True)
         if current is None or current.revision != data.expected_revision:
             raise HTTPException(409, detail={"code": "paper_revision_conflict"})
-        target = _validate_count_target(db, station_id, current.data["action"], data.target)
+        target = _validate_paper_target(
+            db, actor, station_id, paper.workflow, current.data["action"], data.target
+        )
         row = OutagePaperRevision(
             paper_id=paper.id,
             revision=current.revision + 1,
