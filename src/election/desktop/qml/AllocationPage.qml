@@ -18,6 +18,7 @@ ColumnLayout {
     readonly property var constituency: context.constituency || ({})
     readonly property var station: context.station || ({})
     readonly property var selected: editorState.selected || ({})
+    readonly property var paperRecord: editorState.paper_record || ({})
     readonly property bool hasSelected: !!selected.id
     readonly property bool canCreate: !!editorState.station_id
         && editorState.role === "polling_officer"
@@ -43,6 +44,24 @@ ColumnLayout {
         for (let i = 0; i < editorState.counters.length; i++)
             if (String(editorState.counters[i].id) === form.counter_id) return i
         return -1
+    }
+    function paperOptions() {
+        let rows = [{ id: 0, paper_reference: page.t("paper_reentry_none"), original_event_at: "" }]
+        for (let i = 0; i < (page.editorState.paper_records || []).length; i++)
+            rows.push(page.editorState.paper_records[i])
+        return rows
+    }
+    function paperIndex() {
+        if (!page.paperRecord.id) return 0
+        let rows = page.paperOptions()
+        for (let i = 0; i < rows.length; i++)
+            if (rows[i].id === page.paperRecord.id) return i
+        return 0
+    }
+    function paperLabel(row) {
+        return row.id
+            ? row.paper_reference + " · " + page.allocations.formatTime(row.original_event_at)
+            : row.paper_reference
     }
     function allocationLabel(row) {
         return t("allocation_record") + " " + row.id + " · " + counterLabel(row.counter)
@@ -139,6 +158,13 @@ ColumnLayout {
         words: page.words
         error: page.editorState.error
         notice: page.editorState.notice
+        onReveal: control => page.reveal(control)
+    }
+    FormNotice {
+        visible: !!page.editorState.paper_uncertain
+        words: page.words
+        autoReveal: false
+        notice: page.editorState.paper_uncertain ? "paper_reentry_uncertain" : ""
         onReveal: control => page.reveal(control)
     }
     FormNotice {
@@ -281,6 +307,7 @@ ColumnLayout {
                 flat: true
                 highlighted: false
                 working: page.editorState.busy
+                enabled: !page.editorState.paper_uncertain
                 onClicked: page.chooseAllocation(0)
             }
             ComboBox {
@@ -288,7 +315,7 @@ ColumnLayout {
                 objectName: "allocationPicker"
                 visible: page.editorState.items.length > 0
                 Layout.fillWidth: true
-                enabled: !page.editorState.busy
+                enabled: !page.editorState.busy && !page.editorState.paper_uncertain
                 model: page.editorState.items
                 currentIndex: page.selectedIndex()
                 displayText: page.hasSelected
@@ -354,6 +381,7 @@ ColumnLayout {
                 flat: true
                 highlighted: false
                 working: page.editorState.busy
+                enabled: !page.editorState.paper_uncertain
                 onClicked: page.chooseAllocation(page.selected.id)
             }
             GridLayout {
@@ -369,6 +397,7 @@ ColumnLayout {
                         objectName: "allocationCounter"
                         Layout.fillWidth: true
                         enabled: page.canEdit && !page.editorState.busy
+                            && !page.editorState.paper_uncertain
                         model: page.editorState.counters
                         currentIndex: page.counterIndex()
                         displayText: page.hasSelected && !page.canEdit
@@ -417,7 +446,7 @@ ColumnLayout {
                         text: page.form.series || ""
                         maximumLength: 64
                         working: page.editorState.busy
-                        readOnly: !page.canEdit
+                        readOnly: !page.canEdit || page.editorState.paper_uncertain
                         Accessible.name: page.t("stock_series")
                         onTextEdited: page.allocations.setField("series", text)
                         onReveal: control => page.reveal(control)
@@ -432,7 +461,7 @@ ColumnLayout {
                         maximumLength: 18
                         inputMethodHints: Qt.ImhDigitsOnly
                         working: page.editorState.busy
-                        readOnly: !page.canEdit
+                        readOnly: !page.canEdit || page.editorState.paper_uncertain
                         Accessible.name: page.t("stock_serial_from")
                         onTextEdited: page.allocations.setField("serial_from", text)
                         onReveal: control => page.reveal(control)
@@ -447,7 +476,7 @@ ColumnLayout {
                         maximumLength: 18
                         inputMethodHints: Qt.ImhDigitsOnly
                         working: page.editorState.busy
-                        readOnly: !page.canEdit
+                        readOnly: !page.canEdit || page.editorState.paper_uncertain
                         Accessible.name: page.t("stock_serial_to")
                         onTextEdited: page.allocations.setField("serial_to", text)
                         onReveal: control => page.reveal(control)
@@ -462,7 +491,7 @@ ColumnLayout {
                         placeholderText: "YYYY-MM-DD HH:mm[:ss[.ffffff]]"
                         maximumLength: 26
                         working: page.editorState.busy
-                        readOnly: !page.canEdit
+                        readOnly: !page.canEdit || page.editorState.paper_uncertain
                         Accessible.name: page.t("allocation_event_at")
                         onTextEdited: page.allocations.setField("event_at", text)
                         onReveal: control => page.reveal(control)
@@ -480,6 +509,90 @@ ColumnLayout {
                         onReveal: control => page.reveal(control)
                     }
                 }
+            }
+            FormCaption {
+                visible: page.canCreate
+                text: page.t("paper_reentry_title")
+                color: "#25344b"
+                font.pixelSize: 16
+                wrapMode: Text.Wrap
+            }
+            FormCaption {
+                visible: page.canCreate
+                text: page.t("paper_reentry_hint")
+                wrapMode: Text.Wrap
+            }
+            ComboBox {
+                id: paperPicker
+                objectName: "allocationPaperRecord"
+                visible: page.canCreate
+                Layout.fillWidth: true
+                enabled: page.canCreate && !page.editorState.busy
+                    && !page.editorState.refreshing && !page.editorState.paper_uncertain
+                model: page.paperOptions()
+                currentIndex: page.paperIndex()
+                displayText: currentIndex >= 0
+                    ? page.paperLabel(model[currentIndex]) : page.t("paper_reentry_none")
+                Accessible.name: page.t("paper_reentry_reference")
+                contentItem: Text {
+                    text: paperPicker.displayText
+                    textFormat: Text.PlainText
+                    color: "#25344b"
+                    font: paperPicker.font
+                    elide: Text.ElideRight
+                    verticalAlignment: Text.AlignVCenter
+                }
+                delegate: ItemDelegate {
+                    id: paperOption
+                    required property var modelData
+                    required property int index
+                    width: paperPicker.width
+                    text: page.paperLabel(modelData)
+                    highlighted: paperPicker.highlightedIndex === index
+                    contentItem: Text {
+                        text: paperOption.text
+                        textFormat: Text.PlainText
+                        color: "#25344b"
+                        font: paperOption.font
+                        wrapMode: Text.Wrap
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                onActivated: index => {
+                    if (index >= 0) page.allocations.selectPaperRecord(model[index].id)
+                    currentIndex = Qt.binding(function() { return page.paperIndex() })
+                }
+                onActiveFocusChanged: if (activeFocus)
+                    Qt.callLater(function() { if (paperPicker.activeFocus) page.reveal(paperPicker) })
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Action {
+                    objectName: "allocationPaperRefresh"
+                    visible: page.canCreate
+                    text: page.t("paper_reentry_refresh")
+                    flat: true
+                    highlighted: false
+                    working: page.editorState.busy || page.editorState.refreshing
+                    enabled: page.canCreate && !page.editorState.busy
+                    onClicked: page.allocations.refreshPaperRecords()
+                }
+                Action {
+                    objectName: "allocationPaperClear"
+                    visible: page.canCreate && !!page.paperRecord.id
+                    text: page.t("paper_reentry_clear")
+                    flat: true
+                    highlighted: false
+                    working: page.editorState.busy
+                    enabled: !page.editorState.busy && !page.editorState.paper_uncertain
+                    onClicked: page.allocations.selectPaperRecord(0)
+                }
+            }
+            FormCaption {
+                visible: page.canCreate && !!page.paperRecord.id
+                text: page.t("paper_reentry_original_at") + " · "
+                    + page.allocations.formatTime(page.paperRecord.original_event_at || "")
+                wrapMode: Text.Wrap
             }
             FormCaption { text: page.t("allocation_time_hint") }
             FormCaption { text: page.t("stock_serial_hint") }
@@ -506,7 +619,7 @@ ColumnLayout {
                 wrapMode: TextEdit.WordWrap
                 selectByMouse: true
                 enabled: !page.editorState.busy
-                readOnly: !page.canEdit
+                readOnly: !page.canEdit || page.editorState.paper_uncertain
                 leftPadding: 12
                 rightPadding: 12
                 topPadding: 12
@@ -544,7 +657,8 @@ ColumnLayout {
                 text: page.t(page.editorState.busy ? "saving"
                     : page.hasSelected ? "stock_save_correction" : "allocation_save")
                 working: page.editorState.busy
-                enabled: !working && (!page.hasSelected || page.editorState.dirty)
+                enabled: !working && !page.editorState.paper_uncertain
+                    && (!page.hasSelected || page.editorState.dirty)
                 onClicked: page.allocations.save()
             }
         }
@@ -576,6 +690,7 @@ ColumnLayout {
                     flat: true
                     highlighted: false
                     working: page.editorState.busy
+                    enabled: !page.editorState.paper_uncertain
                     onClicked: page.chooseRevision(modelData.revision)
                 }
             }
