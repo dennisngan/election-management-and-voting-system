@@ -143,7 +143,8 @@ def click(name):
         clicked = QSignalSpy(item, item.metaObject().method(index))
         assert clicked.isValid(), 'Button clicked signal is unavailable: ' + name
     center = item.mapToScene(QPointF(item.width()/2, item.height()/2)).toPoint()
-    assert _pointer_geometry(item, center) is not None, 'Control moved outside its viewport: ' + name
+    assert _pointer_geometry(item, center) is not None, (
+        'Control moved outside its viewport: ' + name)
     assert time.monotonic() < deadline, 'Material pointer readiness timed out: ' + name
     QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
     if clicked is not None:
