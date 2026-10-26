@@ -4,7 +4,7 @@ import asyncio
 import json
 import socket
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -124,6 +124,36 @@ def signed_in_client(
         qt_app.processEvents()
 
 
+@contextmanager
+def obstructed_journal_file(
+    path: Path, endpoint: CompletedWriteServer,
+) -> Iterator[Callable[[], None]]:
+    original = path.read_bytes()
+    saved = path.with_suffix(".saved")
+    assert not saved.exists()
+    restored = False
+
+    def restore() -> None:
+        nonlocal restored
+        if restored:
+            return
+        if path.exists():
+            path.rmdir()
+        saved.rename(path)
+        assert path.read_bytes() == original
+        restored = True
+
+    path.rename(saved)
+    try:
+        # A directory at the prepared journal's file path makes its actual
+        # read/write fail on every platform, without replacing any product code.
+        path.mkdir(mode=0o700)
+        yield restore
+    finally:
+        endpoint.release.set()
+        restore()
+
+
 def test_committed_count_keeps_paper_locked_until_journal_outcome_can_be_checked(
     admin: TestClient,
     database_url: str,
@@ -165,8 +195,7 @@ def test_committed_count_keeps_paper_locked_until_journal_outcome_can_be_checked
             original = json.loads(journal_path.read_text())
             assert original["status"] == "pending"
             assert original["payload"]["paper_record_id"] == paper["id"]
-            try:
-                journal_path.chmod(0o400)
+            with obstructed_journal_file(journal_path, endpoint) as restore_journal:
                 endpoint.release.set()
                 wait_for(qt_app, lambda: not editor.property("state")["busy"])
                 committed = officer.get(round_path)
@@ -191,7 +220,7 @@ def test_committed_count_keeps_paper_locked_until_journal_outcome_can_be_checked
                 assert workspace.property("state")["error"] == "workspace_uncertain_request"
                 assert workspace.property("state")["selected"]["station"]["id"] == station_id
 
-                journal_path.chmod(0o600)
+                restore_journal()
                 recovery = client.property("recovery")
                 recovery.open()
                 wait_for_editor_idle(qt_app, recovery)
@@ -218,9 +247,6 @@ def test_committed_count_keeps_paper_locked_until_journal_outcome_can_be_checked
                 after_check = officer.get(round_path)
                 assert after_check.status_code == 200, after_check.text
                 assert after_check.json() == committed.json()
-            finally:
-                endpoint.release.set()
-                journal_path.chmod(0o600)
 
 
 def test_committed_allocation_keeps_paper_locked_until_journal_outcome_can_be_checked(
@@ -260,8 +286,7 @@ def test_committed_allocation_keeps_paper_locked_until_journal_outcome_can_be_ch
         original = json.loads(journal_path.read_text())
         assert original["status"] == "pending"
         assert original["payload"]["paper_record_id"] == paper["id"]
-        try:
-            journal_path.chmod(0o400)
+        with obstructed_journal_file(journal_path, endpoint) as restore_journal:
             endpoint.release.set()
             wait_for(qt_app, lambda: not editor.property("state")["busy"])
             entered = setup["polling"].get(outage_path)
@@ -291,7 +316,7 @@ def test_committed_allocation_keeps_paper_locked_until_journal_outcome_can_be_ch
             assert workspace.property("state")["error"] == "workspace_uncertain_request"
             assert workspace.property("state")["selected"]["station"]["id"] == station_id
 
-            journal_path.chmod(0o600)
+            restore_journal()
             recovery = client.property("recovery")
             recovery.open()
             wait_for_editor_idle(qt_app, recovery)
@@ -315,9 +340,6 @@ def test_committed_allocation_keeps_paper_locked_until_journal_outcome_can_be_ch
             after_check = setup["polling"].get(history_path)
             assert after_check.status_code == 200, after_check.text
             assert after_check.json() == committed.json()
-        finally:
-            endpoint.release.set()
-            journal_path.chmod(0o600)
 
 
 def test_count_journal_failure_before_dispatch_leaves_pending_paper_correctable(
@@ -353,9 +375,9 @@ def test_count_journal_failure_before_dispatch_leaves_pending_paper_correctable(
             ))
             assert editor.selectPaperRecord(paper["id"]) is True
             original_forms = editor.property("state")["forms"]
-            private_command_directory.mkdir(mode=0o700, exist_ok=True)
+            assert not private_command_directory.exists()
+            private_command_directory.write_text("The journal path is unavailable.")
             try:
-                private_command_directory.chmod(0o500)
                 editor.submitCount()
                 wait_for(qt_app, lambda: not editor.property("state")["busy"])
                 assert endpoint.request_count("POST", submit_path) == 0
@@ -366,7 +388,7 @@ def test_count_journal_failure_before_dispatch_leaves_pending_paper_correctable(
                 pending = officer.get(outage_path)
                 assert pending.status_code == 200, pending.text
                 assert pending.json()["record"]["paper_records"][0]["status"] == "pending"
-                assert list(private_command_directory.glob("*.json")) == []
+                assert private_command_directory.is_file()
                 state = editor.property("state")
                 assert state["error"] == "recovery_journal_unavailable"
                 assert state["uncertain_save"] is False
@@ -375,7 +397,8 @@ def test_count_journal_failure_before_dispatch_leaves_pending_paper_correctable(
                 assert state["forms"] == original_forms
                 assert client.property("workspace").property("unresolvedRequest") is False
 
-                private_command_directory.chmod(0o700)
+                private_command_directory.unlink()
+                private_command_directory.mkdir(mode=0o700)
                 editor.submitCount()
                 wait_for(qt_app, lambda: (
                     not editor.property("state")["busy"]
@@ -384,7 +407,9 @@ def test_count_journal_failure_before_dispatch_leaves_pending_paper_correctable(
                 assert endpoint.request_count("POST", submit_path) == 1
                 assert editor.property("state")["paper_record"] == {}
             finally:
-                private_command_directory.chmod(0o700)
+                if private_command_directory.is_file():
+                    private_command_directory.unlink()
+                    private_command_directory.mkdir(mode=0o700)
 
 
 def test_allocation_journal_failure_before_dispatch_leaves_pending_paper_correctable(
