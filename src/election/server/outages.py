@@ -818,6 +818,7 @@ def outage_router(
             replay = _replay(receipt, digest)
             if replay.get("outage_id") != outage_id:
                 raise HTTPException(404, detail={"code": "outage_paper_not_found"})
+            _check_operational_role(actor, replay["workflow"])
             return replay
         outage = _get_outage(db, station_id, outage_id, lock=True)
         outage_revision = latest_outage_revision(db, outage.id, lock=True)
