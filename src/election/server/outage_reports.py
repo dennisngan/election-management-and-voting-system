@@ -114,8 +114,10 @@ def _receipt_quantities(
         for key in _COUNT_F1_QUANTITIES:
             if key in record:
                 rows.append(
-                    (labels["count_f1"] + " · " + labels[key],
-                     _display(record[key], labels, quantity=True))
+                    (
+                        labels["count_f1"] + " · " + labels[key],
+                        _display(record[key], labels, quantity=True),
+                    )
                 )
         f2 = record.get("f2")
         if isinstance(f2, dict):
@@ -125,9 +127,12 @@ def _receipt_quantities(
             ):
                 for entry in f2.get(entries_key, []):
                     if isinstance(entry, dict):
-                        identity = entry.get("name") or entry.get("label") or entry.get(
-                            f"label_{locale}"
-                        ) or entry.get("candidate_id", entry.get("reason_id", ""))
+                        identity = (
+                            entry.get("name")
+                            or entry.get("label")
+                            or entry.get(f"label_{locale}")
+                            or entry.get("candidate_id", entry.get("reason_id", ""))
+                        )
                         rows.append(
                             (
                                 labels["count_f2"] + " · " + heading + " · " + str(identity),
@@ -137,14 +142,14 @@ def _receipt_quantities(
         for key in _COUNT_F4_QUANTITIES:
             if key in record:
                 rows.append(
-                    (labels["count_f4"] + " · " + labels[key],
-                     _display(record[key], labels, quantity=True))
+                    (
+                        labels["count_f4"] + " · " + labels[key],
+                        _display(record[key], labels, quantity=True),
+                    )
                 )
     elif workflow == "turnout":
         for key in _TURNOUT_QUANTITIES:
-            rows.append(
-                (labels[key], _display(record.get(key), labels, quantity=True))
-            )
+            rows.append((labels[key], _display(record.get(key), labels, quantity=True)))
     elif workflow == "allocation":
         rows.extend(
             (
@@ -172,7 +177,7 @@ def _receipt_rows(
         [labels["reentry_server_entered_at"], _time(reentry.get("entered_at"), labels)],
         [labels["receipt_record_id"], _display(record.get("id"), labels)],
         [labels["receipt_revision"], _display(record.get("revision"), labels)],
-        [labels["receipt_status"], _display(record.get("status"), labels)],
+        [labels["receipt_status"], labels.get(record.get("status"), labels["none"])],
     ]
     if paper["workflow"] == "allocation":
         counter = record.get("counter")
@@ -189,9 +194,7 @@ def _receipt_rows(
             )
         )
     elif paper["workflow"] == "turnout":
-        rows.append(
-            [labels["period_index"], _display(record.get("period_index"), labels)]
-        )
+        rows.append([labels["period_index"], _display(record.get("period_index"), labels)])
         for key in ("start_at", "end_at", "event_at"):
             if key in record:
                 rows.append([labels.get(key, labels["event_at"]), _time(record[key], labels)])
@@ -207,10 +210,7 @@ def _receipt_rows(
                         else _display(record[key], labels),
                     ]
                 )
-    rows.extend(
-        [name, value]
-        for name, value in _receipt_quantities(paper, labels, locale)
-    )
+    rows.extend([name, value] for name, value in _receipt_quantities(paper, labels, locale))
     return rows
 
 
@@ -291,17 +291,19 @@ def _paper_rows(papers: list[dict[str, Any]], labels: dict[str, str]) -> list[li
 
 
 def _paper_history_rows(papers: list[dict[str, Any]], labels: dict[str, str]) -> list[list[str]]:
-    rows = [[
-        labels["paper_reference"],
-        labels["revision"],
-        labels["workflow"],
-        labels["action"],
-        labels["target"],
-        labels["original_event_at"],
-        labels["actor_id"],
-        labels["entered_at"],
-        labels["reason"],
-    ]]
+    rows = [
+        [
+            labels["paper_reference"],
+            labels["revision"],
+            labels["workflow"],
+            labels["action"],
+            labels["target"],
+            labels["original_event_at"],
+            labels["actor_id"],
+            labels["entered_at"],
+            labels["reason"],
+        ]
+    ]
     for paper in papers:
         for revision in paper.get("history", []):
             rows.append(
@@ -344,23 +346,27 @@ def _reconciliation_rows(
                 [labels["outage_revision"], str(current["basis"]["outage_revision"])],
             ]
         )
-    decisions = [[
-        labels["revision"],
-        labels["is_current"],
-        labels["reconciled"],
-        labels["reviewer_id"],
-        labels["accepted_at"],
-        labels["reason"],
-        labels["basis_digest"],
-    ]]
-    membership = [[
-        labels["paper_id"],
-        labels["paper_reference"],
-        labels["paper_revision"],
-        labels["request_id"],
-        labels["receipt_actor_id"],
-        labels["reentry_server_entered_at"],
-    ]]
+    decisions = [
+        [
+            labels["revision"],
+            labels["is_current"],
+            labels["reconciled"],
+            labels["reviewer_id"],
+            labels["accepted_at"],
+            labels["reason"],
+            labels["basis_digest"],
+        ]
+    ]
+    membership = [
+        [
+            labels["paper_id"],
+            labels["paper_reference"],
+            labels["paper_revision"],
+            labels["request_id"],
+            labels["receipt_actor_id"],
+            labels["reentry_server_entered_at"],
+        ]
+    ]
     by_paper = {paper["id"]: paper for paper in record["paper_records"]}
     for decision in record.get("reconciliation_history", []):
         decisions.append(
@@ -375,9 +381,7 @@ def _reconciliation_rows(
             ]
         )
         basis = decision["basis"]
-        revision_by_id = {
-            row["paper_id"]: row["revision"] for row in basis["paper_revisions"]
-        }
+        revision_by_id = {row["paper_id"]: row["revision"] for row in basis["paper_revisions"]}
         for entry in basis["paper_entries"]:
             paper = by_paper.get(entry["paper_id"], {})
             membership.append(
@@ -456,16 +460,10 @@ def _projection(
             "title": labels["receipt_details"],
             "rows": [
                 [labels["field"], labels["value"]],
-                *[
-                    row
-                    for paper in papers
-                    for row in _receipt_rows(paper, labels, locale)
-                ],
+                *[row for paper in papers for row in _receipt_rows(paper, labels, locale)],
             ],
             "empty_message": (
-                labels["empty_papers"]
-                if not any(paper.get("reentry") for paper in papers)
-                else ""
+                labels["empty_papers"] if not any(paper.get("reentry") for paper in papers) else ""
             ),
             "split_in_row": False,
         },
@@ -550,9 +548,17 @@ def _csv_report(projection: dict[str, Any]) -> bytes:
 def _pdf_report(projection: dict[str, Any]) -> bytes:
     labels = OUTAGE_REPORT_LABELS[projection["locale"]]
     footer = (
-        labels["station_id"] + " " + str(projection["station_id"])
-        + " · " + labels["outage_id"] + " " + str(projection["outage_id"])
-        + " · " + labels["revision"] + " " + str(projection["revision"])
+        labels["station_id"]
+        + " "
+        + str(projection["station_id"])
+        + " · "
+        + labels["outage_id"]
+        + " "
+        + str(projection["outage_id"])
+        + " · "
+        + labels["revision"]
+        + " "
+        + str(projection["revision"])
     )
     return history_pdf(
         projection["title"],
