@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.box_support import BoxClock, READY_PASSWORD, box_staff, box_stations
+from tests.box_support import READY_PASSWORD, BoxClock, box_staff, box_stations
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
