@@ -36,7 +36,7 @@ class WorkspaceController(QObject):
 
     @Property(bool, notify=stateChanged)
     def selectionGuarded(self) -> bool:
-        return self.unresolvedRequest or bool(self._selection_guard and self._selection_guard())
+        return bool(self.unresolvedRequest) or bool(self._selection_guard and self._selection_guard())
 
     @Property(bool, notify=stateChanged)
     def unresolvedRequest(self) -> bool:

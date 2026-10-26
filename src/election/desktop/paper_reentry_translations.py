@@ -32,7 +32,9 @@ PAPER_REENTRY_TRANSLATIONS = {
         "paper_reentry_load_failed": "无法载入纸本参考。请检查连接并重试。",
     },
     "en": {
-        "workspace_uncertain_request": "Check the uncertain request before switching polling stations.",
+        "workspace_uncertain_request": (
+            "Check the uncertain request before switching polling stations."
+        ),
         "paper_reentry_title": "Re-enter a paper record",
         "paper_reentry_reference": "Paper reference (optional)",
         "paper_reentry_none": "Ordinary electronic entry",
