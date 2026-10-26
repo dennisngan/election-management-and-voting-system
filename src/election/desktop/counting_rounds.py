@@ -17,6 +17,7 @@ NETWORK_ERRORS = frozenset({
     "request_failed", "disconnected", "database_unavailable",
     "certificate_error",
     "recovery_outcome_check_required", "recovery_pending_command",
+    "recovery_journal_unavailable",
 })
 
 
