@@ -186,7 +186,7 @@ ColumnLayout {
             highlighted: false
             working: page.loading
             enabled: !page.loading
-            onClicked: page.results.refresh()
+            onClicked: page.results.reload()
             onReveal: control => page.reveal(control)
         }
     }

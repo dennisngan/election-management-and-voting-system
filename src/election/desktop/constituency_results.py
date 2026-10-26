@@ -169,7 +169,8 @@ class ConstituencyResultsController(QObject):
                 self.stateChanged.emit()
                 return
             old = self._state["result"]
-            if self._state["dirty"] or self._state["uncertain_save"]:
+            if (self._state["dirty"] or self._state["uncertain_save"]
+                    or self._state["newer_basis"]):
                 changed = bool(
                     old
                     and (
@@ -206,9 +207,12 @@ class ConstituencyResultsController(QObject):
 
     @Slot()
     def reload(self) -> None:
+        if self._state["busy"]:
+            return
         if self._state["dirty"] or self._state["uncertain_save"]:
             self.refresh()
             return
+        self._state["newer_basis"] = False
         self._load(background=False)
 
     @Slot()
@@ -441,7 +445,6 @@ class ConstituencyResultsController(QObject):
         if path is None or self._state["busy"]:
             return
         constituency_id = self._state["constituency_id"]
-        result_digest = self._state["result"].get("basis_digest")
         self._clear_report()
         generation = self._report_generation
         self._generation += 1
@@ -459,10 +462,16 @@ class ConstituencyResultsController(QObject):
                 and isinstance(report_result, dict)
                 and report_result.get("context", {}).get("constituency", {}).get("id")
                 == constituency_id
-                and report_result.get("basis_digest") == result_digest
                 and isinstance(body.get("tables"), list)
             ):
                 self._state.update(busy=False, error="request_failed", notice="")
+                self.stateChanged.emit()
+                return
+            if report_result != self._state["result"]:
+                self._state.update(
+                    busy=False, newer_basis=True, error="",
+                    notice="constituency_result_newer_basis",
+                )
                 self.stateChanged.emit()
                 return
             self._state.update(
