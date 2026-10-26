@@ -90,7 +90,9 @@ class DesktopController(QObject):
         )
         self._command_journal = CommandJournal(Path(journal_directory))
         self._recovery = RecoveryController(self._authorized_request, self._command_journal, self)
-        self._outages = OutagesController(self._authorized_request, self)
+        self._outages = OutagesController(
+            self._authorized_request, self, download=self._authorized_download
+        )
         self._configuration = ConfigurationController(self._authorized_request, self)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
@@ -448,9 +450,13 @@ class DesktopController(QObject):
                         "session_expired",
                         "access_changed",
                     }
-                    or (command is not None and command["status"] == "uncertain"
-                        and not command.get("retry_after_not_found"))
-                    or code == "invalid_credentials" and command is not None
+                    or (
+                        command is not None
+                        and command["status"] == "uncertain"
+                        and not command.get("retry_after_not_found")
+                    )
+                    or code == "invalid_credentials"
+                    and command is not None
                     and command["status"] == "uncertain"
                     else "rejected",
                     code=code,
