@@ -93,10 +93,22 @@ def test_counting_officer_selects_pending_paper_and_submits_it_once_in_material(
                 "paper_reference": paper_reference,
                 "outage_id": outage_id,
                 "f2_notes": "The saved F2 observation remains separate from paper submission.",
-                "f1_votes": before["candidate_votes"],
-                "f1_invalid": before["invalid_papers"],
-                "f2_accepted": before["f2"]["accepted_votes"],
-                "f2_rejected": before["f2"]["rejected_papers"],
+                "f1_votes": [
+                    [row["candidate_id"], row["quantity"]]
+                    for row in before["candidate_votes"]
+                ],
+                "f1_invalid": [
+                    [row["reason_id"], row["reason_revision"], row["quantity"], row["explanation"]]
+                    for row in before["invalid_papers"]
+                ],
+                "f2_accepted": [
+                    [row["candidate_id"], row["quantity"]]
+                    for row in before["f2"]["accepted_votes"]
+                ],
+                "f2_rejected": [
+                    [row["reason_id"], row["reason_revision"], row["quantity"], row["explanation"]]
+                    for row in before["f2"]["rejected_papers"]
+                ],
             },
             f"""
             click('countingRoundsNavigation')
@@ -134,10 +146,20 @@ def test_counting_officer_selects_pending_paper_and_submits_it_once_in_material(
                 == setup['f2_notes'])
             still_selected = editor.property('state')
             assert still_selected['paper_record']['id'] == setup['paper_id']
-            assert still_selected['selected']['candidate_votes'] == setup['f1_votes']
-            assert still_selected['selected']['invalid_papers'] == setup['f1_invalid']
-            assert still_selected['selected']['f2']['accepted_votes'] == setup['f2_accepted']
-            assert still_selected['selected']['f2']['rejected_papers'] == setup['f2_rejected']
+            assert [[row['candidate_id'], row['quantity']]
+                for row in still_selected['selected']['candidate_votes']] == setup['f1_votes']
+            assert [[row['reason_id'], row['reason_revision'], row['quantity'], row['explanation']]
+                for row in still_selected['selected']['invalid_papers']] == setup['f1_invalid']
+            assert (
+                [[row['candidate_id'], row['quantity']]
+                    for row in still_selected['selected']['f2']['accepted_votes']]
+                == setup['f2_accepted']
+            )
+            assert (
+                [[row['reason_id'], row['reason_revision'], row['quantity'], row['explanation']]
+                    for row in still_selected['selected']['f2']['rejected_papers']]
+                == setup['f2_rejected']
+            )
 
             outages = controller.outages
             assert outages.loadOutage(setup['outage_id'], False) is True
@@ -152,10 +174,14 @@ def test_counting_officer_selects_pending_paper_and_submits_it_once_in_material(
                 and editor.property('state')['notice'] == 'count_submitted')
             submitted = editor.property('state')
             assert submitted['selected']['status'] == 'submitted'
-            assert submitted['selected']['candidate_votes'] == setup['f1_votes']
-            assert submitted['selected']['invalid_papers'] == setup['f1_invalid']
-            assert submitted['selected']['f2']['accepted_votes'] == setup['f2_accepted']
-            assert submitted['selected']['f2']['rejected_papers'] == setup['f2_rejected']
+            assert [[row['candidate_id'], row['quantity']]
+                for row in submitted['selected']['candidate_votes']] == setup['f1_votes']
+            assert [[row['reason_id'], row['reason_revision'], row['quantity'], row['explanation']]
+                for row in submitted['selected']['invalid_papers']] == setup['f1_invalid']
+            assert [[row['candidate_id'], row['quantity']]
+                for row in submitted['selected']['f2']['accepted_votes']] == setup['f2_accepted']
+            assert [[row['reason_id'], row['reason_revision'], row['quantity'], row['explanation']]
+                for row in submitted['selected']['f2']['rejected_papers']] == setup['f2_rejected']
             assert submitted['paper_record'] == {{}}
 
             assert outages.loadOutage(setup['outage_id'], True) is True
