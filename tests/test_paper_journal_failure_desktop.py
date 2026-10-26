@@ -279,7 +279,7 @@ def test_committed_allocation_keeps_paper_locked_until_journal_outcome_can_be_ch
             assert endpoint.request_count("POST", write_path) == 1
 
             state = editor.property("state")
-            assert state["error"] == "recovery_journal_unavailable"
+            assert state["error"] == "recovery_journal_outcome_unavailable"
             assert state["paper_uncertain"] is True
             assert state["paper_record"]["id"] == paper["id"]
             assert editor.selectPaperRecord(0) is False
