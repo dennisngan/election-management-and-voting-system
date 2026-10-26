@@ -83,7 +83,9 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
                 "kind": "network",
                 "started_at": "2026-11-15T23:10:00+08:00",
                 "ended_at": "2026-11-15T23:50:00+08:00",
-                "notes": "The count receipt was committed before the paper reference was registered.",
+                "notes": (
+                    "The count receipt was committed before the paper reference was registered."
+                ),
             },
         )
         assert outage.status_code == 201, outage.text
@@ -148,7 +150,7 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
                 "expected_preview": expected_preview_body,
                 "reason": reason,
             },
-            f"""
+            """
             click('outagesNavigation')
             outages = controller.outages
             wait(lambda: not outages.property('state')['busy']
