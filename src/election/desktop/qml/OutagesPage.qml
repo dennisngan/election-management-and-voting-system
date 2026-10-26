@@ -234,7 +234,6 @@ ColumnLayout {
             Layout.fillWidth: true
             implicitHeight: 48
             text: entry.value
-            textFormat: Text.PlainText
             selectByMouse: true
             echoMode: entry.inputEchoMode
             enabled: entry.isEditable && !page.working
