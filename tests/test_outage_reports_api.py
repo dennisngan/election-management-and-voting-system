@@ -6,6 +6,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
@@ -170,6 +171,7 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 "submitted": "已提交",
                 "round_field": "點票輪次",
                 "record_id_field": "原始業務記錄編號",
+                "later_link_field": "後續收據連結請求編號",
             },
             "sc": {
                 "section": "不可变更收据内容",
@@ -177,6 +179,7 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 "submitted": "已提交",
                 "round_field": "点票轮次",
                 "record_id_field": "原始业务记录编号",
+                "later_link_field": "后续收据链接请求编号",
             },
             "en": {
                 "section": "Immutable receipt details",
@@ -184,6 +187,7 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 "submitted": "Submitted",
                 "round_field": "Round number",
                 "record_id_field": "Original business record ID",
+                "later_link_field": "Later receipt link request ID",
             },
         }
         reports = {}
@@ -223,6 +227,7 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 if section["title"] == receipt_contract["section"]
             )
             assert [receipt_contract["status_field"], receipt_contract["submitted"]] in receipt_rows
+            assert not any(row[0] == receipt_contract["later_link_field"] for row in receipt_rows)
             assert [
                 receipt_contract["round_field"],
                 str(submitted.json()["round_number"]),
@@ -413,3 +418,102 @@ def test_outage_preview_separates_later_link_metadata_from_the_original_receipt(
             "Later receipt link time (Hong Kong time)", "2026-11-16 00:45:00.345678 HKT",
         ] in rows
         assert ["Linked original receipt fingerprint", linked["link"]["receipt_digest"]] in rows
+
+
+@pytest.mark.parametrize(
+    ("locale", "labels"),
+    [
+        (
+            "tc",
+            {
+                "section": "不可變更收據內容",
+                "original_request": "重新輸入請求編號",
+                "original_status": "原始業務記錄狀態",
+                "submitted": "已提交",
+                "request": "後續收據連結請求編號",
+                "reason": "後續收據連結原因",
+                "actor": "後續收據連結人員編號",
+                "time": "後續收據連結時間（香港時間）",
+                "digest": "已連結原始收據指紋",
+            },
+        ),
+        (
+            "sc",
+            {
+                "section": "不可变更收据内容",
+                "original_request": "重新输入请求编号",
+                "original_status": "原始业务记录状态",
+                "submitted": "已提交",
+                "request": "后续收据链接请求编号",
+                "reason": "后续收据链接原因",
+                "actor": "后续收据链接人员编号",
+                "time": "后续收据链接时间（香港时间）",
+                "digest": "已链接原始收据指纹",
+            },
+        ),
+        (
+            "en",
+            {
+                "section": "Immutable receipt details",
+                "original_request": "Re-entry request ID",
+                "original_status": "Original business record status",
+                "submitted": "Submitted",
+                "request": "Later receipt link request ID",
+                "reason": "Later receipt link reason",
+                "actor": "Later receipt link account ID",
+                "time": "Later receipt link time (Hong Kong time)",
+                "digest": "Linked original receipt fingerprint",
+            },
+        ),
+    ],
+)
+def test_linked_receipt_provenance_is_translated_in_preview_csv_and_pdf(
+    admin: TestClient,
+    database_url: str,
+    tmp_path: Path,
+    locale: str,
+    labels: dict[str, str],
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        linked = _link_original_count_receipt(setup)
+        expected_rows = [
+            [labels["original_request"], linked["original_request_id"]],
+            [labels["original_status"], labels["submitted"]],
+            [labels["request"], linked["link"]["request_id"]],
+            [labels["reason"], linked["link"]["reason"]],
+            [labels["actor"], str(linked["link"]["actor_id"])],
+            [labels["time"], "2026-11-16 00:45:00.345678 HKT"],
+            [labels["digest"], linked["link"]["receipt_digest"]],
+        ]
+        officer = setup["counter"]
+        statement_path = linked["record_path"] + "/statement"
+        response = officer.get(statement_path, params={"locale": locale})
+        assert response.status_code == 200, response.text
+        report = response.json()
+        receipt_rows = next(
+            section["rows"] for section in report["sections"]
+            if section["title"] == labels["section"]
+        )
+        for expected in expected_rows:
+            assert expected in receipt_rows
+        assert linked["link"]["request_id"] != linked["original_request_id"]
+
+        csv_response = officer.get(statement_path + ".csv", params={"locale": locale})
+        assert csv_response.status_code == 200, csv_response.text
+        csv_rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
+        for expected in expected_rows:
+            assert expected in csv_rows
+
+        pdf_response = officer.get(statement_path + ".pdf", params={"locale": locale})
+        assert pdf_response.status_code == 200, pdf_response.text
+        pages = PdfReader(BytesIO(pdf_response.content)).pages
+        page_texts = [page.extract_text() or "" for page in pages]
+        assert page_texts and all(page_texts)
+        compact_text = "".join("".join(page_texts).split())
+        for label, value in expected_rows:
+            assert "".join(label.split()) in compact_text
+            assert "".join(value.split()) in compact_text
+        assert READY_PASSWORD not in compact_text
+        assert "password" not in compact_text.lower()
+        (tmp_path / ("linked-receipt-" + locale + ".pdf")).write_bytes(pdf_response.content)
+        (tmp_path / ("linked-receipt-" + locale + ".csv")).write_bytes(csv_response.content)
