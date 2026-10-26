@@ -355,9 +355,10 @@ def test_required_recount_replaces_six_four_only_after_fresh_approval_and_select
         result_response = supervisor.get(result_path)
         assert result_response.status_code == 200, result_response.text
         result = result_response.json()
-        assert result["complete"] is True and result["provisional"] is False
+        assert result["context"]["election"]["status"] == "active"
+        assert result["complete"] is True and result["provisional"] is True
         assert [row["quantity"] for row in result["candidate_totals"]] == [8, 2]
-        assert not any(row["code"] == "recount_pending" for row in result["pending"])
+        assert result["pending"] == []
         affected = [row for row in result["contributions"] if row["scope_id"] == scope["id"]]
         assert len(affected) == 1
         assert affected[0]["round_id"] == blank["id"]
