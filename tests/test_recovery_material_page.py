@@ -67,8 +67,8 @@ def test_recovery_material_page_imports_and_shows_empty_journal(
             })
             assert page is not None, component.errorString()
             page.setParentItem(window.contentItem())
-            page.setWidth(window.width)
-            page.setHeight(window.height)
+            page.setWidth(window.width())
+            page.setHeight(window.height())
             recovery.open()
             wait(lambda: not recovery.property('state')['busy'])
             assert recovery.property('state')['commands'] == []

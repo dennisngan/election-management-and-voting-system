@@ -312,7 +312,7 @@ ColumnLayout {
         modal: true
         focus: true
         anchors.centerIn: Overlay.overlay
-        width: Math.min(460, Overlay.overlay.width - 40)
+        width: Math.min(460, (Overlay.overlay ? Overlay.overlay.width : 500) - 40)
         implicitWidth: Math.max(0, width)
         title: page.t("recovery_retry_password")
         header: Label {
