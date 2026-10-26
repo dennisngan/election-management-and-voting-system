@@ -11,7 +11,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from PySide6.QtCore import QCoreApplication, QEvent, QMetaObject, QPointF, Qt, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QMetaObject, QObject, QPointF, Qt, QUrl
 from PySide6.QtGui import QGuiApplication, QKeyEvent
 from PySide6.QtQml import QQmlApplicationEngine, QQmlProperty
 from PySide6.QtQuick import QQuickItem
@@ -87,18 +87,42 @@ def _wait_in_focus_budget(predicate, deadline, name):
             return
         time.sleep(min(.005, max(0, deadline - time.monotonic())))
 
+def _modal_blocks(item, popups):
+    for popup in popups:
+        if not popup.property('modal') or not popup.property('visible'):
+            continue
+        content = popup.property('contentItem')
+        popup_item = content.parentItem() if isinstance(content, QQuickItem) else None
+        ancestor = item
+        while ancestor is not None and ancestor is not popup_item:
+            ancestor = ancestor.parentItem()
+        if popup_item is None or ancestor is None:
+            return True
+    return False
+
 def _focus_until(name, deadline):
     item = control(name)
     assert item.property('visible'), 'Control is hidden: ' + name
     rendered = QSignalSpy(window.frameSwapped)
-    item.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+    popups = [obj for obj in window.findChildren(QObject) if obj.inherits('QQuickPopup')]
     geometry = None
     frame_goal = rendered.count() + 1
 
     def ready():
         nonlocal geometry, frame_goal
+        if _modal_blocks(item, popups):
+            geometry = None
+            frame_goal = rendered.count() + 1
+            window.requestUpdate()
+            return False
+        if not item.property('activeFocus'):
+            item.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+            geometry = None
+            frame_goal = rendered.count() + 1
+            window.requestUpdate()
+            return False
         current = _pointer_geometry(item)
-        if not item.property('activeFocus') or current is None:
+        if current is None:
             geometry = None
             frame_goal = rendered.count() + 1
             window.requestUpdate()
