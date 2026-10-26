@@ -446,7 +446,7 @@ def test_restore_reports_private_stderr_failure_before_import(
     restore_database_url: str,
 ) -> None:
     backup = admin.post("/api/backups", json={"request_id": str(uuid4())})
-    assert backup.status_code == 201, backup.text
+    assert backup.status_code == 200, backup.text
     assert backup.json()["status"] == "succeeded"
     manifest = backup_directory / (backup.json()["id"] + ".manifest.json")
     script = """
