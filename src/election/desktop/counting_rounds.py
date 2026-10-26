@@ -15,6 +15,7 @@ from election.desktop.report_files import DownloadRequest, report_destination, s
 
 NETWORK_ERRORS = frozenset({
     "request_failed", "disconnected", "database_unavailable",
+    "certificate_error",
     "recovery_outcome_check_required", "recovery_pending_command",
 })
 
