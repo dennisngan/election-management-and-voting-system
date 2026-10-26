@@ -1,4 +1,4 @@
-"""Validate private journal objects without interpreting Windows modes as ACLs."""
+"""Validate private filesystem objects without interpreting Windows modes as ACLs."""
 
 import ctypes
 import os

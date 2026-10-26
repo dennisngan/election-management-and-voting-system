@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from election.desktop.private_client_paths import (
+from election.private_paths import (
     private_directory,
     private_file,
     private_file_descriptor,
