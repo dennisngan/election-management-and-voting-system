@@ -602,3 +602,56 @@ def test_committed_turnout_keeps_paper_locked_until_journal_outcome_can_be_check
             after_check = setup["officer"].get(history_path)
             assert after_check.status_code == 200, after_check.text
             assert after_check.json() == committed.json()
+
+
+def test_turnout_journal_failure_before_dispatch_leaves_pending_paper_correctable(
+    turnout_paper_setup: dict,
+    qt_app: QCoreApplication,
+    completed_write_server: CompletedWriteServer,
+    private_command_directory: Path,
+) -> None:
+    setup = turnout_paper_setup
+    endpoint = completed_write_server
+    write_path = setup["write_path"]
+    paper_id = setup["paper"]["id"]
+    with signed_in_client(
+        endpoint, setup["account"]["username"], setup["station_id"], qt_app,
+        password=TURNOUT_READY_PASSWORD,
+    ) as client:
+        editor = open_turnout_paper(client, setup, qt_app)
+        original_forms = editor.property("state")["forms"]
+        assert not private_command_directory.exists()
+        private_command_directory.write_text("The journal path is unavailable.")
+        try:
+            editor.save()
+            wait_for(qt_app, lambda: not editor.property("state")["busy"])
+            assert endpoint.request_count("PUT", write_path) == 0
+            history = setup["officer"].get(write_path + "/history")
+            assert history.status_code == 200, history.text
+            assert history.json()["items"] == []
+            pending = setup["officer"].get(setup["outage_path"])
+            assert pending.status_code == 200, pending.text
+            assert pending.json()["record"]["paper_records"][0]["status"] == "pending"
+            assert private_command_directory.is_file()
+            state = editor.property("state")
+            assert state["error"] == "recovery_journal_unavailable"
+            assert state["uncertain_save"] is False
+            assert state["paper_pending_request_id"] == ""
+            assert state["paper_record"]["id"] == paper_id
+            assert state["forms"] == original_forms
+            assert client.property("workspace").property("unresolvedRequest") is False
+
+            private_command_directory.unlink()
+            private_command_directory.mkdir(mode=0o700)
+            assert endpoint.request_count("PUT", write_path) == 0
+            editor.save()
+            wait_for(qt_app, lambda: (
+                not editor.property("state")["busy"]
+                and editor.property("state")["selected"].get("status") == "draft"
+            ))
+            assert endpoint.request_count("PUT", write_path) == 1
+            assert editor.property("state")["paper_record"] == {}
+        finally:
+            if private_command_directory.is_file():
+                private_command_directory.unlink()
+                private_command_directory.mkdir(mode=0o700)
