@@ -349,7 +349,11 @@ def test_count_paper_amendment_replay_requires_current_counting_role(
         counter = setup["counter"]
         saved = counter.put(target, json=command)
         assert saved.status_code == 200, saved.text
-        account = counter.get("/api/auth/me").json()
+        profile = counter.get("/api/auth/me")
+        assert profile.status_code == 200, profile.text
+        full_account = admin.get(f"/api/accounts/{profile.json()['id']}")
+        assert full_account.status_code == 200, full_account.text
+        account = full_account.json()
         changed = admin.put(
             f"/api/accounts/{account['id']}",
             json={
