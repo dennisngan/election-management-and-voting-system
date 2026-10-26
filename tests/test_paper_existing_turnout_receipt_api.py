@@ -10,6 +10,7 @@ from tests.test_turnout_api import (
 )
 from tests.test_turnout_api import database_url as database_url
 from tests.turnout_support import (
+    approve_period,
     TurnoutClock,
     turnout_command,
     turnout_draft,
@@ -451,3 +452,119 @@ def test_turnout_submitted_after_paper_registration_cannot_be_linked_as_an_exist
         record_after_preview = officer.get(path + "/1")
         assert record_after_preview.status_code == 200, record_after_preview.text
         assert record_after_preview.json() == submitted_record
+
+
+def _register_later_turnout_paper(
+    officer: TestClient,
+    station_id: int,
+    clock: TurnoutClock,
+    action: str,
+    original_event_at: str,
+) -> tuple[str, dict]:
+    clock.value += timedelta(minutes=30)
+    outage_path = f"/api/workspace/stations/{station_id}/outages"
+    outage = officer.post(
+        outage_path,
+        json={
+            "request_id": str(uuid4()),
+            "reference": "T25 preserved turnout receipt " + uuid4().hex[:8],
+            "kind": "network",
+            "started_at": "2026-11-15T09:00:00+08:00",
+            "ended_at": "2026-11-15T10:00:00+08:00",
+            "notes": "Register the original paper after the operational command committed.",
+        },
+    )
+    assert outage.status_code == 201, outage.text
+    outage_record_path = outage_path + f"/{outage.json()['id']}"
+    paper = officer.post(
+        outage_record_path + "/paper-records",
+        json={
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "paper_reference": "T25-PRESERVED-" + uuid4().hex[:10],
+            "workflow": "turnout",
+            "action": action,
+            "original_event_at": original_event_at,
+            "target": {"period_index": 1},
+            "notes": "Keep the original receipt beside later paper linkage metadata.",
+        },
+    )
+    assert paper.status_code == 201, paper.text
+    paper_record = paper.json()
+    assert paper_record["status"] == "pending"
+    return outage_record_path + f"/paper-records/{paper_record['id']}", paper_record
+
+
+def test_existing_turnout_submit_receipt_remains_linkable_after_supervisor_approval(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    path = scope["path"]
+    clock = TurnoutClock()
+    with (
+        turnout_staff(admin, database_url, clock, [station_id]) as (officer, _),
+        turnout_staff(admin, database_url, clock, [station_id], "supervisor") as (supervisor, _),
+    ):
+        saved = officer.put(
+            path + "/1",
+            json=turnout_draft(
+                supplied_hourly=7,
+                supplied_cumulative=7,
+                event_at="2026-11-15T09:30:00+08:00",
+                source_context="Signed turnout worksheet approved before paper registration.",
+            ),
+        )
+        assert saved.status_code == 200, saved.text
+        submit_command = turnout_command(saved.json()["revision"])
+        submitted = officer.post(path + "/1/submit", json=submit_command)
+        assert submitted.status_code == 200, submitted.text
+        original_record = submitted.json()
+        assert original_record["status"] == "submitted"
+        clock.value += timedelta(minutes=5)
+        approved_record = approve_period(supervisor, path, 1, original_record["revision"])
+        assert approved_record["status"] == "approved"
+        assert approved_record["id"] == original_record["id"]
+        assert approved_record["revision"] == original_record["revision"]
+        outcome_path = (
+            f"/api/workspace/stations/{station_id}/request-outcomes/"
+            + submit_command["request_id"]
+        )
+        original_outcome = officer.get(outcome_path, params={"workflow": "turnout"})
+        assert original_outcome.status_code == 200, original_outcome.text
+        assert original_outcome.json()["record"] == original_record
+        history_before = officer.get(path + "/1/history")
+        assert history_before.status_code == 200, history_before.text
+        paper_path, paper_record = _register_later_turnout_paper(
+            officer, station_id, clock, "submit", "2026-11-15T09:45:00+08:00"
+        )
+        preview = officer.get(
+            paper_path + "/receipt", params={"request_id": submit_command["request_id"]}
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["record"] == original_record
+        linked = officer.post(
+            paper_path + "/link-receipt",
+            json={
+                "request_id": str(uuid4()),
+                "expected_outage_revision": 1,
+                "expected_paper_revision": paper_record["revision"],
+                "original_request_id": submit_command["request_id"],
+                "expected_receipt_digest": preview.json()["receipt_digest"],
+                "reason": "Link the preserved submission while retaining its later approval.",
+            },
+        )
+        assert linked.status_code == 200, linked.text
+        assert linked.json()["status"] == "entered"
+        assert linked.json()["reentry"]["record"] == original_record
+        assert linked.json()["reentry"]["request_id"] == submit_command["request_id"]
+        after_outcome = officer.get(outcome_path, params={"workflow": "turnout"})
+        assert after_outcome.status_code == 200, after_outcome.text
+        assert after_outcome.json() == original_outcome.json()
+        current = officer.get(path + "/1")
+        assert current.status_code == 200, current.text
+        assert current.json() == approved_record
+        history_after = officer.get(path + "/1/history")
+        assert history_after.status_code == 200, history_after.text
+        assert history_after.json() == history_before.json()
