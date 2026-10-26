@@ -165,11 +165,45 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
             click('outagePaperOption_' + str(setup['paper_id']))
             wait(lambda: outages.property('state')['selected_paper_id'] == setup['paper_id'])
 
+            def click_settled_receipt_control(name):
+                item = focus(name)
+                frame()
+                center = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+                clipped_ancestors = []
+                ancestor = item.parentItem()
+                while ancestor is not None:
+                    if ancestor.property('clip'):
+                        local = item.mapToItem(
+                            ancestor, QPointF(item.width() / 2, item.height() / 2))
+                        inside = (0 < local.x() < ancestor.width()
+                            and 0 < local.y() < ancestor.height())
+                        clipped_ancestors.append({
+                            'name': ancestor.objectName(), 'inside': inside,
+                            'x': local.x(), 'y': local.y(),
+                            'width': ancestor.width(), 'height': ancestor.height(),
+                        })
+                    ancestor = ancestor.parentItem()
+                assert all(row['inside'] for row in clipped_ancestors), (
+                    name + ' is clipped after focus and render: ' + str(clipped_ancestors))
+                assert item.property('activeFocus'), name + ' lost focus after render'
+                assert item.property('enabled'), name + ' became disabled before click'
+                meta_object = item.metaObject()
+                signal_index = meta_object.indexOfSignal('clicked()')
+                assert signal_index >= 0
+                clicked = QSignalSpy(item, meta_object.method(signal_index))
+                QTest.mouseClick(window, Qt.MouseButton.LeftButton,
+                    Qt.KeyboardModifier.NoModifier, center.toPoint())
+                application.processEvents()
+                assert clicked.count() == 1, (
+                    name + ' did not receive exactly one pointer click at '
+                    + str((center.x(), center.y())) + '; clipped ancestors '
+                    + str(clipped_ancestors))
+
             enter('outageExistingRequestId', setup['original_request_id'])
             check_button = control('outageExistingReceiptCheck')
             assert check_button.property('visible') is True
             assert check_button.property('enabled') is True
-            click('outageExistingReceiptCheck')
+            click_settled_receipt_control('outageExistingReceiptCheck')
             wait(lambda: not outages.property('state')['busy']
                 and outages.property('state')['existing_receipt']['checked'].get('status')
                 == 'committed')
@@ -195,7 +229,7 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
             link_button = control('outageExistingReceiptLink')
             assert link_button.property('visible') is True
             assert link_button.property('enabled') is True
-            click('outageExistingReceiptLink')
+            click_settled_receipt_control('outageExistingReceiptLink')
             wait(lambda: not outages.property('state')['busy']
                 and any(row['id'] == setup['paper_id'] and row['status'] == 'entered'
                     for row in outages.property('state')['selected'].get('paper_records', [])))
