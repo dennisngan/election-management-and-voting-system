@@ -8,7 +8,7 @@ from uuid import UUID
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest
-from election.desktop.exact_numbers import qt_state, quantity_display
+from election.desktop.exact_numbers import qt_state
 
 ROLES = frozenset({"polling_officer", "counting_officer", "supervisor"})
 NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
@@ -47,7 +47,7 @@ class RecoveryController(QObject):
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return qt_state(quantity_display(self._state))
+        return qt_state(self._state)
 
     def reset(self) -> None:
         self._generation += 1
