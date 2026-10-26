@@ -195,7 +195,9 @@ def _turnout_receipt_preview(
     record = outcome.get("record")
     target = revision.data.get("target")
     expected_status = "draft" if action == "save" else "submitted"
-    compatible_statuses = {"draft"} if action == "save" else {"submitted", "approved"}
+    compatible_statuses = {"submitted", "approved"}
+    if action == "save":
+        compatible_statuses.add("draft")
     if (
         not isinstance(record, dict)
         or not isinstance(target, dict)
