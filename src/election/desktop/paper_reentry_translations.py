@@ -2,6 +2,7 @@
 
 PAPER_REENTRY_TRANSLATIONS = {
     "tc": {
+        "workspace_uncertain_request": "請先查核不確定請求的結果，再切換票站。",
         "paper_reentry_title": "重新輸入紙本記錄",
         "paper_reentry_reference": "紙本參考編號（選填）",
         "paper_reentry_none": "一般電子輸入",
@@ -16,6 +17,7 @@ PAPER_REENTRY_TRANSLATIONS = {
         "paper_reentry_load_failed": "無法載入紙本參考。請檢查連線並重試。",
     },
     "sc": {
+        "workspace_uncertain_request": "请先核查不确定请求的结果，再切换票站。",
         "paper_reentry_title": "重新输入纸本记录",
         "paper_reentry_reference": "纸本参考编号（选填）",
         "paper_reentry_none": "一般电子输入",
@@ -30,6 +32,7 @@ PAPER_REENTRY_TRANSLATIONS = {
         "paper_reentry_load_failed": "无法载入纸本参考。请检查连接并重试。",
     },
     "en": {
+        "workspace_uncertain_request": "Check the uncertain request before switching polling stations.",
         "paper_reentry_title": "Re-enter a paper record",
         "paper_reentry_reference": "Paper reference (optional)",
         "paper_reentry_none": "Ordinary electronic entry",

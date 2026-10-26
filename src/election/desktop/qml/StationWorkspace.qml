@@ -34,7 +34,9 @@ ColumnLayout {
     }
     function chooseStation(stationId) {
         if (editorState.busy || stationId === station.id) return
-        if (workspace.selectionGuarded) {
+        if (workspace.unresolvedRequest) {
+            workspace.selectStation(stationId)
+        } else if (workspace.selectionGuarded) {
             pendingStationId = stationId
             discardDialog.open()
         } else workspace.selectStation(stationId)
