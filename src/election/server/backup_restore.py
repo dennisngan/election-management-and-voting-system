@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import re
-import stat
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +20,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from election.private_paths import private_directory, private_file
 from election.server.backups import _file_hash, _private_manifest, _source_hash
 from election.server.models import AuditEvent, LoginSession
 from election.server.mysql_backup_tools import BackupToolError, dump_mysql, restore_mysql
@@ -53,9 +53,9 @@ def _warning(code: str, record: dict[str, Any]) -> None:
 
 def _private_file(path: Path) -> Path:
     path = path.absolute()
-    if path.is_symlink() or not path.is_file() or stat.S_IMODE(path.stat().st_mode) != 0o600:
+    if not private_file(path):
         raise RestoreError("restore_manifest_not_private")
-    if stat.S_IMODE(path.parent.stat().st_mode) & 0o077:
+    if not private_directory(path.parent):
         raise RestoreError("restore_directory_not_private")
     return path
 
@@ -103,7 +103,7 @@ def restore(manifest_path: Path, target_schema: str, container: str | None) -> d
 
     directory = manifest_path.parent / "restore-jobs"
     directory.mkdir(mode=0o700, exist_ok=True)
-    if stat.S_IMODE(directory.stat().st_mode) & 0o077:
+    if not private_directory(directory):
         raise RestoreError("restore_directory_not_private")
     operation_id = str(uuid4())
     lock = directory / (target_schema + ".lock")
