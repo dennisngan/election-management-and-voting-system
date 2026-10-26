@@ -385,3 +385,66 @@ def test_count_journal_failure_before_dispatch_leaves_pending_paper_correctable(
                 assert editor.property("state")["paper_record"] == {}
             finally:
                 private_command_directory.chmod(0o700)
+
+
+def test_allocation_journal_failure_before_dispatch_leaves_pending_paper_correctable(
+    allocation_base_setup: dict,
+    qt_app: QCoreApplication,
+    completed_write_server: CompletedWriteServer,
+    private_command_directory: Path,
+) -> None:
+    setup = allocation_base_setup
+    endpoint = completed_write_server
+    endpoint.clock.value = setup["clock"].value
+    station_id = setup["station"]["id"]
+    outage_path, paper = _register_paper(
+        setup, action="create", target={"counter_id": setup["counter"]["id"]},
+    )
+    write_path = setup["base"] + "/allocations"
+    with signed_in_client(endpoint, setup["account"]["username"], station_id, qt_app) as client:
+        editor = client.property("allocations")
+        editor.open()
+        wait_for_editor_idle(qt_app, editor)
+        editor.setField("counter_id", str(setup["counter"]["id"]))
+        wait_for_editor_idle(qt_app, editor)
+        editor.refreshPaperRecords()
+        wait_for_editor_idle(qt_app, editor)
+        assert editor.selectPaperRecord(paper["id"]) is True
+        for name, value in {
+            "series": setup["series"], "serial_from": "000001", "serial_to": "000002",
+        }.items():
+            editor.setField(name, value)
+        original_forms = editor.property("state")["forms"]
+        assert not private_command_directory.exists()
+        private_command_directory.write_text("The journal path is unavailable.")
+        try:
+            editor.save()
+            wait_for(qt_app, lambda: not editor.property("state")["busy"])
+            assert endpoint.request_count("POST", write_path) == 0
+            allocations = setup["polling"].get(write_path)
+            assert allocations.status_code == 200, allocations.text
+            assert allocations.json()["items"] == []
+            pending = setup["polling"].get(outage_path)
+            assert pending.status_code == 200, pending.text
+            assert pending.json()["record"]["paper_records"][0]["status"] == "pending"
+            assert private_command_directory.is_file()
+            state = editor.property("state")
+            assert state["error"] == "recovery_journal_unavailable"
+            assert state["paper_uncertain"] is False
+            assert state["paper_record"]["id"] == paper["id"]
+            assert state["forms"] == original_forms
+            assert client.property("workspace").property("unresolvedRequest") is False
+
+            private_command_directory.unlink()
+            private_command_directory.mkdir(mode=0o700)
+            editor.save()
+            wait_for(qt_app, lambda: (
+                not editor.property("state")["busy"]
+                and editor.property("state")["selected"].get("revision") == 1
+            ))
+            assert endpoint.request_count("POST", write_path) == 1
+            assert editor.property("state")["paper_record"] == {}
+        finally:
+            if private_command_directory.is_file():
+                private_command_directory.unlink()
+                private_command_directory.mkdir(mode=0o700)
