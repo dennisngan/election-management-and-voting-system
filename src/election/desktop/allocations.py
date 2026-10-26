@@ -402,6 +402,7 @@ class AllocationController(QObject):
                         "database_unavailable",
                         "session_expired",
                         "access_changed",
+                        "recovery_journal_unavailable",
                     }
                     self._state["paper_uncertain"] = self._paper_uncertain
                 self._error(code)
