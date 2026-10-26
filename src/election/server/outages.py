@@ -25,6 +25,8 @@ from election.server.outage_models import (
     OutageRequest,
     PaperReentry,
 )
+from election.server.paper_existing_receipt import preview_existing_receipt
+from election.server.paper_reentry import finish_paper_entry, guard_paper_entry
 from election.server.polling import as_utc
 from election.server.reporting_periods import period_bounds
 from election.server.security import verify_password
@@ -117,6 +119,21 @@ class PaperAmendment(OutageCommand):
         if not value.strip():
             raise ValueError("An amendment reason is required")
         return value
+
+
+class ExistingReceiptLink(OutageCommand):
+    expected_outage_revision: int = Field(ge=1, strict=True)
+    expected_paper_revision: int = Field(ge=1, strict=True)
+    original_request_id: UUID
+    expected_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def meaningful_reason(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A nonblank linkage reason is required")
+        return value.strip()
 
 
 class PaperRevisionRef(BaseModel):
@@ -838,6 +855,87 @@ def outage_router(
                 },
             )
         )
+        db.commit()
+        return result
+
+    def existing_receipt_paper(
+        db: Session, actor: Account, station_id: int, outage_id: int,
+        paper_id: int, *, lock: bool,
+    ) -> tuple[OutagePaperRecord, OutagePaperRevision]:
+        outage = _get_outage(db, station_id, outage_id, lock=lock)
+        query = select(OutagePaperRecord).where(
+            OutagePaperRecord.id == paper_id,
+            OutagePaperRecord.outage_id == outage.id,
+            OutagePaperRecord.station_id == station_id,
+        )
+        if lock:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        paper = db.scalar(query)
+        if paper is None:
+            raise HTTPException(404, detail={"code": "outage_paper_not_found"})
+        _check_operational_role(actor, paper.workflow)
+        revision = latest_paper_revision(db, paper.id, lock=lock)
+        if revision is None:
+            raise HTTPException(409, detail={"code": "paper_revision_conflict"})
+        return paper, revision
+
+    @router.get("/{outage_id}/paper-records/{paper_id}/receipt")
+    def preview_receipt(
+        station_id: int, outage_id: int, paper_id: int, request_id: UUID,
+        db: Database, actor: Actor,
+    ) -> dict[str, Any]:
+        _check_operational_role(actor)
+        stock_scope(db, actor, station_id)
+        paper, revision = existing_receipt_paper(
+            db, actor, station_id, outage_id, paper_id, lock=False,
+        )
+        return preview_existing_receipt(db, actor, station_id, paper, revision, request_id)
+
+    @router.post("/{outage_id}/paper-records/{paper_id}/link-receipt")
+    def link_receipt(
+        station_id: int, outage_id: int, paper_id: int, data: ExistingReceiptLink,
+        db: Database, actor: Actor,
+    ) -> dict[str, Any]:
+        _check_operational_role(actor)
+        turnout_scope(db, actor, station_id, writable=True)
+        digest = _digest("paper_link_receipt", station_id, paper_id, actor.id, data)
+        previous = _receipt(db, data.request_id)
+        if previous:
+            return _replay(previous, digest)
+        outage = _get_outage(db, station_id, outage_id, lock=True)
+        outage_revision = latest_outage_revision(db, outage.id, lock=True)
+        if outage_revision is None or outage_revision.revision != data.expected_outage_revision:
+            raise HTTPException(409, detail={"code": "outage_revision_conflict"})
+        paper, revision = existing_receipt_paper(
+            db, actor, station_id, outage_id, paper_id, lock=True,
+        )
+        if revision.revision != data.expected_paper_revision:
+            raise HTTPException(409, detail={"code": "paper_revision_conflict"})
+        checked = preview_existing_receipt(
+            db, actor, station_id, paper, revision, data.original_request_id,
+        )
+        if checked["receipt_digest"] != data.expected_receipt_digest:
+            raise HTTPException(409, detail={"code": "paper_receipt_mismatch"})
+        if _paper_entry_at(db, paper.id) is not None:
+            raise HTTPException(409, detail={"code": "paper_already_entered"})
+        entry = guard_paper_entry(
+            db, actor, station_id, paper.id, paper.workflow, revision.data["action"],
+            revision.data["target"], data.original_request_id,
+        )
+        now = timestamp()
+        finish_paper_entry(db, actor, entry, data.original_request_id, checked["record"], now)
+        db.add(AuditEvent(
+            actor_id=actor.id, action="paper_existing_receipt_linked", occurred_at=now,
+            details={
+                "station_id": station_id, "outage_id": outage_id, "paper_id": paper_id,
+                "paper_revision": revision.revision, "workflow": paper.workflow,
+                "original_request_id": str(data.original_request_id),
+                "link_request_id": str(data.request_id), "reason": data.reason,
+                "receipt_digest": checked["receipt_digest"],
+            },
+        ))
+        result = paper_record_view(db, paper)
+        _save_receipt(db, data.request_id, station_id, actor.id, digest, result)
         db.commit()
         return result
 
