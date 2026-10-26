@@ -122,6 +122,16 @@ def test_tie_resolution_reason_and_history_are_in_both_exports(
         assert report["resolved_candidate_id"] == before["tie_candidate_ids"][0]
         assert report["resolution_history"][0]["reason"] == reason
         assert report["resolution_history"][0]["valid"] is True
+        for locale, tie_label in (
+            ("en", "Tied candidate IDs"),
+            ("tc", "平票候選人記錄編號"),
+            ("sc", "平票候选人记录编号"),
+        ):
+            localized = supervisor.get(base + "/statement", params={"locale": locale})
+            assert localized.status_code == 200
+            assert (localized.json()["result"]["resolved_candidate_id"]
+                    == report["resolved_candidate_id"])
+            assert localized.json()["labels"]["tie_candidate_ids"] == tie_label
         csv_report = supervisor.get(base + "/statement.csv", params={"locale": "en"})
         pdf_report = supervisor.get(base + "/statement.pdf", params={"locale": "en"})
         assert csv_report.status_code == pdf_report.status_code == 200
