@@ -180,6 +180,17 @@ def _receipt_rows(
         [labels["receipt_revision"], _display(record.get("revision"), labels)],
         [labels["receipt_status"], labels.get(str(record.get("status") or ""), labels["none"])],
     ]
+    link = reentry.get("link")
+    if isinstance(link, dict) and link:
+        rows.extend(
+            (
+                [labels["link_request_id"], _display(link.get("request_id"), labels)],
+                [labels["link_reason"], _display(link.get("reason"), labels)],
+                [labels["link_actor_id"], _display(link.get("actor_id"), labels)],
+                [labels["linked_at"], _time(link.get("linked_at"), labels)],
+                [labels["link_receipt_digest"], _display(link.get("receipt_digest"), labels)],
+            )
+        )
     if paper["workflow"] == "allocation":
         counter = record.get("counter")
         if isinstance(counter, dict):
