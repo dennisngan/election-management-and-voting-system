@@ -10,8 +10,9 @@ from fastapi.testclient import TestClient
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url
 from tests.qml_workspace_support import run_workspace_qml
-
-pytest_plugins = ("tests.test_counting_workflow_retry_desktop",)
+from tests.test_counting_workflow_retry_desktop import (
+    lost_selection_response as lost_selection_response,
+)
 
 
 @pytest.fixture(scope="session")
