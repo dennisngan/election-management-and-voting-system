@@ -19,13 +19,23 @@ P(14) current/historical statements. Ticket 09 adds remaining-stock snapshots, u
 returns and selected P(12) stock-derived issuance statements. Ticket 10 adds replacement, tendered
 and retrieved-unused paper accounting with frozen revisions and three-language statements.
 Ticket 12 adds Supervisor-confirmed fallback/recovery, stock-derived turnout, retained source/mode
-coverage and renewed downstream review after corrections. **15 of 27 tickets are complete: 01–15.**
-[Ticket 12 closure](docs/evidence/ticket-12/README.md) records the latest frozen `5f9ac69` full suite:
-**1,089 passed, 27 warnings, zero failures in 2602.12 seconds, exit 0**, with 286 unchanged source fingerprints.
-Ruff and mypy (95 source files) pass. Computer evidence totals 81 capture pairs, seven native exports
-and ten inspected PDF pages; failed runs and their repairs remain visible. This session stops after
-Ticket 12; [the saved prompt](.scratch/election-management-voting-system/CONTINUE-IMPLEMENTATION.md)
-resumes with Ticket 16 in a new session and permits isolated independent fanout/test overlap.
+coverage and renewed downstream review after corrections. Tickets 16–19 add P(18) accounting,
+received-box counting scopes, preserved F1/F2 observations, derived F3/F4, and explicit Supervisor
+approval and result selection. **19 of 27 tickets are complete: 01–19.**
+[Ticket 19 closure](docs/evidence/ticket-19/README.md) records the latest stable production `45bd56c`:
+**1,295 passed, 38 warnings, zero failures in 2226.82 seconds, exit 0**, with 372 unchanged
+fingerprints. The earlier [16–18 batch](docs/evidence/integrated/ticket16-18-batch/README.md)
+passed 1,223 tests. Their acceptance maps retain real MySQL, Computer and report-page evidence.
+
+Current authorization continues through Ticket 27. The [implementation checkpoint](.scratch/election-management-voting-system/IMPLEMENTATION-CHECKPOINT.md)
+records isolated work, frozen runs and remaining gates for Tickets 20–27; historical Ticket 12
+session stops are superseded. Ongoing draft work is not formal completion or a passing integrated
+release. Actual Windows verification remains incomplete.
+
+[Ticket 12 closure](docs/evidence/ticket-12/README.md) retains the earlier frozen `5f9ac69` full suite:
+**1,089 passed, 27 warnings, zero failures in 2602.12 seconds, exit 0**, with 286 unchanged source
+fingerprints, 81 Computer capture pairs, seven native exports and ten inspected PDF pages.
+Failed runs and their repairs remain visible.
 [Ticket 10 closure](docs/evidence/ticket-10/README.md) records the earlier frozen `94eb11f` full suite:
 **1,042 passed, 25 warnings, zero failures in 2200.48 seconds**, exit 0, with 78 retained Computer
 capture pairs, nine native exports and 15 complete PDF pages. Known runtime diagnostics and earlier
@@ -157,7 +167,7 @@ origin, destination, event corrections and exact source references.
 From the repository root, install all development groups:
 
 ```sh
-uv sync --all-groups
+uv sync --locked --all-groups
 ```
 
 The project does not install itself as a Python package. Set its source path before running commands.
@@ -179,7 +189,7 @@ groups; `uv.lock` records the resolved versions.
 
 Development commands below keep all groups available so starting the desktop does not remove the
 running server's dependencies. For an isolated server environment, use
-`UV_PROJECT_ENVIRONMENT=.venv-server uv sync --group server --group reports`; a source desktop environment can
+`UV_PROJECT_ENVIRONMENT=.venv-server uv sync --locked --group server --group reports`; a source desktop environment can
 use a separate `.venv-desktop` with `--only-group desktop`. Packaged clients do not need server packages.
 
 ## Local database and HTTPS
@@ -277,9 +287,9 @@ The Ticket 01 API exposes health at `GET /api/health`, sign-in at `POST /api/aut
 With development dependencies installed:
 
 ```sh
-uv run --all-groups ruff check .
-uv run --all-groups mypy src/election
-uv run --all-groups pytest
+uv run --locked --all-groups --no-sync python -m ruff check src tests migrations scripts
+uv run --locked --all-groups --no-sync python -m mypy src
+uv run --locked --all-groups --no-sync python -m pytest
 ```
 
 Integration tests require dedicated real MySQL databases configured through
