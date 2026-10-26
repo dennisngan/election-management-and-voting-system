@@ -126,6 +126,13 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
             assert resolved['result']['resolution_history'][0]['valid'] is True
             assert setup['password'] not in json.dumps(resolved, ensure_ascii=False)
             assert control('constituencyResultsPassword').property('text') == ''
+            click('constituencyResultPreview')
+            wait(lambda: bool(results.property('state')['report_text']))
+            original_preview = results.property('state')['report_text']
+            results.refresh()
+            wait(lambda: not results.property('state')['refreshing'])
+            assert results.property('state')['report_text'] == original_preview
+            assert control('constituencyResultReportPreview').property('visible') is True
             """,
         )
         after = setup["clients"]["supervisor"].get(result_path)
