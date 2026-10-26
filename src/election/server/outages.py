@@ -919,7 +919,7 @@ def outage_router(
     ) -> dict[str, Any]:
         _check_operational_role(actor)
         turnout_scope(db, actor, station_id, writable=True)
-        digest = _digest("paper_link_receipt", station_id, paper_id, actor.id, data)
+        digest = _digest(f"paper_link_receipt:{outage_id}", station_id, paper_id, actor.id, data)
         previous = _receipt(db, data.request_id)
         if previous:
             return _replay(previous, digest)
