@@ -3,14 +3,17 @@
 import json
 from copy import deepcopy
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
+from election.desktop.event_times import format_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.lifecycle import HKT, TIME_FORMAT
+from election.desktop.paper_reentry import paper_options, paper_record_fields
+from election.desktop.recovery import RecoveryController
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
 MAX_TOTAL = 9223372036854775807
@@ -22,6 +25,27 @@ QUANTITIES = (
     "derived_cumulative_end",
 )
 STATUSES = ("draft", "submitted", "approved")
+UNCERTAIN_PAPER_ERRORS = frozenset({
+    "request_failed",
+    "request_timeout",
+    "disconnected",
+    "database_unavailable",
+    "certificate_error",
+    "invalid_response",
+    "session_expired",
+    "access_changed",
+    "recovery_outcome_check_required",
+    "recovery_journal_unavailable",
+})
+
+
+def _same_event_time(first: Any, second: Any) -> bool:
+    try:
+        left = datetime.fromisoformat(first.replace("Z", "+00:00"))
+        right = datetime.fromisoformat(second.replace("Z", "+00:00"))
+        return left.tzinfo is not None and right.tzinfo is not None and left == right
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return False
 
 
 def empty_forms() -> dict[str, str]:
@@ -83,6 +107,13 @@ class TurnoutController(QObject):
         self._reviewed_wrapper: dict[str, Any] = {}
         self._raw_items: list[dict[str, Any]] = []
         self._pending: tuple[str, str] | None = None
+        self._paper_pending_request_id = ""
+        self._paper_pending_identity: dict[str, Any] = {}
+        self._recovery = (
+            cast(RecoveryController | None, parent.property("recovery")) if parent else None
+        )
+        if self._recovery is not None:
+            self._recovery.stateChanged.connect(self._recovery_state_changed)
         self._state: dict[str, Any] = {}
         self.reset()
 
@@ -97,6 +128,8 @@ class TurnoutController(QObject):
         self._reviewed_wrapper = {}
         self._raw_items = []
         self._pending = None
+        self._paper_pending_request_id = ""
+        self._paper_pending_identity = {}
         self._state = {
             "station_id": 0,
             "context": {},
@@ -121,6 +154,12 @@ class TurnoutController(QObject):
             "selected_period_context": {},
             "history": [],
             "forms": empty_forms(),
+            "paper_records": [],
+            "paper_record": {},
+            "paper_refreshing": False,
+            "paper_error": "",
+            "paper_pending_request_id": "",
+            "uncertain_save": False,
             "dirty": False,
             "busy": False,
             "refreshing": False,
@@ -140,7 +179,16 @@ class TurnoutController(QObject):
         changed = station_id != self._state["station_id"]
         if changed:
             opened = self._opened
+            pending_request_id = self._paper_pending_request_id
+            pending_identity = deepcopy(self._paper_pending_identity)
             self.reset()
+            if pending_request_id:
+                self._paper_pending_request_id = pending_request_id
+                self._paper_pending_identity = pending_identity
+                self._state.update(
+                    paper_pending_request_id=pending_request_id,
+                    uncertain_save=True,
+                )
             self._opened = opened
         self._state.update(
             station_id=station_id,
@@ -159,6 +207,217 @@ class TurnoutController(QObject):
 
     def _path(self) -> str:
         return f"/api/workspace/stations/{self._state['station_id']}/turnout"
+
+    def _clear_paper_binding(self, *, settled: bool = False) -> None:
+        changed = bool(self._state["paper_record"])
+        if settled:
+            changed = changed or self._state["uncertain_save"] or bool(
+                self._paper_pending_request_id
+            )
+            self._paper_pending_request_id = ""
+            self._paper_pending_identity = {}
+            self._state.update(
+                paper_pending_request_id="",
+                uncertain_save=False,
+            )
+        if self._state["paper_record"]:
+            self._state["paper_record"] = {}
+        if changed:
+            self.stateChanged.emit()
+
+    def _lock_paper_command(
+        self,
+        request_id: str,
+        paper_record_id: int,
+        period_index: int,
+        action: str,
+        method: str,
+        path: str,
+    ) -> None:
+        self._paper_pending_request_id = request_id
+        self._paper_pending_identity = {
+            "request_id": request_id,
+            "station_id": self._state["station_id"],
+            "period_index": period_index,
+            "paper_record_id": paper_record_id,
+            "action": action,
+            "method": method,
+            "path": path,
+        }
+        self._state.update(
+            paper_pending_request_id=request_id,
+            uncertain_save=False,
+        )
+
+    def _recovery_state_changed(self) -> None:
+        request_id = self._paper_pending_request_id
+        if not request_id or self._recovery is None:
+            return
+        recovery_state = self._recovery.property("state")
+        commands = recovery_state.get("commands", []) if isinstance(recovery_state, dict) else []
+        command = next(
+            (
+                row for row in commands
+                if isinstance(row, dict)
+                and row.get("request_id") == request_id
+                and row.get("workflow") == "turnout"
+            ),
+            None,
+        )
+        if command is None:
+            # Recovery commands are actor, server, station and role scoped. Missing
+            # evidence cannot release the binding for this operation.
+            return
+        identity = self._paper_pending_identity
+        payload = command.get("payload")
+        if not (
+            command.get("station_id") == identity.get("station_id")
+            and isinstance(payload, dict)
+            and payload.get("paper_record_id") == identity.get("paper_record_id")
+            and command.get("path") == identity.get("path")
+            and command.get("method") == identity.get("method")
+        ):
+            return
+        status = command.get("status")
+        if status in ("pending", "uncertain"):
+            if not self._state["uncertain_save"]:
+                self._state.update(
+                    uncertain_save=True,
+                    paper_pending_request_id=request_id,
+                )
+                self.stateChanged.emit()
+            return
+        if status not in ("committed", "rejected"):
+            return
+        self._paper_pending_request_id = ""
+        self._paper_pending_identity = {}
+        self._pending = None
+        self._state.update(
+            uncertain_save=False,
+            paper_pending_request_id="",
+            error=command.get("error", "") if status == "rejected" else "",
+            notice="",
+        )
+        if status == "committed":
+            receipt = command.get("receipt")
+            result = receipt.get("record") if isinstance(receipt, dict) else None
+            if not self._record(result, identity["period_index"]):
+                self._state.update(uncertain_save=True, paper_pending_request_id=request_id)
+                self._paper_pending_request_id = request_id
+                self._paper_pending_identity = identity
+                self._error("recovery_outcome_invalid")
+                return
+            self._state.update(paper_record={}, dirty=False)
+        else:
+            self._state["paper_pending_request_id"] = ""
+        self.stateChanged.emit()
+        if status == "committed" and identity.get("station_id") == self._state["station_id"]:
+            self.reload(True)
+
+    def _paper_record_options(self, snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+        return paper_options(
+            snapshot,
+            station_id=self._state["station_id"],
+            workflow="turnout",
+            target={"period_index": self._state["selected_period"]},
+            actions=("save", "submit"),
+        )
+
+    @Slot(result=bool)
+    def refreshPaperRecords(self) -> bool:
+        if (
+            not self._state["station_id"]
+            or self._state["paper_refreshing"]
+            or self._state["busy"]
+        ):
+            return False
+        generation = self._generation
+        station_id = self._state["station_id"]
+        path = f"/api/workspace/stations/{station_id}/outages"
+        self._state.update(paper_refreshing=True, paper_error="")
+        self.stateChanged.emit()
+
+        def loaded(snapshot: dict[str, Any]) -> None:
+            if generation != self._generation:
+                return
+            try:
+                rows = self._paper_record_options(snapshot)
+            except (KeyError, TypeError, ValueError):
+                self._state.update(
+                    paper_refreshing=False,
+                    paper_error="paper_reentry_load_failed",
+                    error="paper_reentry_load_failed",
+                )
+                self.stateChanged.emit()
+                return
+            selected_id = self._state["paper_record"].get("id")
+            selected = next((row for row in rows if row["id"] == selected_id), None)
+            if selected is not None:
+                self._state["paper_record"] = deepcopy(selected)
+            elif selected_id and not self._state["uncertain_save"]:
+                self._state["paper_record"] = {}
+            self._state.update(paper_records=rows, paper_refreshing=False, paper_error="")
+            self.stateChanged.emit()
+
+        def failed(code: str) -> None:
+            if generation != self._generation:
+                return
+            self._state.update(
+                paper_refreshing=False,
+                paper_error="paper_reentry_load_failed",
+                error=code,
+                notice="",
+            )
+            self.stateChanged.emit()
+
+        self._request(path, "GET", None, loaded, failed)
+        return True
+
+    @Slot(int, result=bool)
+    def selectPaperRecord(self, paper_id: int) -> bool:
+        if self._state["busy"]:
+            return False
+        if self._state["uncertain_save"] or self._paper_pending_request_id:
+            self._error("paper_reentry_uncertain")
+            return False
+        if type(paper_id) is not int or paper_id < 0:
+            self._error("paper_reentry_invalid")
+            return False
+        if paper_id == 0:
+            self._clear_paper_binding()
+            self._state.update(error="", notice="")
+            self.stateChanged.emit()
+            return True
+        if (
+            self._state["role"] != "polling_officer"
+            or self._state["context"].get("election", {}).get("status") != "active"
+            or not self._reviewed
+            or self._state["historical"]
+        ):
+            self._error("polling_officer_required")
+            return False
+        paper = next(
+            (row for row in self._state["paper_records"] if row.get("id") == paper_id),
+            None,
+        )
+        if paper is None:
+            self._error("paper_reentry_invalid")
+            return False
+        self._state["paper_record"] = deepcopy(paper)
+        if paper.get("action") == "save":
+            event_time = format_event_time(
+                paper["original_event_at"]
+            ).removesuffix(" HKT")
+            if self._state["forms"]["event_time"] != event_time:
+                self._state["forms"]["event_time"] = event_time
+                self._state["dirty"] = True
+        self._state.update(error="", notice="")
+        self.stateChanged.emit()
+        return True
+
+    @Slot(str, result=str)
+    def formatPaperTime(self, value: str) -> str:
+        return format_event_time(value)
 
     def _page_path(self) -> str:
         return f"{self._path()}?offset={self._state['offset']}&limit={self._state['limit']}"
@@ -193,6 +452,25 @@ class TurnoutController(QObject):
             self._state[activity] = False
             if erase_password:
                 self.erasePassword.emit()
+            if (
+                payload is not None
+                and payload.get("paper_record_id")
+                and payload.get("request_id") == self._paper_pending_request_id
+            ):
+                if code in UNCERTAIN_PAPER_ERRORS:
+                    self._state.update(
+                        uncertain_save=True,
+                        paper_pending_request_id=self._paper_pending_request_id,
+                    )
+                    if self._recovery is not None:
+                        self._recovery.reload()
+                else:
+                    self._paper_pending_request_id = ""
+                    self._paper_pending_identity = {}
+                    self._state.update(
+                        uncertain_save=False,
+                        paper_pending_request_id="",
+                    )
             self._error(code)
 
         self._request(path, method, payload, done, failed)
@@ -327,6 +605,9 @@ class TurnoutController(QObject):
     def _can_load(self, discard: bool) -> bool:
         if not self._state["station_id"] or self._state["busy"]:
             return False
+        if self._state["uncertain_save"]:
+            self._error("paper_reentry_uncertain")
+            return False
         if self._state["dirty"] and not discard:
             self._error("unsaved_turnout_changes")
             return False
@@ -339,6 +620,7 @@ class TurnoutController(QObject):
         def loaded(data: dict[str, Any]) -> None:
             if self._loaded(data, accept=True):
                 self._history()
+                self.refreshPaperRecords()
 
         self._send(self._page_path(), "GET", None, loaded)
 
@@ -360,6 +642,7 @@ class TurnoutController(QObject):
         if not self._reviewed:
             return self.reload(discard)
         self.refresh()
+        self.refreshPaperRecords()
         return True
 
     @Slot()
@@ -402,6 +685,7 @@ class TurnoutController(QObject):
             return True
         if not self._can_load(discard):
             return False
+        self._clear_paper_binding()
         if not any(row["period_index"] == index for row in self._state["items"]):
             self._state["offset"] = ((index - 1) // self._state["limit"]) * self._state["limit"]
         self._reviewed = False
@@ -424,6 +708,7 @@ class TurnoutController(QObject):
             return False
         if not self._can_load(discard):
             return False
+        self._clear_paper_binding()
         self._reviewed = False
         self._state.update(
             offset=offset,
@@ -444,6 +729,7 @@ class TurnoutController(QObject):
         current = self._state["current"].get("record")
         if not current or revision < 1 or not self._can_load(discard):
             return False
+        self._clear_paper_binding()
 
         def loaded(data: dict[str, Any]) -> None:
             if not self._record(data, index) or data["revision"] != revision:
@@ -456,6 +742,7 @@ class TurnoutController(QObject):
             # Keep the reviewed basis raw even when its Qt view has nested display fields.
             self._accept(data, wrapper, historical=revision < current["revision"])
             self._history()
+            self.refreshPaperRecords()
 
         self._send(f"{self._path()}/{index}?revision={revision}", "GET", None, loaded)
         return True
@@ -465,6 +752,7 @@ class TurnoutController(QObject):
         if (
             self._state["role"] != "polling_officer"
             or self._state["busy"]
+            or self._state["uncertain_save"]
             or self._state["historical"]
             or not self._reviewed
             or self._state["context"].get("election", {}).get("status") != "active"
@@ -522,9 +810,14 @@ class TurnoutController(QObject):
                         raise ValueError("Source identity is outside the supported range")
                     values[name] = identity
             text = form["event_time"].strip()
-            original = self._state["selected"].get("event_at")
+            paper = self._state["paper_record"]
+            original = (
+                paper.get("original_event_at")
+                if paper.get("action") == "save"
+                else self._state["selected"].get("event_at")
+            )
             if original and text == self.formatTime(original).removesuffix(" HKT"):
-                # The minute form must not round a precise original on unrelated edits.
+                # The minute form must not round a precise saved or paper event time.
                 values["event_at"] = original
             else:
                 values["event_at"] = (
@@ -549,6 +842,9 @@ class TurnoutController(QObject):
         if approval:
             self.erasePassword.emit()
         if not self._state["station_id"] or self._state["busy"]:
+            return
+        if self._state["uncertain_save"]:
+            self._error("paper_reentry_uncertain")
             return
         role = "supervisor" if approval else "polling_officer"
         if self._state["role"] != role:
@@ -581,6 +877,28 @@ class TurnoutController(QObject):
                 else "turnout_state_conflict"
             )
             return
+        paper = self._state["paper_record"]
+        if action in ("amend", "approve") and paper:
+            self._error("paper_reentry_invalid")
+            return
+        paper_fields: dict[str, int] = {}
+        if action in ("save", "submit"):
+            try:
+                paper_fields = paper_record_fields(
+                    paper,
+                    station_id=self._state["station_id"],
+                    workflow="turnout",
+                    action=action,
+                    target={"period_index": self._state["selected_period"]},
+                )
+            except ValueError:
+                self._error("paper_reentry_invalid")
+                return
+            if action == "submit" and paper and not _same_event_time(
+                selected.get("event_at"), paper.get("original_event_at")
+            ):
+                self._error("paper_reentry_invalid")
+                return
         values = self._content(amend=action == "amend") if action in ("save", "amend") else {}
         if values is None:
             return
@@ -588,6 +906,7 @@ class TurnoutController(QObject):
             "expected_revision": selected.get("revision", 0),
             "expected_schedule_revision": self._state["schedule"]["revision"],
             **values,
+            **paper_fields,
         }
         signature = json.dumps(
             {
@@ -601,6 +920,19 @@ class TurnoutController(QObject):
         if not self._pending or self._pending[0] != signature:
             self._pending = signature, str(uuid4())
         payload["request_id"] = self._pending[1]
+        paper_id = paper_fields.get("paper_record_id", 0)
+        if paper_id:
+            command_path = f"{self._path()}/{self._state['selected_period']}" + (
+                "" if action == "save" else "/" + action
+            )
+            self._lock_paper_command(
+                self._pending[1],
+                paper_id,
+                self._state["selected_period"],
+                action,
+                "PUT" if action == "save" else "POST",
+                command_path,
+            )
         if approval:
             payload["password"] = password
         self._generation += 1
@@ -609,8 +941,14 @@ class TurnoutController(QObject):
 
         def saved(data: dict[str, Any]) -> None:
             if not self._record(data, index):
+                if paper_id:
+                    self._state.update(uncertain_save=True, dirty=True)
+                    self._error("request_failed")
+                    return
                 self._error("request_failed")
                 return
+            if paper_id:
+                self._clear_paper_binding(settled=True)
 
             def reviewed(snapshot: dict[str, Any]) -> None:
                 if self._loaded(snapshot, accept=True):
@@ -622,6 +960,7 @@ class TurnoutController(QObject):
                         "approve": "turnout_approved",
                     }[action]
                     self._history()
+                    self.refreshPaperRecords()
 
             self._send(self._page_path(), "GET", None, reviewed)
 
