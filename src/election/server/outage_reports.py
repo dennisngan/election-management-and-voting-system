@@ -514,6 +514,39 @@ def _history_tables(projection: dict[str, Any]) -> list[HistoryTable]:
     tables = []
     for section in projection["sections"]:
         rows: list[list[str]] = section["rows"]
+        localized = OUTAGE_REPORT_LABELS[projection["locale"]]
+        if section["title"] in (localized["paper_records"], localized["paper_history"]):
+            # Paper references and receipt UUIDs need room to remain readable;
+            # the compact CSV matrix is a poor fit for ten PDF columns.
+            for row in rows[1:]:
+                reference_index = 1 if section["title"] == localized["paper_records"] else 0
+                tables.append(
+                    HistoryTable(
+                        section["title"] + " · " + row[reference_index],
+                        [
+                            [localized["field"], localized["value"]],
+                            *[
+                                [heading, value]
+                                for heading, value in zip(rows[0], row, strict=True)
+                            ],
+                        ],
+                        (0.28, 0.72),
+                        split_in_row=False,
+                    )
+                )
+            if len(rows) == 1:
+                tables.append(
+                    HistoryTable(
+                        section["title"],
+                        [
+                            [localized["field"], localized["value"]],
+                            [localized["paper_reference"], localized["none"]],
+                        ],
+                        (0.28, 0.72),
+                        section["empty_message"],
+                    )
+                )
+            continue
         if section["title"] == OUTAGE_REPORT_LABELS[projection["locale"]]["outage"]:
             localized = OUTAGE_REPORT_LABELS[projection["locale"]]
             rows = [[localized["field"], localized["value"]], *rows]
