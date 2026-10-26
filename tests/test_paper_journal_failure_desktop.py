@@ -318,3 +318,70 @@ def test_committed_allocation_keeps_paper_locked_until_journal_outcome_can_be_ch
         finally:
             endpoint.release.set()
             journal_path.chmod(0o600)
+
+
+def test_count_journal_failure_before_dispatch_leaves_pending_paper_correctable(
+    admin: TestClient,
+    database_url: str,
+    qt_app: QCoreApplication,
+    completed_write_server: CompletedWriteServer,
+    private_command_directory: Path,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        endpoint = completed_write_server
+        endpoint.clock.value = setup["clock"].value
+        officer = setup["counter"]
+        station_id = setup["stations"]["N1"]["id"]
+        round_path = _draft_count(setup)
+        round_id = int(round_path.rsplit("/", 1)[1])
+        outage_path, paper = _create_outage_and_paper(setup, round_id)
+        submit_path = round_path + "/submit"
+        with signed_in_client(
+            endpoint, setup["accounts"]["receiveronly"]["username"], station_id, qt_app,
+        ) as client:
+            editor = client.property("countingRounds")
+            editor.open()
+            wait_for_editor_idle(qt_app, editor)
+            assert editor.selectScope(setup["scope"]["id"]) is True
+            wait_for_editor_idle(qt_app, editor)
+            assert editor.selectRound(round_id) is True
+            wait_for(qt_app, lambda: (
+                not editor.property("state")["busy"]
+                and not editor.property("state")["paper_loading"]
+                and any(row["id"] == paper["id"]
+                        for row in editor.property("state")["paper_records"])
+            ))
+            assert editor.selectPaperRecord(paper["id"]) is True
+            original_forms = editor.property("state")["forms"]
+            private_command_directory.mkdir(mode=0o700, exist_ok=True)
+            try:
+                private_command_directory.chmod(0o500)
+                editor.submitCount()
+                wait_for(qt_app, lambda: not editor.property("state")["busy"])
+                assert endpoint.request_count("POST", submit_path) == 0
+                current = officer.get(round_path)
+                assert current.status_code == 200, current.text
+                assert current.json()["record"]["status"] == "draft"
+                assert len(current.json()["history"]) == 2
+                pending = officer.get(outage_path)
+                assert pending.status_code == 200, pending.text
+                assert pending.json()["record"]["paper_records"][0]["status"] == "pending"
+                assert list(private_command_directory.glob("*.json")) == []
+                state = editor.property("state")
+                assert state["error"] == "recovery_journal_unavailable"
+                assert state["uncertain_save"] is False
+                assert state["paper_binding_locked"] is False
+                assert state["paper_record"]["id"] == paper["id"]
+                assert state["forms"] == original_forms
+                assert client.property("workspace").property("unresolvedRequest") is False
+
+                private_command_directory.chmod(0o700)
+                editor.submitCount()
+                wait_for(qt_app, lambda: (
+                    not editor.property("state")["busy"]
+                    and editor.property("state")["selected"]["status"] == "submitted"
+                ))
+                assert endpoint.request_count("POST", submit_path) == 1
+                assert editor.property("state")["paper_record"] == {}
+            finally:
+                private_command_directory.chmod(0o700)
