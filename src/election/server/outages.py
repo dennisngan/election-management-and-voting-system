@@ -244,6 +244,26 @@ def _paper_history(db: Session, paper_id: int) -> list[dict[str, Any]]:
     ]
 
 
+def _existing_link_view(db: Session, paper_id: int, entry: PaperReentry) -> dict[str, Any] | None:
+    event = db.scalar(
+        select(AuditEvent).where(
+            AuditEvent.action == "paper_existing_receipt_linked",
+            AuditEvent.actor_id == entry.actor_id,
+            AuditEvent.details["paper_id"].as_integer() == paper_id,
+            AuditEvent.details["original_request_id"].as_string() == entry.request_id,
+        ).order_by(AuditEvent.id.desc()).limit(1)
+    )
+    if event is None:
+        return None
+    return {
+        "request_id": event.details["link_request_id"],
+        "reason": event.details["reason"],
+        "actor_id": event.actor_id,
+        "linked_at": as_utc(event.occurred_at),
+        "receipt_digest": event.details["receipt_digest"],
+    }
+
+
 def paper_record_view(db: Session, paper: OutagePaperRecord) -> dict[str, Any]:
     revision = latest_paper_revision(db, paper.id)
     if revision is None:
@@ -272,6 +292,7 @@ def paper_record_view(db: Session, paper: OutagePaperRecord) -> dict[str, Any]:
                 "entered_at": as_utc(entry.entered_at),
                 "paper_revision_id": entry.paper_revision_id,
                 "record": entry.record,
+                "link": _existing_link_view(db, paper.id, entry),
             }
             if entered and entry
             else None
@@ -934,6 +955,7 @@ def outage_router(
                 "receipt_digest": checked["receipt_digest"],
             },
         ))
+        db.flush()
         result = paper_record_view(db, paper)
         _save_receipt(db, data.request_id, station_id, actor.id, digest, result)
         db.commit()
