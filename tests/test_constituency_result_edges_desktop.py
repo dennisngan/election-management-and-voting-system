@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication
 
-from tests.box_support import READY_PASSWORD
+from tests.box_support import READY_PASSWORD, box_staff
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
@@ -211,3 +211,112 @@ def test_dropped_tie_response_retries_original_receipt_with_fresh_password(
         result = setup["clients"]["supervisor"].get(result_path)
         assert result.status_code == 200, result.text
         assert len(result.json()["resolution_history"]) == 1
+
+
+def test_report_preview_rejects_peer_tie_resolution_on_same_count_basis(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    with complete_tie_setup(admin, database_url) as setup:
+        _save_tie_round(setup, [0, 0])
+        https_server.clock.value = setup["clock"].value
+        result_path = f"/api/workspace/constituencies/{setup['constituency_id']}/results"
+        peer_station_ids = [setup["stations"][code]["id"] for code in ("N1", "N2", "N3")]
+
+        with box_staff(admin, database_url, setup["clock"], "supervisor", peer_station_ids) as (
+            peer,
+            peer_account,
+        ):
+            before = peer.get(result_path)
+            assert before.status_code == 200, before.text
+            basis = before.json()
+            assert basis["complete"] is True
+            assert basis["tie_candidate_ids"]
+            result_digest = basis["basis_digest"]
+            candidate_id = basis["tie_candidate_ids"][1]
+            peer_reason = "Second Supervisor recorded the reviewed tie outcome."
+
+            run_workspace_qml(
+                {
+                    "server": https_server.url,
+                    "username": setup["accounts"]["supervisor"]["username"],
+                    "password": READY_PASSWORD,
+                    "station_id": setup["stations"]["N1"]["id"],
+                    "locale": "en",
+                    "peer_username": peer_account["username"],
+                    "peer_password": READY_PASSWORD,
+                    "result_path": result_path,
+                    "result_digest": result_digest,
+                    "candidate_id": candidate_id,
+                    "peer_reason": peer_reason,
+                },
+                """
+                import ssl
+                import urllib.request
+                import uuid
+                from pathlib import Path
+
+                results = controller.property('constituencyResults')
+                assert results is not None
+                results.open()
+                wait(lambda: not results.property('state')['busy'])
+                original = results.property('state')['result']
+                assert original['basis_digest'] == setup['result_digest']
+                assert original.get('resolved_candidate_id') is None
+                assert original['tie_candidate_ids']
+
+                def post_json(path, payload, token=None):
+                    headers = {'Content-Type': 'application/json'}
+                    if token:
+                        headers['Authorization'] = 'Bearer ' + token
+                    request = urllib.request.Request(
+                        setup['server'] + path,
+                        data=json.dumps(payload).encode(),
+                        headers=headers,
+                        method='POST',
+                    )
+                    context = ssl.create_default_context(
+                        cafile=str(Path('.runtime/tls/ca.pem').resolve())
+                    )
+                    with urllib.request.urlopen(request, context=context) as response:
+                        return json.loads(response.read())
+
+                session = post_json('/api/auth/login', {
+                    'username': setup['peer_username'],
+                    'password': setup['peer_password'],
+                })
+                peer = post_json(setup['result_path'] + '/tie-resolutions', {
+                    'request_id': str(uuid.uuid4()),
+                    'expected_resolution_revision': 0,
+                    'basis_digest': original['basis_digest'],
+                    'candidate_id': setup['candidate_id'],
+                    'reason': setup['peer_reason'],
+                    'password': setup['peer_password'],
+                }, session['token'])
+                assert peer['resolved_candidate_id'] == setup['candidate_id']
+                assert peer['basis_digest'] == original['basis_digest']
+                assert peer['resolution_history'][0]['valid'] is True
+
+                # The result basis is unchanged, but the statement endpoint has a
+                # newer tie-resolution snapshot than the page currently displays.
+                results.preview('en')
+                wait(lambda: not results.property('state')['busy'])
+                stale = results.property('state')
+                assert stale['newer_basis'] is True
+                assert stale['notice'] == 'constituency_result_newer_basis'
+                assert stale['report'] == {}
+                assert stale['report_text'] == ''
+                assert stale['result']['basis_digest'] == setup['result_digest']
+                assert stale['result'].get('resolved_candidate_id') is None
+
+                results.discardAndReload()
+                wait(lambda: not results.property('state')['busy'])
+                refreshed = results.property('state')
+                assert refreshed['newer_basis'] is False
+                assert refreshed['result']['resolved_candidate_id'] == setup['candidate_id']
+                assert refreshed['result']['tie_resolution']['revision'] == 1
+                assert refreshed['report'] == {}
+                """,
+            )
