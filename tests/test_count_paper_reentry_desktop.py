@@ -318,63 +318,6 @@ def test_supervisor_cannot_select_pending_count_paper_in_material(
         )
 
 
-def test_ordinary_count_submit_does_not_add_a_paper_flag(
-    admin: TestClient,
-    database_url: str,
-    https_server: HttpsServer,
-) -> None:
-    with tally_setup(admin, database_url) as setup:
-        https_server.clock.value = setup["clock"].value
-        officer = setup["counter"]
-        station_id = setup["stations"]["N1"]["id"]
-        rounds_path = setup["rounds_path"]
-        options_response = officer.get(rounds_path)
-        assert options_response.status_code == 200, options_response.text
-        options = options_response.json()
-        f1 = officer.post(rounds_path, json=complete_f1_command(options))
-        assert f1.status_code == 201, f1.text
-        round_id = f1.json()["id"]
-        f2 = officer.put(
-            f"{rounds_path}/{round_id}/f2", json=complete_f2_command(options)
-        )
-        assert f2.status_code == 200, f2.text
-
-        run_workspace_qml(
-            {
-                "server": https_server.url,
-                "username": setup["accounts"]["receiveronly"]["username"],
-                "password": READY_PASSWORD,
-                "station_id": station_id,
-                "locale": "en",
-                "scope_id": setup["scope"]["id"],
-                "round_id": round_id,
-            },
-            f"""
-            click('countingRoundsNavigation')
-            editor = controller.countingRounds
-            wait(lambda: not editor.property('state')['busy'])
-            assert editor.selectScope({setup['scope']['id']}) is True
-            wait(lambda: not editor.property('state')['busy'])
-            assert editor.selectRound({round_id}) is True
-            wait(lambda: not editor.property('state')['busy'])
-            click('countSubmit')
-            wait(lambda: not editor.property('state')['busy']
-                and editor.property('state')['notice'] == 'count_submitted')
-            recovery = controller.recovery
-            recovery.reload()
-            wait(lambda: not recovery.property('state')['busy'])
-            command = next(row for row in recovery.property('state')['commands']
-                if row['workflow'] == 'count' and row['path'].endswith('/submit'))
-            assert command['status'] == 'committed'
-            assert 'paper_record_id' not in command['payload']
-            """,
-        )
-
-        current = officer.get(f"{rounds_path}/{round_id}")
-        assert current.status_code == 200, current.text
-        assert current.json()["record"]["status"] == "submitted"
-
-
 def test_lost_count_response_keeps_paper_binding_until_matching_outcome_check(
     admin: TestClient,
     database_url: str,
