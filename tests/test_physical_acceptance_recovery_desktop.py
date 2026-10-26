@@ -28,6 +28,22 @@ def private_active_pointer(database_url: str) -> Iterator[None]:
         yield
 
 
+def assert_public_business_fields(actual: object, expected: object) -> None:
+    """Compare every canonical value, allowing Qt's additional display labels."""
+    if isinstance(expected, dict):
+        assert isinstance(actual, dict)
+        assert set(expected) <= set(actual)
+        assert all(key.endswith("_display") for key in set(actual) - set(expected))
+        for key, value in expected.items():
+            assert_public_business_fields(actual[key], value)
+    elif isinstance(expected, list):
+        assert isinstance(actual, list) and len(actual) == len(expected)
+        for actual_row, expected_row in zip(actual, expected, strict=True):
+            assert_public_business_fields(actual_row, expected_row)
+    else:
+        assert type(actual) is type(expected) and actual == expected
+
+
 def test_physical_acceptance_settles_recovery_without_revising_frozen_counts(
     admin: TestClient,
     database_url: str,
@@ -151,14 +167,18 @@ def test_physical_acceptance_settles_recovery_without_revising_frozen_counts(
                 "checked_status": checked["status"],
                 "checked_error": checked["error"],
             }
-            assert acknowledged["receipt"]["record"] == outcome["record"]
-            assert checked["receipt"]["record"] == outcome["record"]
+            assert_public_business_fields(acknowledged["receipt"]["record"], outcome["record"])
+            assert_public_business_fields(checked["receipt"]["record"], outcome["record"])
             assert recovery.property("state")["error"] == ""
             editor_state = editor.property("state")
             assert editor_state["error"] == "" and editor_state["uncertain_save"] is False
             assert editor_state["notice"] == "physical_difference_accepted"
             selected = editor_state["selected"]
-            assert {field: selected[field] for field in frozen_fields} == frozen_count
-            assert selected["physical_decisions"] == persisted["physical_decisions"]
+            assert_public_business_fields(
+                {field: selected[field] for field in frozen_fields}, frozen_count
+            )
+            assert_public_business_fields(
+                selected["physical_decisions"], persisted["physical_decisions"]
+            )
             assert https_server.request_count("POST", acceptance_path) == 1
             assert https_server.request_count("GET", outcome_path) == 1
