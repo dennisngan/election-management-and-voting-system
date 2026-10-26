@@ -1,7 +1,8 @@
 """Localized constituency-result statements use the public result API."""
 
+import csv
 from collections.abc import Iterator
-from io import BytesIO
+from io import BytesIO, StringIO
 from uuid import uuid4
 
 import pytest
@@ -93,6 +94,87 @@ def test_partial_result_statement_keeps_zero_distinct_from_missing(
         assert any(row["quantity"] is None for row in result["candidate_totals"])
         assert any(row["code"] == "selected_count_missing" for row in result["pending"])
         assert statement.json()["locale"] == "en"
+
+
+def _check_all_localized_exports(
+    supervisor: TestClient, path: str, *, quantities: list[int | None]
+) -> None:
+    locales = ("tc", "sc", "en")
+    for locale in locales:
+        statement = supervisor.get(path + "/statement", params={"locale": locale})
+        assert statement.status_code == 200, statement.text
+        report = statement.json()
+        result = report["result"]
+        assert [row["quantity"] for row in result["candidate_totals"]] == quantities
+        labels = report["labels"]
+        candidate_table = next(
+            table for table in report["tables"]
+            if table["title"] == labels["candidate_totals"]
+        )
+        expected_cell = labels["not_recorded"] if quantities[0] is None else "0"
+        assert all(row[3] == expected_cell for row in candidate_table["rows"][1:])
+
+        csv_response = supervisor.get(path + "/statement.csv", params={"locale": locale})
+        assert csv_response.status_code == 200, csv_response.text
+        csv_rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
+        candidate_title = [labels["candidate_totals"]]
+        table_index = csv_rows.index(candidate_title)
+        csv_candidate_rows = csv_rows[table_index + 2: table_index + 2 + len(quantities)]
+        assert len(csv_candidate_rows) == len(quantities)
+        assert all(row[3] == expected_cell for row in csv_candidate_rows)
+
+        pdf_response = supervisor.get(path + "/statement.pdf", params={"locale": locale})
+        assert pdf_response.status_code == 200, pdf_response.text
+        pages = PdfReader(BytesIO(pdf_response.content)).pages
+        page_text = [page.extract_text() or "" for page in pages]
+        assert page_text and all(text.strip() for text in page_text)
+        rendered = " ".join(" ".join(text.split()) for text in page_text)
+        assert labels["title"] in rendered
+        for candidate in result["candidate_totals"]:
+            assert candidate["name"] in rendered
+        if quantities[0] is None:
+            assert labels["not_recorded"] in rendered
+        else:
+            assert "0" in rendered
+
+
+def test_partial_station_without_box_or_scope_exports_missing_candidate_totals_in_three_languages(
+    admin: TestClient, database_url: str
+) -> None:
+    with result_setup(admin, database_url) as setup:
+        constituency_id = setup["stations"]["S1"]["constituency_id"]
+        path = f"/api/workspace/constituencies/{constituency_id}/results"
+        supervisor = setup["clients"]["supervisor"]
+        statement = supervisor.get(path + "/statement", params={"locale": "en"})
+        assert statement.status_code == 200, statement.text
+        result = statement.json()["result"]
+        assert result["complete"] is False
+        assert result["contributions"] == []
+        assert any(
+            row["code"] == "station_boxes_missing"
+            and row["station_id"] == setup["stations"]["S1"]["id"]
+            for row in result["pending"]
+        )
+        quantities = [row["quantity"] for row in result["candidate_totals"]]
+        assert quantities and all(quantity is None for quantity in quantities)
+        _check_all_localized_exports(supervisor, path, quantities=quantities)
+
+
+def test_complete_approved_zero_tie_without_resolution_history_exports_in_three_languages(
+    admin: TestClient, database_url: str
+) -> None:
+    with complete_tie_setup(admin, database_url) as setup:
+        _save_tie_round(setup, [0, 0])
+        path = f"/api/workspace/constituencies/{setup['constituency_id']}/results"
+        supervisor = setup["clients"]["supervisor"]
+        statement = supervisor.get(path + "/statement", params={"locale": "en"})
+        assert statement.status_code == 200, statement.text
+        result = statement.json()["result"]
+        assert result["complete"] is True and result["provisional"] is True
+        assert result["tie_candidate_ids"]
+        assert result["resolution_history"] == []
+        assert [row["quantity"] for row in result["candidate_totals"]] == [0, 0]
+        _check_all_localized_exports(supervisor, path, quantities=[0, 0])
 
 
 def test_tie_resolution_reason_and_history_are_in_both_exports(
