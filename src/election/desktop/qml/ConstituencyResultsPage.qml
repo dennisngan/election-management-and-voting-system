@@ -241,12 +241,12 @@ ColumnLayout {
                 columnSpacing: 18
                 rowSpacing: 12
                 Detail {
-                    caption: page.t("election")
+                    caption: page.t("selected_election")
                     value: (page.election.name || "") + " · "
                         + page.t(page.election.status || "constituency_results_not_recorded")
                 }
                 Detail {
-                    caption: page.t("constituency")
+                    caption: page.t("constituency_name")
                     value: (page.constituency.code || "") + " · " + (page.constituency.name || "")
                 }
                 Detail {
