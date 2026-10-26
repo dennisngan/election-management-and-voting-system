@@ -327,3 +327,47 @@ def test_paper_amendment_replay_stays_bound_to_its_original_outage(
         original_paper = current.json()["record"]["paper_records"][0]
         assert original_paper["revision"] == 2
         assert original_paper["notes"] == saved.json()["notes"]
+
+
+def test_count_paper_amendment_replay_requires_current_counting_role(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        _, _, count_round = _count_draft(setup)
+        path, paper = _create_outage_and_paper(setup, count_round["id"])
+        target = path + f"/paper-records/{paper['id']}"
+        command = {
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "expected_revision": 1,
+            "original_event_at": "2026-11-15T23:34:00+08:00",
+            "target": {"scope_id": setup["scope"]["id"], "round_id": count_round["id"]},
+            "notes": "Corrected paper time before role reassignment.",
+            "amendment_reason": "Checked signed return.",
+        }
+        counter = setup["counter"]
+        saved = counter.put(target, json=command)
+        assert saved.status_code == 200, saved.text
+        account = counter.get("/api/auth/me").json()
+        changed = admin.put(
+            f"/api/accounts/{account['id']}",
+            json={
+                "revision": account["revision"],
+                "display_name": account["display_name"],
+                "role": "polling_officer",
+                "enabled": True,
+                "station_ids": account["station_ids"],
+            },
+        )
+        assert changed.status_code == 200, changed.text
+        login = counter.post(
+            "/api/auth/login",
+            json={"username": account["username"], "password": READY_PASSWORD},
+        )
+        assert login.status_code == 200, login.text
+        counter.headers["Authorization"] = "Bearer " + login.json()["token"]
+        assert counter.get("/api/auth/me").json()["role"] == "polling_officer"
+        forbidden = counter.put(target, json=command)
+        assert forbidden.status_code == 403, forbidden.text
+        assert forbidden.json() == {"detail": {"code": "counting_officer_required"}}
