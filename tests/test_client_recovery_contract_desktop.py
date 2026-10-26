@@ -69,15 +69,24 @@ def recovery_fault_server(
         path = request.url.path
         with endpoint.lock:
             endpoint.requests.append((request.method, path))
-            fail_before = request.method == "POST" and path == endpoint.fail_before_path
+            fail_before = (
+                request.method in ("POST", "PUT", "PATCH")
+                and path == endpoint.fail_before_path
+            )
         if fail_before:
             return JSONResponse({"detail": {"code": "request_failed"}}, status_code=503)
 
         response = await call_next(request)
         with endpoint.lock:
-            fail_after = request.method == "POST" and path == endpoint.fail_after_path
+            fail_after = (
+                request.method in ("POST", "PUT", "PATCH")
+                and path == endpoint.fail_after_path
+            )
             corrupt_outcome = request.method == "GET" and path == endpoint.corrupt_outcome_path
-            malformed_success = request.method == "POST" and path == endpoint.malformed_success_path
+            malformed_success = (
+                request.method in ("POST", "PUT", "PATCH")
+                and path == endpoint.malformed_success_path
+            )
         if fail_after and response.status_code == 200:
             return JSONResponse({"detail": {"code": "request_failed"}}, status_code=503)
         if malformed_success and response.status_code == 200:

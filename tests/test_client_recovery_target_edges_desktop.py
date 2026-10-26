@@ -8,17 +8,21 @@ from election.desktop.controller import DesktopController
 from tests.box_support import READY_PASSWORD
 from tests.desktop_support import TLS_DIRECTORY, wait_for, wait_for_editor_idle
 from tests.tally_support import complete_f1_command, tally_setup
+from tests.test_client_recovery_contract_desktop import (
+    private_active_pointer as private_active_pointer,
+)
+from tests.test_client_recovery_contract_desktop import (
+    recovery_fault_server as recovery_fault_server,
+)
 from tests.test_counting_rounds_desktop import f1_editor
+from tests.test_turnout_desktop import clear_private_active_pointer as clear_private_active_pointer
+from tests.test_turnout_desktop import database_url as database_url
 from tests.test_turnout_desktop import (
     fill_turnout,
     turnout_editor,
 )
+from tests.test_turnout_desktop import turnout_boundary_server as turnout_boundary_server
 from tests.turnout_support import TurnoutClock, turnout_draft, turnout_scope, turnout_staff
-
-pytest_plugins = (
-    "tests.test_turnout_desktop",
-    "tests.test_client_recovery_contract_desktop",
-)
 
 
 def _fresh_turnout_recovery_client(
@@ -68,6 +72,9 @@ def test_turnout_unresolved_save_blocks_submit_and_submit_blocks_amend_for_perio
         assert api.get(path + "/1").json()["status"] == "draft"
         assert editor.reload(True)
         wait_for_editor_idle(qt_app, editor)
+        recovery = client.property("recovery")
+        recovery.open()
+        wait_for_editor_idle(qt_app, recovery)
         save_id = client.property("recovery").property("state")["commands"][0]["request_id"]
         assert editor.property("state")["selected"]["status"] == "draft"
 
