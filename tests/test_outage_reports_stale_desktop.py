@@ -4,10 +4,14 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from tests.box_support import READY_PASSWORD
+from tests.box_support import READY_PASSWORD, BoxClock, box_staff, box_stations
 from tests.desktop_support import TLS_DIRECTORY, HttpsServer
 from tests.qml_workspace_support import run_workspace_qml
 from tests.tally_support import complete_f1_command, tally_setup
+from tests.test_client_recovery_contract_desktop import RecoveryFaultServer
+from tests.test_client_recovery_contract_desktop import (
+    recovery_fault_server as recovery_fault_server,
+)
 from tests.test_outage_reports_desktop import (
     clear_private_active_pointer as clear_private_active_pointer,
 )
@@ -108,6 +112,16 @@ def test_preview_rejects_peer_paper_change_at_same_outage_revision(
                 == setup['first_reference']
             )
 
+            click('outageReportPreview')
+            wait(lambda: not editor.property('state')['busy'])
+            original_preview = editor.property('state')['report']
+            assert original_preview['revision'] == 1
+            editor.refresh()
+            wait(lambda: not editor.property('state')['refreshing'])
+            unchanged = editor.property('state')
+            assert unchanged['newer_revision'] is False
+            assert unchanged['report'] == original_preview
+
             with httpx.Client(verify=setup['ca_file'], timeout=10) as peer:
                 login = peer.post(setup['server'] + '/api/auth/login', json={{
                     'username': setup['peer_username'], 'password': setup['peer_password']
@@ -141,3 +155,67 @@ def test_preview_rejects_peer_paper_change_at_same_outage_revision(
             assert stale['error'] == 'outage_revision_conflict'
             """,
         )
+
+
+def test_uncertain_outage_save_disables_report_preview(
+    admin: TestClient,
+    database_url: str,
+    recovery_fault_server: RecoveryFaultServer,
+) -> None:
+    stations = box_stations(admin)
+    station_id = stations["N1"]["id"]
+    clock = BoxClock()
+    recovery_fault_server.clock.value = clock.value
+    base = f"/api/workspace/stations/{station_id}/outages"
+    with box_staff(admin, database_url, clock, "polling_officer", [station_id]) as (
+        officer,
+        account,
+    ):
+        created = officer.post(
+            base,
+            json={
+                "request_id": str(uuid4()),
+                "reference": "T25 uncertain report guard " + uuid4().hex[:8],
+                "kind": "network",
+                "started_at": "2026-11-15T08:00:00+08:00",
+                "ended_at": "2026-11-15T08:30:00+08:00",
+                "notes": "Paper records were retained during the interruption.",
+            },
+        )
+        assert created.status_code == 201, created.text
+        outage_id = created.json()["id"]
+        outage_path = f"{base}/{outage_id}"
+        recovery_fault_server.fail_after_path = outage_path
+
+        run_workspace_qml(
+            {
+                "server": recovery_fault_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": "en",
+            },
+            f"""
+            click('outagesNavigation')
+            editor = controller.outages
+            wait(lambda: not editor.property('state')['busy'])
+            assert editor.loadOutage({outage_id}, False) is True
+            wait(lambda: not editor.property('state')['busy'])
+            editor.setField('notes', 'The server commits but the response is lost.')
+            editor.setField('amendment_reason', 'Matched the retained network log.')
+            editor.save()
+            wait(lambda: editor.property('state')['uncertain_save'])
+            state = editor.property('state')
+            assert state['dirty'] is True
+            assert control('outageReportPreview').property('enabled') is False
+            editor.previewReport('en')
+            assert editor.property('state')['uncertain_save'] is True
+            assert editor.property('state')['report'] == {{}}
+            assert editor.property('state')['error'] == 'outage_uncertain_save_pending'
+            """,
+        )
+
+        assert recovery_fault_server.request_count("PUT", outage_path) == 1
+        assert recovery_fault_server.request_count(
+            "GET", outage_path + "/statement"
+        ) == 0
