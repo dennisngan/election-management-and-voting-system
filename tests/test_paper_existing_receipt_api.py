@@ -137,14 +137,27 @@ def test_existing_count_receipt_can_be_linked_to_paper_without_another_count_eff
         assert linked_paper["original_event_at"] == original_event_at
         assert original_event_at < submitted_record["entered_at"]
         assert linked_paper["entered_at"] == pending_paper["entered_at"]
-        assert linked_paper["reentry"] == {
+        reentry = linked_paper["reentry"]
+        assert {
+            key: reentry[key]
+            for key in (
+                "workflow",
+                "request_id",
+                "actor_id",
+                "entered_at",
+                "paper_revision_id",
+                "record",
+            )
+        } == {
             "workflow": "count",
-            "request_id": link_command["request_id"],
+            "request_id": request_id,
             "actor_id": submitted_record["actor_id"],
             "entered_at": "2026-11-15T17:00:00Z",
             "paper_revision_id": linked_paper["revision_id"],
             "record": submitted_record,
         }
+        assert reentry["link"]["request_id"] == link_command["request_id"]
+        assert reentry["link"]["reason"] == link_command["reason"]
         assert linked_paper["reentry"]["entered_at"] > submitted_record["entered_at"]
         assert linked_paper["revision"] == pending_paper["revision"]
         assert linked_paper["history"] == pending_paper["history"]
