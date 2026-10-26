@@ -111,6 +111,10 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
         assert reconciled.status_code == 200, reconciled.text
         assert reconciled.json()["record"]["reconciled"] is True
         old_decision_revision = reconciled.json()["record"]["reconciliation"]["revision"]
+        before_statement = officer.get(outage_record_path + "/statement")
+        assert before_statement.status_code == 200, before_statement.text
+        reviewed_report_basis = before_statement.json().get("basis_digest", "")
+
 
         pending_reference = "N1-PENDING-" + uuid4().hex[:8]
         pending = officer.post(
@@ -144,6 +148,14 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
         ]
 
         statement_path = outage_record_path + "/statement"
+        for extension in ("", ".csv", ".pdf"):
+            stale_export = officer.get(
+                statement_path + extension,
+                params={"locale": "en", "expected_basis": reviewed_report_basis},
+            )
+            assert stale_export.status_code == 409, stale_export.text
+            assert stale_export.json()["detail"]["code"] == "outage_revision_conflict"
+
         localized_titles = {
             "tc": "應用程式連線中斷及紙本核對報表",
             "sc": "应用程序连接中断及纸本核对报表",
