@@ -20,8 +20,9 @@ from tests.desktop_support import (
     wait_for_editor_idle,
 )
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
-
-pytest_plugins = ("tests.test_counting_workflow_retry_desktop",)
+from tests.test_counting_workflow_retry_desktop import (
+    lost_selection_response as lost_selection_response,
+)
 
 
 @pytest.fixture(scope="session")
