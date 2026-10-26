@@ -10,6 +10,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
 from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
+from election.desktop.local_recounts import LocalRecountsController
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
 NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
@@ -45,13 +46,43 @@ class CountingRoundsController(QObject):
         self._opened = False
         self._pending: tuple[str, str] | None = None
         self._state: dict[str, Any] = {}
+        self._recounts = LocalRecountsController(request, self)
         self.reset()
+        self._recounts.stateChanged.connect(self.stateChanged.emit)
+        self._recounts.instructed.connect(self._recount_instructed)
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return qt_state(quantity_display(self._state))
+        view = qt_state(quantity_display(self._state))
+        busy, refreshing = self._recounts.activity()
+        view["busy"] = bool(view["busy"] or busy)
+        view["refreshing"] = bool(view["refreshing"] or refreshing)
+        view["recount_protected"] = self.recount_changes_pending()
+        return view
+
+    @Property(QObject, constant=True)
+    def recounts(self) -> LocalRecountsController:
+        return self._recounts
+
+    def _recount_instructed(self) -> None:
+        self._clear_report()
+        self.refresh()
+
+    def recount_changes_pending(self) -> bool:
+        return self._recounts.blocks_navigation()
+
+    def recount_outcome_unknown(self) -> bool:
+        return self._recounts.outcome_unknown()
+
+    def _block_recount_changes(self) -> bool:
+        if not self.recount_changes_pending():
+            return False
+        self._error("local_recount_outcome_unconfirmed" if self.recount_outcome_unknown()
+                    else "local_recount_changes_pending")
+        return True
 
     def reset(self) -> None:
+        self._recounts.reset()
         self._generation += 1
         self._report_generation += 1
         self._opened = False
@@ -116,6 +147,7 @@ class CountingRoundsController(QObject):
             context=deepcopy(context),
             role=context.get("account", {}).get("role", ""),
         )
+        self._recounts.set_context(self._state["context"], self._state["selected_scope_id"])
         self.stateChanged.emit()
         if changed and station_id and self._opened:
             self.reload()
@@ -350,8 +382,13 @@ class CountingRoundsController(QObject):
         decisions_changed = selected.get("physical_decisions", []) != same.get(
             "physical_decisions", []
         )
-        if decisions_changed:
+        recount_changed = any(
+            selected.get(key) != same.get(key)
+            for key in ("required_recount", "recount_pending", "contributes_to_result")
+        )
+        if decisions_changed or recount_changed:
             self._clear_report()
+        if decisions_changed:
             self._state["decisions_changed"] = True
         self._state.update(
             selected=deepcopy(same),
@@ -395,6 +432,7 @@ class CountingRoundsController(QObject):
             rounds=deepcopy(data["rounds"]),
             context={**self._state["context"], **deepcopy(data["context"])},
         )
+        self._recounts.set_context(self._state["context"], self._state["selected_scope_id"])
         if not foreground and scope_changed and not self._state["historical"]:
             self._state["newer_revision"] = True
         selected = self._state["selected"]
@@ -466,6 +504,8 @@ class CountingRoundsController(QObject):
 
     @Slot(result=bool)
     def reload(self) -> bool:
+        if self._block_recount_changes():
+            return False
         if not self._state["station_id"] or self._state["busy"]:
             return False
         if self._state["dirty"]:
@@ -484,7 +524,9 @@ class CountingRoundsController(QObject):
             and self._state["station_id"]
             and not self._state["busy"]
             and not self._state["refreshing"]
+            and not self._recounts.activity()[0]
         ):
+            self._recounts.refresh()
             self._send(
                 self._scope_path(),
                 "GET",
@@ -495,6 +537,8 @@ class CountingRoundsController(QObject):
 
     @Slot()
     def discardAndReload(self) -> None:
+        if self._block_recount_changes():
+            return
         if self._state["busy"]:
             return
         self._state.update(dirty=False, uncertain_save=False)
@@ -502,6 +546,8 @@ class CountingRoundsController(QObject):
 
     @Slot(int, result=bool)
     def selectScope(self, scope_id: int) -> bool:
+        if self._block_recount_changes():
+            return False
         if self._state["busy"]:
             return False
         if self._state["dirty"]:
@@ -542,6 +588,7 @@ class CountingRoundsController(QObject):
             notice="",
             uncertain_save=False,
         )
+        self._recounts.set_context(self._state["context"], scope_id)
         self._clear_report()
         self._send(
             self._path(), "GET", None, lambda body: self._rounds_loaded(body, foreground=True)
@@ -550,6 +597,8 @@ class CountingRoundsController(QObject):
 
     @Slot(int, result=bool)
     def selectRound(self, round_id: int) -> bool:
+        if self._block_recount_changes():
+            return False
         if self._state["busy"]:
             return False
         if self._state["dirty"]:
@@ -570,6 +619,8 @@ class CountingRoundsController(QObject):
 
     @Slot(int, result=bool)
     def loadRevision(self, revision: int) -> bool:
+        if self._block_recount_changes():
+            return False
         selected = self._state["selected"]
         if self._state["busy"] or not selected:
             return False
@@ -594,6 +645,8 @@ class CountingRoundsController(QObject):
 
     @Slot(str, bool)
     def startCorrection(self, stage: str, refresh_basis: bool = False) -> None:
+        if self._block_recount_changes():
+            return
         selected = self._state["selected"]
         if self._state["role"] != "counting_officer":
             self._error("counting_officer_required")
@@ -646,6 +699,8 @@ class CountingRoundsController(QObject):
 
     @Slot()
     def cancelCorrection(self) -> None:
+        if self._block_recount_changes():
+            return
         if self._state["busy"] or self._state["uncertain_save"]:
             return
         if self._state["correction_stage"]:
@@ -656,6 +711,7 @@ class CountingRoundsController(QObject):
     def _editable(self) -> bool:
         return bool(
             self._state["role"] == "counting_officer"
+            and not self.recount_changes_pending()
             and self._state["selected_scope_id"]
             and not self._state["busy"]
             and not self._state["historical"]
@@ -787,6 +843,8 @@ class CountingRoundsController(QObject):
 
     @Slot()
     def save(self, discard_f2: bool = False) -> None:
+        if self._block_recount_changes():
+            return
         if self._state["role"] != "counting_officer":
             self._error("counting_officer_required")
             return
@@ -997,6 +1055,8 @@ class CountingRoundsController(QObject):
 
     @Slot()
     def saveF2(self) -> None:
+        if self._block_recount_changes():
+            return
         if not self._f2_editable():
             return
         selected, forms = self._state["selected"], self._state["f2_forms"]
@@ -1092,6 +1152,8 @@ class CountingRoundsController(QObject):
     def _workflow(
         self, action: str, password: str | None = None, *, extra: dict[str, Any] | None = None
     ) -> None:
+        if self._block_recount_changes():
+            return
         role = "counting_officer" if action == "submit" else "supervisor"
         if self._state["role"] != role:
             self._error(role + "_required")
@@ -1208,6 +1270,8 @@ class CountingRoundsController(QObject):
 
     @Slot(str, result=bool)
     def selectReportForm(self, form: str) -> bool:
+        if self._block_recount_changes():
+            return False
         if form not in ("f1", "f2", "f3", "f4", "count"):
             self._error("count_report_invalid")
             return False
@@ -1224,6 +1288,8 @@ class CountingRoundsController(QObject):
         return True
 
     def _report_path(self, locale: str, extension: str = "") -> str | None:
+        if self._block_recount_changes():
+            return None
         row = self._state["selected"]
         if self._state["busy"] or not row or locale not in ("tc", "sc", "en"):
             self._error("count_round_not_found")

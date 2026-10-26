@@ -14,12 +14,14 @@ from election.desktop.counting_scope_translations import COUNTING_SCOPE_TRANSLAT
 from election.desktop.fallback_translations import FALLBACK_TRANSLATIONS
 from election.desktop.fallback_turnout_translations import FALLBACK_TURNOUT_TRANSLATIONS
 from election.desktop.invalid_reason_translations import INVALID_REASON_TRANSLATIONS
+from election.desktop.local_recount_translations import LOCAL_RECOUNT_TRANSLATIONS
 from election.desktop.server_backup_translations import SERVER_BACKUP_TRANSLATIONS
 from election.desktop.special_paper_translations import SPECIAL_PAPER_TRANSLATIONS
 from election.desktop.stock_snapshot_translations import STOCK_SNAPSHOT_TRANSLATIONS
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "workspace_uncertain_request": "請先查核不確定請求的結果，再切換票站。",
         "app_name": "選舉管理及投票系統",
         "election_management": "選舉管理",
         "tagline": "清楚記錄每項票站工作。",
@@ -601,6 +603,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "unsaved_station_changes": "表格有未儲存的內容。請先儲存，或捨棄變更後繼續。",
     },
     "sc": {
+        "workspace_uncertain_request": "请先核查不确定请求的结果，再切换票站。",
         "app_name": "选举管理及投票系统",
         "election_management": "选举管理",
         "tagline": "清楚记录每项票站工作。",
@@ -1182,6 +1185,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "unsaved_station_changes": "表格有未保存的内容。请先保存，或放弃更改后继续。",
     },
     "en": {
+        "workspace_uncertain_request": (
+            "Check the uncertain request before switching polling stations."
+        ),
         "app_name": "Election Management and Voting System",
         "election_management": "Election management",
         "tagline": "A clear record of station work.",
@@ -1990,3 +1996,6 @@ for language, result_labels in CONSTITUENCY_RESULT_TRANSLATIONS.items():
     TRANSLATIONS[language].update(result_labels)
 for language, backup_labels in SERVER_BACKUP_TRANSLATIONS.items():
     TRANSLATIONS[language].update(backup_labels)
+
+for language, recount_labels in LOCAL_RECOUNT_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(recount_labels)

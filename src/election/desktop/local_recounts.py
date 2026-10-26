@@ -84,6 +84,15 @@ class LocalRecountsController(QObject):
         if changed and _positive(identity["station_id"]) and _positive(scope_id):
             self.reload()
 
+    def activity(self) -> tuple[bool, bool]:
+        return bool(self._state["busy"]), bool(self._state["refreshing"])
+
+    def blocks_navigation(self) -> bool:
+        return bool(self._state["dirty"] or self._state["busy"] or self._state["uncertain_save"])
+
+    def outcome_unknown(self) -> bool:
+        return bool(self._state["uncertain_save"])
+
     def _path(self) -> str:
         return (
             f"/api/workspace/stations/{self._state['station_id']}/counting-scopes/"
@@ -147,7 +156,9 @@ class LocalRecountsController(QObject):
         self._generation += 1
         generation = self._generation
         activity = "refreshing" if background else "busy"
-        self._state.update(**{activity: True}, error="", notice="")
+        self._state[activity] = True
+        if not background:
+            self._state.update(error="", notice="")
         self.stateChanged.emit()
 
         def loaded(body: dict[str, Any]) -> None:

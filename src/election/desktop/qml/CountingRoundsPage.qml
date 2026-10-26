@@ -12,6 +12,9 @@ ColumnLayout {
     required property var words
     property string locale: "tc"
     readonly property var editorState: countingRounds.state
+    readonly property var recountState: countingRounds.recounts.state
+    readonly property bool recountProtected: !!recountState.dirty || !!recountState.busy
+        || !!recountState.uncertain_save
     readonly property var selected: editorState.selected || ({})
     readonly property var form: editorState.forms || ({})
     readonly property var scope: editorState.scope || ({})
@@ -237,7 +240,7 @@ ColumnLayout {
             Picker {
                 objectName: "countingRoundsScope"; model: page.scopeOptions
                 currentIndex: page.indexFor(page.scopeOptions, "id", page.editorState.selected_scope_id)
-                enabled: !page.working && !page.editorState.dirty
+                enabled: !page.working && !page.editorState.dirty && !page.recountProtected
                 Accessible.name: page.t("f1_scope")
                 onActivated: index => {
                     var row = model[index]
@@ -254,7 +257,7 @@ ColumnLayout {
             Picker {
                 objectName: "countingRoundsRound"; model: page.roundOptions
                 currentIndex: page.indexFor(page.roundOptions, "id", page.selected.id || 0)
-                enabled: !page.working && !page.editorState.dirty && page.roundOptions.length > 1
+                enabled: !page.working && !page.editorState.dirty && !page.recountProtected && page.roundOptions.length > 1
                 Accessible.name: page.t("f1_round")
                 onActivated: index => {
                     var row = model[index]
@@ -265,7 +268,7 @@ ColumnLayout {
             Picker {
                 objectName: "countingRoundHistory"; model: page.historyOptions
                 currentIndex: page.indexFor(page.historyOptions, "revision", page.selected.revision || 0)
-                enabled: !page.working && !page.editorState.dirty && page.historyOptions.length > 0
+                enabled: !page.working && !page.editorState.dirty && !page.recountProtected && page.historyOptions.length > 0
                 Accessible.name: page.t("f1_history")
                 onActivated: index => {
                     if (model[index]) page.countingRounds.loadRevision(model[index].revision)
@@ -273,13 +276,21 @@ ColumnLayout {
             }
             Action {
                 objectName: "f1Reload"; text: page.t("f1_reload"); highlighted: false
-                enabled: !page.working && !!page.editorState.station_id
+                enabled: !page.working && !page.recountProtected && !!page.editorState.station_id
                 onClicked: {
                     if (page.editorState.dirty || page.editorState.newer_revision) discardDialog.open()
                     else page.countingRounds.reload()
                 }
             }
         }
+    }
+    LocalRecountsPanel {
+        objectName: "localRecountsPanel"
+        visible: !!page.editorState.selected_scope_id
+        enabled: !page.editorState.busy && !page.editorState.dirty
+        recounts: page.countingRounds.recounts
+        words: page.words
+        onReveal: control => page.reveal(control)
     }
     FormPanel {
         visible: page.writer && !!page.selected.id && !page.editorState.historical
@@ -312,7 +323,7 @@ ColumnLayout {
                     text: page.t("count_correct_f1")
                     visible: !page.editorState.correction_stage && !!page.selected.source_current
                         && page.selected.status !== "draft"
-                    enabled: !page.working && !page.editorState.dirty && !page.editorState.newer_revision
+                    enabled: !page.working && !page.editorState.dirty && !page.recountProtected && !page.editorState.newer_revision
                         && page.editorState.context.election
                         && page.editorState.context.election.status === "active"
                     onClicked: page.countingRounds.startCorrection("f1", false)
@@ -322,7 +333,7 @@ ColumnLayout {
                     text: page.t("count_correct_f2")
                     visible: !page.editorState.correction_stage && !!page.selected.source_current
                         && !!page.selected.f1_complete && page.selected.status !== "draft"
-                    enabled: !page.working && !page.editorState.dirty && !page.editorState.newer_revision
+                    enabled: !page.working && !page.editorState.dirty && !page.recountProtected && !page.editorState.newer_revision
                         && page.editorState.context.election
                         && page.editorState.context.election.status === "active"
                     onClicked: page.countingRounds.startCorrection("f2", false)
@@ -331,7 +342,7 @@ ColumnLayout {
                     objectName: "countRefreshBasisCorrection"
                     text: page.t("count_refresh_basis")
                     visible: !page.editorState.correction_stage && !page.selected.source_current
-                    enabled: !page.working && !page.editorState.dirty && !page.editorState.newer_revision
+                    enabled: !page.working && !page.editorState.dirty && !page.recountProtected && !page.editorState.newer_revision
                         && !!page.editorState.latest_scope.count_ready
                         && page.editorState.context.election
                         && page.editorState.context.election.status === "active"
@@ -608,7 +619,7 @@ ColumnLayout {
                 currentIndex: page.indexFor(page.reportOptions, "form", page.editorState.report_form)
                 displayText: page.t("count_form_" + (page.editorState.report_form || "f1"))
                 Accessible.name: page.t("count_report_form")
-                enabled: !page.working && !page.editorState.dirty
+                enabled: !page.working && !page.editorState.dirty && !page.recountProtected
                 onActivated: index => {
                     if (index >= 0) page.countingRounds.selectReportForm(model[index].form)
                 }
@@ -618,17 +629,17 @@ ColumnLayout {
                 columnSpacing: 12; rowSpacing: 12
                 Action {
                     objectName: "f1Preview"; text: page.t(page.editorState.report_form === "f1" ? "f1_preview" : "count_preview")
-                    enabled: !page.working && !page.editorState.dirty
+                    enabled: !page.working && !page.editorState.dirty && !page.recountProtected
                     onClicked: page.countingRounds.preview(page.locale)
                 }
                 Action {
                     objectName: "f1ExportPdf"; text: page.t("stock_export_pdf")
-                    enabled: !page.working && !page.editorState.dirty
+                    enabled: !page.working && !page.editorState.dirty && !page.recountProtected
                     onClicked: page.exportReport("pdf")
                 }
                 Action {
                     objectName: "f1ExportCsv"; text: page.t("stock_export_csv")
-                    enabled: !page.working && !page.editorState.dirty
+                    enabled: !page.working && !page.editorState.dirty && !page.recountProtected
                     onClicked: page.exportReport("csv")
                 }
             }

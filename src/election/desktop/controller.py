@@ -139,6 +139,7 @@ class DesktopController(QObject):
                 or self._counting_scopes.property("state")["busy"]
                 or self._counting_rounds.property("state")["dirty"]
                 or self._counting_rounds.property("state")["busy"]
+                or self._counting_rounds.recount_changes_pending()
                 or self._constituency_results.property("state")["dirty"]
                 or self._constituency_results.property("state")["busy"]
                 or self._constituency_results.property("state")["uncertain_save"]
@@ -150,6 +151,10 @@ class DesktopController(QObject):
                 or self._complaints.property("state")["busy"]
                 or self._complaint_periods.property("state")["dirty"]
                 or self._complaint_periods.property("state")["busy"]
+            ),
+            unresolved_guard=lambda: bool(
+                self._counting_rounds.recount_outcome_unknown()
+                or self._constituency_results.property("state")["uncertain_save"]
             ),
         )
         self._accounting.stateChanged.connect(self._workspace.stateChanged.emit)

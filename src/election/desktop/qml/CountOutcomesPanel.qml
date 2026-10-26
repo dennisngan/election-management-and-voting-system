@@ -100,7 +100,8 @@ ColumnLayout {
         }
     }
     function workflowEnabled(action) {
-        if (working || editorState.dirty || editorState.historical || editorState.newer_revision
+        if (working || editorState.dirty || editorState.recount_protected
+                || editorState.historical || editorState.newer_revision
                 || !selected.id || !selected.source_current) return false
         if (action === "submit")
             return writer && selected.status === "draft" && !!selected.count_inputs_complete
@@ -110,6 +111,7 @@ ColumnLayout {
                 && !(selected.approval_blockers || []).length
         if (action === "select")
             return supervisor && selected.status === "approved" && !!selected.approval_valid
+                && (!selected.required_recount || selected.required_recount.new_round_id === selected.id)
         return false
     }
     function openWorkflow(action) {
@@ -580,10 +582,16 @@ ColumnLayout {
             FormCaption {
                 objectName: "countSelectionState"
                 visible: !!panel.selection.revision
-                text: panel.t(panel.selection.valid
-                    ? "f2_selected" : "f2_selection_historical")
+                text: panel.t(panel.selected.recount_pending ? "local_recount_selection_retained"
+                    : panel.selection.valid ? "f2_selected" : "f2_selection_historical")
                     + " · " + panel.t("revision") + " "
                     + panel.exact(panel.selection, "revision")
+            }
+            FormCaption {
+                objectName: "countRecountContribution"
+                visible: !!panel.selected.required_recount
+                text: panel.t(panel.selected.contributes_to_result
+                    ? "local_recount_contributes" : "local_recount_not_contributing")
             }
             FormCaption {
                 objectName: "countSelectedAt"

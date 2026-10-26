@@ -126,6 +126,35 @@ ColumnLayout {
                     onReveal: control => panel.reveal(control)
                 }
             }
+            RowLayout {
+                Layout.fillWidth: true
+                FormButton {
+                    objectName: "localRecountRefresh"
+                    Layout.fillWidth: true
+                    text: panel.t("local_recount_refresh")
+                    enabled: !panel.working && !panel.editorState.refreshing
+                    onClicked: panel.recounts.refresh()
+                    onReveal: control => panel.reveal(control)
+                }
+                FormButton {
+                    objectName: "localRecountDiscard"
+                    Layout.fillWidth: true
+                    text: panel.t("local_recount_discard")
+                    enabled: !!panel.editorState.dirty && !panel.working
+                        && !panel.editorState.refreshing && !panel.editorState.uncertain_save
+                    onClicked: instructionDiscard.open()
+                    onReveal: control => panel.reveal(control)
+                }
+            }
+            FormButton {
+                objectName: "localRecountCheckOutcome"
+                Layout.fillWidth: true
+                visible: !!panel.editorState.uncertain_save
+                text: panel.t("local_recount_check")
+                enabled: !panel.working && !panel.editorState.refreshing
+                onClicked: panel.recounts.checkOutcome()
+                onReveal: control => panel.reveal(control)
+            }
             FormCaption {
                 visible: !!panel.editorState.uncertain_save
                 text: panel.t("local_recount_request_id") + " · "
@@ -146,6 +175,10 @@ ColumnLayout {
             FormCaption {
                 text: panel.t("local_recount_round") + " " + (panel.latest.new_round_number || "—")
                     + " · " + panel.t("local_recount_status_" + (panel.latest.status || "pending"))
+            }
+            FormCaption {
+                text: panel.t(panel.editorState.pending
+                    ? "local_recount_current_pending" : "local_recount_current_satisfied")
             }
             FormCaption { text: panel.latest.reason || "" }
             FormCaption {
@@ -171,8 +204,18 @@ ColumnLayout {
             if (!panel.editorState.scope_id || panel.editorState.role !== "supervisor") {
                 passwordField.clear()
                 passwordDialog.close()
+                instructionDiscard.close()
             }
         }
+    }
+    ConfirmationDialog {
+        id: instructionDiscard
+        objectName: "localRecountDiscardDialog"
+        title: panel.t("local_recount_discard")
+        message: panel.t("local_recount_discard_hint")
+        acceptLabel: panel.t("discard_changes")
+        rejectLabel: panel.t("keep_editing")
+        onConfirmed: panel.recounts.discardAndReload()
     }
     Dialog {
         id: passwordDialog

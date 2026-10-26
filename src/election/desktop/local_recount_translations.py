@@ -2,6 +2,17 @@
 
 LOCAL_RECOUNT_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "local_recount_selection_retained": "已保留先前選取的批准輪次；重新點票尚待完成",
+        "local_recount_contributes": "此顯示修訂正用於目前總數。",
+        "local_recount_not_contributing": "此顯示修訂目前未用於總數。",
+        "local_recount_changes_pending": "請先完成或捨棄重新點票指示草稿，再切換點票檢視。",
+        "local_recount_required_round": "請選取目前指示所指定的新點票輪次。",
+        "local_recount_refresh": "重新整理指示資料",
+        "local_recount_discard": "捨棄指示草稿",
+        "local_recount_discard_hint": "捨棄尚未儲存的指示時間及原因。",
+        "local_recount_check": "查核原有指示結果",
+        "local_recount_current_pending": "目前指定的重新點票要求仍待完成。",
+        "local_recount_current_satisfied": "目前已批准及選取的輪次符合此指示。",
         "local_recount_title": "本點票範圍重新點票",
         "local_recount_intro": (
             "主管可指示為同一票箱範圍建立全新的空白點票輪次。舊紀錄會保留，並須另行選取新輪次。"
@@ -40,6 +51,17 @@ LOCAL_RECOUNT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "local_recount_pending": "目前的重新點票指示仍有待完成。",
     },
     "sc": {
+        "local_recount_selection_retained": "已保留先前选取的批准轮次；重新点票尚待完成",
+        "local_recount_contributes": "此显示修订正用于当前总数。",
+        "local_recount_not_contributing": "此显示修订当前未用于总数。",
+        "local_recount_changes_pending": "请先完成或舍弃重新点票指示草稿，再切换点票视图。",
+        "local_recount_required_round": "请选择当前指示所指定的新点票轮次。",
+        "local_recount_refresh": "重新整理指示资料",
+        "local_recount_discard": "舍弃指示草稿",
+        "local_recount_discard_hint": "舍弃尚未保存的指示时间及原因。",
+        "local_recount_check": "核查原有指示结果",
+        "local_recount_current_pending": "当前指定的重新点票要求仍待完成。",
+        "local_recount_current_satisfied": "当前已批准及选取的轮次符合此指示。",
         "local_recount_title": "本点票范围重新点票",
         "local_recount_intro": (
             "主管可指示为同一票箱范围建立全新的空白点票轮次。旧记录会保留，并须另行选取新轮次。"
@@ -78,6 +100,26 @@ LOCAL_RECOUNT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "local_recount_pending": "目前的重新点票指示仍有待完成。",
     },
     "en": {
+        "local_recount_selection_retained": "Previous approved selection retained; recount pending",
+        "local_recount_contributes": "This displayed revision contributes to the current totals.",
+        "local_recount_not_contributing": (
+            "This displayed revision currently makes no contribution to totals."
+        ),
+        "local_recount_changes_pending": (
+            "Finish or discard the recount instruction draft before changing the counting "
+            "view."
+        ),
+        "local_recount_required_round": (
+            "Select the new round required by the current recount instruction."
+        ),
+        "local_recount_refresh": "Refresh instruction context",
+        "local_recount_discard": "Discard instruction draft",
+        "local_recount_discard_hint": "Discard the unsaved instruction time and reason.",
+        "local_recount_check": "Check original instruction outcome",
+        "local_recount_current_pending": "The current recount requirement is still pending.",
+        "local_recount_current_satisfied": (
+            "The current approved selection satisfies this instruction."
+        ),
         "local_recount_title": "Local scope recount",
         "local_recount_intro": (
             "A Supervisor can instruct a fresh blank round for these boxes. Earlier records remain "
