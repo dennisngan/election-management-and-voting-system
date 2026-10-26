@@ -174,7 +174,9 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
         click('allocationPaperRefresh')
         wait(idle)
         state = editor.property('state')
-        assert [row['id'] for row in state['paper_records']] == [PAPER_ID]
+        assert [row['id'] for row in state['paper_records']] == [PAPER_ID], (
+            state['forms']['counter_id'], state['counters'], state['error']
+        )
         assert control('allocationPaperRecord').property('visible')
         choose('allocationPaperRecord', 1)
         state = editor.property('state')
