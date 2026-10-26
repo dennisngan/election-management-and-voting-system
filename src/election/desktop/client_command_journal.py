@@ -193,7 +193,7 @@ class CommandJournal:
         row = json.loads(path.read_text())
         if row["status"] == "committed":
             return
-        if row["status"] == "uncertain" and error == "invalid_credentials":
+        if row["status"] == "uncertain" and status == "rejected":
             status = "uncertain"
         row.update(status=status, error=error, updated_at=datetime.now(UTC).isoformat())
         if record is not None:

@@ -228,7 +228,12 @@ def paper_record_view(db: Session, paper: OutagePaperRecord) -> dict[str, Any]:
     revision = latest_paper_revision(db, paper.id)
     if revision is None:
         raise HTTPException(409, detail={"code": "paper_revision_missing"})
-    entry = db.get(PaperReentry, paper.id)
+    entry = db.scalar(
+        select(PaperReentry)
+        .where(PaperReentry.paper_id == paper.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     data = revision.data
     entered = bool(entry and entry.paper_revision_id == revision.id)
     return {

@@ -38,6 +38,7 @@ from election.desktop.counting_scopes import CountingScopesController
 from election.desktop.fallback import FallbackController
 from election.desktop.invalid_reasons import InvalidReasonsController
 from election.desktop.lifecycle import LifecycleController
+from election.desktop.operational_receipts import valid_operational_receipt
 from election.desktop.polling import PollingController
 from election.desktop.queue import QueueController
 from election.desktop.recovery import RecoveryController
@@ -408,13 +409,7 @@ class DesktopController(QObject):
 
         def saved(body: dict[str, Any]) -> None:
             if command is not None:
-                record = body.get("record", body)
-                valid = (
-                    isinstance(record, dict)
-                    and type(record.get("id")) is int
-                    and type(record.get("revision")) is int
-                    and record["revision"] > 0
-                )
+                valid = valid_operational_receipt(command, body)
                 try:
                     remember(
                         "committed" if valid else "uncertain",
@@ -423,6 +418,9 @@ class DesktopController(QObject):
                     )
                 except OSError, ValueError, RuntimeError:
                     failure("recovery_journal_unavailable")
+                    return
+                if not valid:
+                    failure("request_failed")
                     return
             success(body)
 

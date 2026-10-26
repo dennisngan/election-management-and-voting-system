@@ -9,6 +9,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest
 from election.desktop.exact_numbers import qt_state
+from election.desktop.operational_receipts import valid_operational_receipt
 
 ROLES = frozenset({"polling_officer", "counting_officer", "supervisor"})
 NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
@@ -208,7 +209,7 @@ class RecoveryController(QObject):
         if command is None or not self._workflow_allowed(command.get("workflow")):
             self._error("recovery_command_not_found")
             return
-        if command.get("status") not in ("pending", "uncertain"):
+        if command.get("status") != "uncertain" or command.get("error") != "request_not_found":
             self._error("recovery_retry_unavailable")
             return
         if command.get("confirmation_required") and not password:
@@ -228,6 +229,13 @@ class RecoveryController(QObject):
         original["request_id"] = request_id
         if command.get("confirmation_required"):
             original["password"] = password
+        try:
+            self._journal.record_outcome(
+                self._server_url, self._account_id, request_id, "uncertain", error=""
+            )
+        except (OSError, ValueError, RuntimeError):
+            self._error("recovery_journal_unavailable")
+            return
         self._send(path, method, original, command, request_id, retry=True)
 
     def _send(
@@ -269,7 +277,7 @@ class RecoveryController(QObject):
                     or body.get("status") not in ("committed", "not_found")
                     or (
                         body.get("status") == "committed"
-                        and not isinstance(body.get("record"), dict)
+                        and not valid_operational_receipt(command, body.get("record"))
                     )
                 ):
                     try:
@@ -289,9 +297,10 @@ class RecoveryController(QObject):
                 self.stateChanged.emit()
                 return
             try:
-                if not isinstance(body, dict):
-                    raise ValueError("Operational receipt is not an object")
-                finish("committed", record=body)
+                if valid_operational_receipt(command, body):
+                    finish("committed", record=body)
+                else:
+                    finish("uncertain", error="recovery_outcome_invalid")
             except OSError, ValueError, RuntimeError:
                 self._state.update(busy=False, error="recovery_journal_unavailable")
             if not self._state["error"]:
@@ -306,7 +315,7 @@ class RecoveryController(QObject):
                 "uncertain"
                 if method == "GET"
                 or code in NETWORK_ERRORS
-                or (previous_status == "uncertain" and code == "invalid_credentials")
+                or previous_status == "uncertain"
                 else "rejected"
             )
             try:
