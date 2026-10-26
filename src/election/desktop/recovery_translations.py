@@ -50,6 +50,10 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "recovery_no_receipt": "尚無伺服器回覆。",
         "recovery_context_unavailable": "請選取已指派票站並以職員帳戶登入。",
         "recovery_journal_unavailable": "無法讀取或更新本機恢復記錄；操作未重送。",
+        "recovery_journal_outcome_unavailable": (
+            "操作已送出，但本機恢復記錄未能更新。"
+            "請先核對伺服器結果，再決定是否重試。"
+        ),
         "recovery_command_not_found": "找不到所選恢復操作。",
         "recovery_command_conflict": "此要求編號已用於另一項操作。",
         "recovery_pending_command": "同一目標已有未解決的要求。",
@@ -116,6 +120,10 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "recovery_no_receipt": "尚无服务器回覆。",
         "recovery_context_unavailable": "请选择已指派票站并以职员账户登录。",
         "recovery_journal_unavailable": "无法读取或更新本机恢复记录；操作未重送。",
+        "recovery_journal_outcome_unavailable": (
+            "操作已送出，但本机恢复记录未能更新。"
+            "请先核对服务器结果，再决定是否重试。"
+        ),
         "recovery_command_not_found": "找不到所选恢复操作。",
         "recovery_command_conflict": "此请求编号已用于另一项操作。",
         "recovery_pending_command": "同一目标已有未解决的请求。",
@@ -184,6 +192,10 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "recovery_no_receipt": "No server receipt is available yet.",
         "recovery_context_unavailable": "Select an assigned station and sign in as staff.",
         "recovery_journal_unavailable": "Local journal unavailable; request was not resent.",
+        "recovery_journal_outcome_unavailable": (
+            "Request sent, but local recovery evidence could not be updated. "
+            "Check the server outcome before retrying."
+        ),
         "recovery_command_not_found": "The selected recovery request was not found.",
         "recovery_command_conflict": "This request ID belongs to another operation.",
         "recovery_pending_command": "An unresolved request already exists for this target.",
