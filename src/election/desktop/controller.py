@@ -436,7 +436,7 @@ class DesktopController(QObject):
                         code="" if valid else "invalid_response",
                     )
                 except OSError, ValueError, RuntimeError:
-                    failure("recovery_journal_unavailable")
+                    failure("recovery_journal_outcome_unavailable")
                     return
                 if not valid:
                     failure("request_failed")
@@ -444,6 +444,7 @@ class DesktopController(QObject):
             success(body)
 
         def failed(code: str) -> None:
+            original_code = code
             try:
                 remember(
                     "uncertain"
@@ -469,10 +470,10 @@ class DesktopController(QObject):
                     code=code,
                 )
             except OSError, ValueError, RuntimeError:
-                code = "recovery_journal_unavailable"
+                code = "recovery_journal_outcome_unavailable"
             failure(code)
-            if code == "session_expired":
-                self._error(code)
+            if original_code == "session_expired":
+                self._error(original_code)
 
         self._request(path, method, payload, saved, failed, token=self._token)
 

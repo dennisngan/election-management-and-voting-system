@@ -1,5 +1,6 @@
 """Outage paper identities and late provenance linking through public APIs."""
 
+from datetime import timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -290,3 +291,153 @@ def test_reconciliation_requires_exact_supervisor_review_and_invalidates_on_basi
         assert after_paper_successor["reconciled"] is False
         assert after_paper_successor["reconciliation_history"][0]["revision"] == 2
         assert after_paper_successor["reconciliation_history"][0]["valid"] is False
+
+
+def test_paper_amendment_replay_stays_bound_to_its_original_outage(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        _, _, count_round = _count_draft(setup)
+        first_path, paper = _create_outage_and_paper(setup, count_round["id"])
+        other_path, _ = _create_outage_and_paper(setup, count_round["id"])
+        paper_path = first_path + f"/paper-records/{paper['id']}"
+        command = {
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "expected_revision": 1,
+            "original_event_at": "2026-11-15T23:34:00+08:00",
+            "target": {"scope_id": setup["scope"]["id"], "round_id": count_round["id"]},
+            "notes": "Corrected original paper time.",
+            "amendment_reason": "Check against the signed count return.",
+        }
+        saved = setup["counter"].put(paper_path, json=command)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["revision"] == 2
+        replay = setup["counter"].put(paper_path, json=command)
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == saved.json()
+
+        wrong_parent = setup["counter"].put(
+            other_path + f"/paper-records/{paper['id']}", json=command,
+        )
+        assert wrong_parent.status_code == 404, wrong_parent.text
+        assert wrong_parent.json() == {"detail": {"code": "outage_paper_not_found"}}
+        current = setup["counter"].get(first_path)
+        assert current.status_code == 200, current.text
+        original_paper = current.json()["record"]["paper_records"][0]
+        assert original_paper["revision"] == 2
+        assert original_paper["notes"] == saved.json()["notes"]
+
+
+def test_count_paper_amendment_replay_requires_current_counting_role(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        _, _, count_round = _count_draft(setup)
+        path, paper = _create_outage_and_paper(setup, count_round["id"])
+        target = path + f"/paper-records/{paper['id']}"
+        command = {
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "expected_revision": 1,
+            "original_event_at": "2026-11-15T23:34:00+08:00",
+            "target": {"scope_id": setup["scope"]["id"], "round_id": count_round["id"]},
+            "notes": "Corrected paper time before role reassignment.",
+            "amendment_reason": "Checked signed return.",
+        }
+        counter = setup["counter"]
+        saved = counter.put(target, json=command)
+        assert saved.status_code == 200, saved.text
+        profile = counter.get("/api/auth/me")
+        assert profile.status_code == 200, profile.text
+        full_account = admin.get(f"/api/accounts/{profile.json()['id']}")
+        assert full_account.status_code == 200, full_account.text
+        account = full_account.json()
+        changed = admin.put(
+            f"/api/accounts/{account['id']}",
+            json={
+                "revision": account["revision"],
+                "display_name": account["display_name"],
+                "role": "polling_officer",
+                "enabled": True,
+                "station_ids": account["station_ids"],
+            },
+        )
+        assert changed.status_code == 200, changed.text
+        login = counter.post(
+            "/api/auth/login",
+            json={"username": account["username"], "password": READY_PASSWORD},
+        )
+        assert login.status_code == 200, login.text
+        counter.headers["Authorization"] = "Bearer " + login.json()["token"]
+        assert counter.get("/api/auth/me").json()["role"] == "polling_officer"
+        forbidden = counter.put(target, json=command)
+        assert forbidden.status_code == 403, forbidden.text
+        assert forbidden.json() == {"detail": {"code": "counting_officer_required"}}
+
+
+def test_count_receipt_link_replay_requires_current_counting_role(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        options, round_path, count_round = _count_draft(setup)
+        counter = setup["counter"]
+        original_request_id = str(uuid4())
+        submitted = counter.post(
+            round_path + "/submit",
+            json={
+                "request_id": original_request_id,
+                "expected_revision": 2,
+                "scope_revision": options["scope"]["revision"],
+            },
+        )
+        assert submitted.status_code == 200, submitted.text
+        setup["clock"].value += timedelta(seconds=1)
+        outage_path, paper = _create_outage_and_paper(setup, count_round["id"])
+        paper_path = outage_path + f"/paper-records/{paper['id']}"
+        checked = counter.get(paper_path + "/receipt", params={"request_id": original_request_id})
+        assert checked.status_code == 200, checked.text
+        command = {
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "expected_paper_revision": 1,
+            "original_request_id": original_request_id,
+            "expected_receipt_digest": checked.json()["receipt_digest"],
+            "reason": "Match the committed count to the signed paper return.",
+        }
+        target = paper_path + "/link-receipt"
+        linked = counter.post(target, json=command)
+        assert linked.status_code == 200, linked.text
+        replay = counter.post(target, json=command)
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == linked.json()
+
+        profile = counter.get("/api/auth/me")
+        assert profile.status_code == 200, profile.text
+        account_response = admin.get(f"/api/accounts/{profile.json()['id']}")
+        assert account_response.status_code == 200, account_response.text
+        account = account_response.json()
+        changed = admin.put(
+            f"/api/accounts/{account['id']}",
+            json={
+                "revision": account["revision"],
+                "display_name": account["display_name"],
+                "role": "polling_officer",
+                "enabled": True,
+                "station_ids": account["station_ids"],
+            },
+        )
+        assert changed.status_code == 200, changed.text
+        login = counter.post(
+            "/api/auth/login",
+            json={"username": account["username"], "password": READY_PASSWORD},
+        )
+        assert login.status_code == 200, login.text
+        counter.headers["Authorization"] = "Bearer " + login.json()["token"]
+        assert counter.get("/api/auth/me").json()["role"] == "polling_officer"
+        forbidden = counter.post(target, json=command)
+        assert forbidden.status_code == 403, forbidden.text
+        assert forbidden.json() == {"detail": {"code": "counting_officer_required"}}
