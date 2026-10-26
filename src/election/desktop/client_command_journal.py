@@ -67,6 +67,9 @@ def _origin(server_url: str) -> str:
 def _target(path: str) -> str:
     # Completion/approval and F1/F2 writes address the same count identity.
     matched = re.match(r"(.*/rounds/[1-9][0-9]*)(?:/|$)", path)
+    if matched:
+        return matched[1]
+    matched = re.match(r"(.*/turnout/[1-9][0-9]*)(?:/|$)", path)
     return matched[1] if matched else path
 
 
@@ -126,6 +129,7 @@ class CommandJournal:
                 or row["status"] not in {"pending", "uncertain", "committed", "rejected"}
             ):
                 raise JournalError("recovery_journal_unavailable")
+            row["target"] = _target(row["path"])
             rows.append(_safe(row))
         return sorted(rows, key=lambda row: row["created_at"], reverse=True)
 
@@ -150,6 +154,12 @@ class CommandJournal:
                 safe_payload,
             ):
                 raise JournalError("recovery_command_conflict")
+            if previous["status"] in UNRESOLVED:
+                if previous.get("error") != "request_not_found":
+                    raise JournalError("recovery_outcome_check_required")
+                previous.update(status="uncertain", error="")
+                self._write(self._path(origin, actor_id, request_id), previous)
+                return {**deepcopy(previous), "retry_after_not_found": True}
             return previous
         if any(
             row["request_id"] != request_id
@@ -193,7 +203,7 @@ class CommandJournal:
         row = json.loads(path.read_text())
         if row["status"] == "committed":
             return
-        if row["status"] == "uncertain" and status == "rejected":
+        if row["status"] == "uncertain" and error == "invalid_credentials":
             status = "uncertain"
         row.update(status=status, error=error, updated_at=datetime.now(UTC).isoformat())
         if record is not None:

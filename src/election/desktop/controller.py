@@ -435,7 +435,14 @@ class DesktopController(QObject):
                         "invalid_response",
                         "certificate_error",
                         "database_unavailable",
+                        "session_expired",
+                        "access_changed",
                     }
+                    or (command is not None and command["status"] in {"pending", "uncertain"}
+                        and command["status"] != "pending"
+                        and not command.get("retry_after_not_found"))
+                    or code == "invalid_credentials" and command is not None
+                    and command["status"] == "uncertain"
                     else "rejected",
                     code=code,
                 )

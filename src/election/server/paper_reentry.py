@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException
-from fastapi.encoders import jsonable_encoder
+from pydantic import TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from election.server.models import Account, AuditEvent
 from election.server.outage_models import OutagePaperRecord, OutagePaperRevision, PaperReentry
 
 PaperEntry = tuple[OutagePaperRecord, OutagePaperRevision] | None
+RECEIPT_ADAPTER = TypeAdapter(dict[str, Any])
 
 
 def guard_paper_entry(
@@ -102,7 +103,7 @@ def finish_paper_entry(
             request_id=str(request_id),
             actor_id=actor.id,
             entered_at=now,
-            record=jsonable_encoder(record),
+            record=RECEIPT_ADAPTER.dump_python(record, mode="json"),
         )
     )
     db.add(

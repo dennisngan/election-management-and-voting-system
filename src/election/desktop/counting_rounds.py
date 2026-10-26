@@ -12,7 +12,10 @@ from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
-NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
+NETWORK_ERRORS = frozenset({
+    "request_failed", "disconnected", "database_unavailable",
+    "recovery_outcome_check_required", "recovery_pending_command",
+})
 
 
 def empty_forms() -> dict[str, str]:

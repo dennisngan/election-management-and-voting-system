@@ -12,7 +12,11 @@ from election.desktop.exact_numbers import qt_state
 from election.desktop.operational_receipts import valid_operational_receipt
 
 ROLES = frozenset({"polling_officer", "counting_officer", "supervisor"})
-NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
+NETWORK_ERRORS = frozenset({
+    "request_failed", "disconnected", "database_unavailable", "certificate_error",
+    "invalid_response", "invalid_credentials", "session_expired", "access_changed",
+    "recovery_outcome_check_required", "recovery_journal_unavailable",
+})
 
 
 class CommandJournal(Protocol):
@@ -229,13 +233,6 @@ class RecoveryController(QObject):
         original["request_id"] = request_id
         if command.get("confirmation_required"):
             original["password"] = password
-        try:
-            self._journal.record_outcome(
-                self._server_url, self._account_id, request_id, "uncertain", error=""
-            )
-        except (OSError, ValueError, RuntimeError):
-            self._error("recovery_journal_unavailable")
-            return
         self._send(path, method, original, command, request_id, retry=True)
 
     def _send(
@@ -315,7 +312,7 @@ class RecoveryController(QObject):
                 "uncertain"
                 if method == "GET"
                 or code in NETWORK_ERRORS
-                or previous_status == "uncertain"
+                or (previous_status == "uncertain" and not retry)
                 else "rejected"
             )
             try:
