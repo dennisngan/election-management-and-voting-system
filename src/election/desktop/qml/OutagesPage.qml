@@ -15,14 +15,26 @@ ColumnLayout {
     readonly property var selected: editorState.selected || ({})
     readonly property var form: editorState.forms || ({})
     readonly property var paperForm: editorState.paper_forms || ({})
+    readonly property var existingReceipt: editorState.existing_receipt || ({})
+    readonly property var matchingPaper: (selected.paper_records || []).find(function(paper) {
+        return paper.id === page.editorState.selected_paper_id
+    }) || ({})
+    readonly property bool matchingDraft: !!(existingReceipt.request_id || existingReceipt.reason
+        || (existingReceipt.checked || {}).status)
+    readonly property bool matchingAllowed: active && matchingPaper.status === "pending"
+        && ((matchingPaper.workflow === "count" && editorState.role === "counting_officer")
+            || ((matchingPaper.workflow === "allocation" || matchingPaper.workflow === "turnout")
+                && editorState.role === "polling_officer"))
+    readonly property var checkedPaper: ({workflow: matchingPaper.workflow,
+        reentry: {record: (existingReceipt.checked || {}).record || ({})}})
     readonly property bool working: !!editorState.busy || !!editorState.refreshing
     readonly property bool active: !!editorState.writable
     readonly property bool operational: editorState.role === "polling_officer"
         || editorState.role === "counting_officer"
     readonly property bool outageEditable: page.active && page.operational && !page.working
-        && !editorState.uncertain_save
+        && !editorState.uncertain_save && !page.matchingDraft
     readonly property bool paperEditable: !!editorState.paper_editable && !page.working
-        && !editorState.uncertain_save
+        && !editorState.uncertain_save && !page.matchingDraft
     property int pendingOutageId: 0
     property bool pendingNewOutage: false
     property string pendingWorkflow: ""
@@ -142,7 +154,7 @@ ColumnLayout {
         var facts = [
             t("outage_receipt_record") + " " + page.exact(record.id),
             t("outage_receipt_revision") + " " + page.exact(record.revision),
-            t("outage_receipt_status") + " " + page.exact(record.status)
+            t("outage_receipt_status") + " " + page.t("outage_receipt_status_" + record.status)
         ]
         if (record.workflow === "count" || paper.workflow === "count") {
             if (record.round_number !== undefined)
@@ -425,7 +437,8 @@ ColumnLayout {
                 Layout.fillWidth: true
                 ActionButton {
                     objectName: "outageRetryOutage"
-                    visible: page.operational && !page.editorState.selected_paper_id
+                    visible: page.editorState.pending_kind !== "existing_receipt_link"
+                        && page.operational && !page.editorState.selected_paper_id
                         && !page.paperForm.paper_reference
                     text: page.t("outage_retry_outage")
                     enabled: !!page.editorState.pending_request_id && !page.working
@@ -433,11 +446,19 @@ ColumnLayout {
                 }
                 ActionButton {
                     objectName: "outageRetryPaper"
-                    visible: page.operational && !!page.selected.id
+                    visible: page.editorState.pending_kind !== "existing_receipt_link"
+                        && page.operational && !!page.selected.id
                         && (!!page.editorState.selected_paper_id || !!page.paperForm.paper_reference)
                     text: page.t("outage_retry_paper")
                     enabled: !!page.editorState.pending_request_id && !page.working
                     onClicked: page.outages.savePaper()
+                }
+                ActionButton {
+                    objectName: "outageRetryExistingReceipt"
+                    visible: page.editorState.pending_kind === "existing_receipt_link"
+                    text: page.t("outage_existing_receipt_retry")
+                    enabled: !!page.editorState.pending_request_id && !page.working
+                    onClicked: page.outages.linkExistingReceipt()
                 }
                 ActionButton {
                     objectName: "outageRetryReconciliation"
@@ -693,6 +714,18 @@ ColumnLayout {
                             + page.timeHkt((parent.modelData.reentry || {}).entered_at) + " · "
                             + page.receiptFacts(parent.modelData)
                     }
+                    Detail {
+                        visible: !!(parent.modelData.reentry || {}).link
+                        caption: page.t("outage_existing_link_metadata")
+                        value: {
+                            var link = (parent.modelData.reentry || {}).link || ({})
+                            return page.t("outage_existing_link_request") + " "
+                                + page.exact(link.request_id) + " · "
+                                + page.t("outage_existing_receipt_reason") + " "
+                                + page.exact(link.reason) + " · " + page.timeHkt(link.linked_at)
+                                + " · " + page.t("outage_actor") + " " + page.exact(link.actor_id)
+                        }
+                    }
                     Repeater {
                         model: parent.modelData.status === "entered"
                             ? page.receiptQuantities(parent.modelData) : []
@@ -819,6 +852,100 @@ ColumnLayout {
                 highlighted: true
                 enabled: page.paperEditable && !!page.editorState.dirty
                 onClicked: page.outages.savePaper()
+            }
+        }
+    }
+    FormPanel {
+        visible: page.matchingAllowed
+        implicitHeight: existingReceiptColumn.implicitHeight + 40
+        ColumnLayout {
+            id: existingReceiptColumn
+            anchors.fill: parent
+            anchors.margins: 20
+            spacing: 12
+            Heading { text: page.t("outage_existing_receipt_title") }
+            FormCaption { text: page.t("outage_existing_receipt_hint") }
+            Detail {
+                caption: page.t("outage_paper_reference")
+                value: page.exact(page.matchingPaper.paper_reference) + " · "
+                    + page.paperTarget(page.matchingPaper)
+            }
+            FormCaption { text: page.t("outage_existing_receipt_request") }
+            FormField {
+                objectName: "outageExistingRequestId"
+                text: page.existingReceipt.request_id || ""
+                Accessible.name: page.t("outage_existing_receipt_request")
+                working: page.working || !!page.editorState.uncertain_save
+                maximumLength: 100
+                onTextEdited: page.outages.setExistingReceiptField("request_id", text)
+                onReveal: control => page.reveal(control)
+            }
+            ActionButton {
+                objectName: "outageExistingReceiptCheck"
+                text: page.t("outage_existing_receipt_check")
+                enabled: !page.working && !page.editorState.uncertain_save
+                    && !!page.existingReceipt.request_id
+                onClicked: page.outages.checkExistingReceipt()
+            }
+            ColumnLayout {
+                objectName: "outageExistingReceiptSummary"
+                visible: (page.existingReceipt.checked || {}).status === "committed"
+                Layout.fillWidth: true
+                spacing: 10
+                Detail {
+                    caption: page.t("outage_existing_receipt_checked")
+                    value: page.receiptFacts(page.checkedPaper)
+                }
+                Detail {
+                    caption: page.t("outage_original_time")
+                    value: page.timeHkt(page.matchingPaper.original_event_at)
+                }
+                Detail {
+                    caption: page.t("outage_existing_receipt_server_time")
+                    value: {
+                        var record = page.canonicalRecord(page.checkedPaper)
+                        return page.timeHkt(record.revision_entered_at || record.entered_at)
+                    }
+                }
+                Repeater {
+                    model: page.receiptQuantities(page.checkedPaper)
+                    delegate: Detail {
+                        required property var modelData
+                        caption: modelData.caption
+                        value: modelData.value
+                    }
+                }
+            }
+            FormCaption { text: page.t("outage_existing_receipt_reason") }
+            FormField {
+                objectName: "outageExistingReceiptReason"
+                text: page.existingReceipt.reason || ""
+                Accessible.name: page.t("outage_existing_receipt_reason")
+                working: page.working || !!page.editorState.uncertain_save
+                maximumLength: 2000
+                onTextEdited: page.outages.setExistingReceiptField("reason", text)
+                onReveal: control => page.reveal(control)
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                ActionButton {
+                    objectName: "outageExistingReceiptLink"
+                    text: page.t("outage_existing_receipt_link")
+                    highlighted: true
+                    enabled: !page.working && !page.editorState.uncertain_save
+                        && (page.existingReceipt.checked || {}).status === "committed"
+                        && !!(page.existingReceipt.reason || "").trim()
+                    onClicked: page.outages.linkExistingReceipt()
+                }
+                FormButton {
+                    objectName: "outageExistingReceiptClear"
+                    text: page.t("outage_existing_receipt_clear")
+                    flat: true
+                    highlighted: false
+                    enabled: !page.working && !page.editorState.uncertain_save
+                    onClicked: page.outages.clearExistingReceipt()
+                    onReveal: control => page.reveal(control)
+                }
             }
         }
     }

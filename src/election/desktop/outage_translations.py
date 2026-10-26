@@ -2,6 +2,75 @@
 
 OUTAGE_TRANSLATIONS = {
     "tc": {
+        "outage_existing_receipt_title": (
+            "連結已核實的電子記錄"
+        ),
+        "outage_existing_receipt_hint": (
+            "將紙本參考連結至已儲存的原始電子記錄。此操作不會再次提交該項工作。"
+        ),
+        "outage_existing_receipt_request": (
+            "原始請求編號"
+        ),
+        "outage_existing_receipt_check": (
+            "核查原始記錄"
+        ),
+        "outage_existing_receipt_checked": (
+            "已核實的原始電子記錄"
+        ),
+        "outage_existing_receipt_reason": (
+            "連結原因"
+        ),
+        "outage_existing_receipt_link": (
+            "連結已核實記錄"
+        ),
+        "outage_existing_receipt_clear": (
+            "清除連結草稿"
+        ),
+        "outage_existing_receipt_retry": (
+            "重試連結已核實記錄"
+        ),
+        "outage_existing_receipt_linked": (
+            "紙本參考已連結至原始電子記錄。"
+        ),
+        "outage_existing_receipt_server_time": (
+            "原始記錄的伺服器輸入時間"
+        ),
+        "outage_existing_link_metadata": (
+            "後加的連結記錄"
+        ),
+        "outage_existing_link_request": (
+            "連結請求編號"
+        ),
+        "outage_existing_request_invalid": (
+            "請輸入有效的原始請求編號。"
+        ),
+        "outage_existing_receipt_check_required": (
+            "請先核查原始電子記錄，再進行連結。"
+        ),
+        "outage_existing_link_reason_required": (
+            "請填寫連結此記錄的原因。"
+        ),
+        "outage_existing_link_clear_first": (
+            "請先清除連結草稿，再編輯中斷或紙本記錄。"
+        ),
+        "paper_receipt_mismatch": (
+            "原始電子記錄與此紙本參考、操作或原始時間不符。"
+        ),
+        "paper_receipt_workflow_unsupported": (
+            "無法將所選電子記錄連結至此紙本操作。"
+        ),
+        "outage_receipt_status_draft": (
+            "草稿"
+        ),
+        "outage_receipt_status_submitted": (
+            "已提交"
+        ),
+        "outage_receipt_status_approved": (
+            "已核准"
+        ),
+        "outage_receipt_status_recorded": (
+            "已記錄"
+        ),
         "outage_title": "連線中斷及紙本紀錄",
         "outage_report": "中斷及紙本報表",
         "outage_report_preview": "預覽報表",
@@ -170,6 +239,75 @@ OUTAGE_TRANSLATIONS = {
         "request_failed": "伺服器回覆無法核實。請檢查連線並比較伺服器紀錄。",
     },
     "sc": {
+        "outage_existing_receipt_title": (
+            "关联已核实的电子记录"
+        ),
+        "outage_existing_receipt_hint": (
+            "将纸本参考关联至已保存的原始电子记录。此操作不会再次提交该项工作。"
+        ),
+        "outage_existing_receipt_request": (
+            "原始请求编号"
+        ),
+        "outage_existing_receipt_check": (
+            "核查原始记录"
+        ),
+        "outage_existing_receipt_checked": (
+            "已核实的原始电子记录"
+        ),
+        "outage_existing_receipt_reason": (
+            "关联原因"
+        ),
+        "outage_existing_receipt_link": (
+            "关联已核实记录"
+        ),
+        "outage_existing_receipt_clear": (
+            "清除关联草稿"
+        ),
+        "outage_existing_receipt_retry": (
+            "重试关联已核实记录"
+        ),
+        "outage_existing_receipt_linked": (
+            "纸本参考已关联至原始电子记录。"
+        ),
+        "outage_existing_receipt_server_time": (
+            "原始记录的服务器输入时间"
+        ),
+        "outage_existing_link_metadata": (
+            "后加的关联记录"
+        ),
+        "outage_existing_link_request": (
+            "关联请求编号"
+        ),
+        "outage_existing_request_invalid": (
+            "请输入有效的原始请求编号。"
+        ),
+        "outage_existing_receipt_check_required": (
+            "请先核查原始电子记录，再进行关联。"
+        ),
+        "outage_existing_link_reason_required": (
+            "请填写关联此记录的原因。"
+        ),
+        "outage_existing_link_clear_first": (
+            "请先清除关联草稿，再编辑中断或纸本记录。"
+        ),
+        "paper_receipt_mismatch": (
+            "原始电子记录与此纸本参考、操作或原始时间不符。"
+        ),
+        "paper_receipt_workflow_unsupported": (
+            "无法将所选电子记录关联至此纸本操作。"
+        ),
+        "outage_receipt_status_draft": (
+            "草稿"
+        ),
+        "outage_receipt_status_submitted": (
+            "已提交"
+        ),
+        "outage_receipt_status_approved": (
+            "已核准"
+        ),
+        "outage_receipt_status_recorded": (
+            "已记录"
+        ),
         "outage_title": "连接中断及纸本记录",
         "outage_report": "中断及纸本报表",
         "outage_report_preview": "预览报表",
@@ -338,6 +476,76 @@ OUTAGE_TRANSLATIONS = {
         "request_failed": "服务器回复无法核实。请检查连接并比较服务器记录。",
     },
     "en": {
+        "outage_existing_receipt_title": (
+            "Link a checked server entry"
+        ),
+        "outage_existing_receipt_hint": (
+            "Match the paper reference to an entry already saved on the server. This does "
+            "not submit the operation again."
+        ),
+        "outage_existing_receipt_request": (
+            "Original request ID"
+        ),
+        "outage_existing_receipt_check": (
+            "Check existing entry"
+        ),
+        "outage_existing_receipt_checked": (
+            "Checked server entry"
+        ),
+        "outage_existing_receipt_reason": (
+            "Reason for linking"
+        ),
+        "outage_existing_receipt_link": (
+            "Link checked entry"
+        ),
+        "outage_existing_receipt_clear": (
+            "Clear matching draft"
+        ),
+        "outage_existing_receipt_retry": (
+            "Retry linking the checked entry"
+        ),
+        "outage_existing_receipt_linked": (
+            "Paper reference linked to the original server entry."
+        ),
+        "outage_existing_receipt_server_time": (
+            "Original server entry time"
+        ),
+        "outage_existing_link_metadata": (
+            "Later linkage provenance"
+        ),
+        "outage_existing_link_request": (
+            "Link request ID"
+        ),
+        "outage_existing_request_invalid": (
+            "Enter a valid original request ID."
+        ),
+        "outage_existing_receipt_check_required": (
+            "Check the original server entry before linking."
+        ),
+        "outage_existing_link_reason_required": (
+            "Enter the reason for linking this entry."
+        ),
+        "outage_existing_link_clear_first": (
+            "Clear the matching draft before editing the outage or paper record."
+        ),
+        "paper_receipt_mismatch": (
+            "The server entry does not match this paper reference, action or original time."
+        ),
+        "paper_receipt_workflow_unsupported": (
+            "The selected server entry cannot be linked to this paper action."
+        ),
+        "outage_receipt_status_draft": (
+            "Draft"
+        ),
+        "outage_receipt_status_submitted": (
+            "Submitted"
+        ),
+        "outage_receipt_status_approved": (
+            "Approved"
+        ),
+        "outage_receipt_status_recorded": (
+            "Recorded"
+        ),
         "outage_title": "Connectivity outages and paper records",
         "outage_report": "Outage and paper reconciliation report",
         "outage_report_preview": "Preview report",
