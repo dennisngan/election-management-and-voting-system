@@ -88,6 +88,12 @@ def test_supervisor_starts_a_blank_local_recount_and_preserves_the_selected_roun
         assert recount["round_number"] == 2
         assert recount["revision"] == 1
         assert recount["status"] == "draft"
+        assert recount["event_at"] is None
+        assert recount["entered_at"] is None
+        assert recount["actor_id"] is None
+        assert recount["revision_event_at"] == instruction["event_at"]
+        assert recount["revision_entered_at"] == instruction["entered_at"]
+        assert recount["revision_actor_id"] == instruction["actor_id"]
         assert recount["scope_id"] == scope["id"]
         assert recount["scope_revision"] == prior["scope_revision"]
         assert recount["scope_basis"]["revision_id"] == prior["scope_basis"]["revision_id"]
