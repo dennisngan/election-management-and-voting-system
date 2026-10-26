@@ -32,6 +32,7 @@ from election.desktop.complaint_categories import ComplaintCategoriesController
 from election.desktop.complaint_periods import ComplaintPeriodsController
 from election.desktop.complaints import ComplaintCasesController
 from election.desktop.configuration import ConfigurationController
+from election.desktop.constituency_results import ConstituencyResultsController
 from election.desktop.counter_returns import CounterReturnsController
 from election.desktop.counting_rounds import CountingRoundsController
 from election.desktop.counting_scopes import CountingScopesController
@@ -43,6 +44,7 @@ from election.desktop.outages import OutagesController
 from election.desktop.polling import PollingController
 from election.desktop.queue import QueueController
 from election.desktop.recovery import RecoveryController
+from election.desktop.server_backups import ServerBackupsController
 from election.desktop.special_papers import SpecialPapersController
 from election.desktop.staff import StaffController
 from election.desktop.stock import StockController
@@ -94,6 +96,7 @@ class DesktopController(QObject):
             self._authorized_request, self, download=self._authorized_download
         )
         self._configuration = ConfigurationController(self._authorized_request, self)
+        self._server_backups = ServerBackupsController(self._authorized_request, self)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
         self._staff = StaffController(self._authorized_request, self)
@@ -122,6 +125,9 @@ class DesktopController(QObject):
             self._authorized_request, self, download=self._authorized_download
         )
         self._counting_rounds = CountingRoundsController(
+            self._authorized_request, self, download=self._authorized_download
+        )
+        self._constituency_results = ConstituencyResultsController(
             self._authorized_request, self, download=self._authorized_download
         )
         self._accounting = AccountingController(
@@ -163,6 +169,9 @@ class DesktopController(QObject):
                 or self._counting_scopes.property("state")["busy"]
                 or self._counting_rounds.property("state")["dirty"]
                 or self._counting_rounds.property("state")["busy"]
+                or self._constituency_results.property("state")["dirty"]
+                or self._constituency_results.property("state")["busy"]
+                or self._constituency_results.property("state")["uncertain_save"]
                 or self._fallback.property("state")["dirty"]
                 or self._fallback.property("state")["busy"]
                 or self._turnout.property("state")["dirty"]
@@ -192,6 +201,7 @@ class DesktopController(QObject):
         self._counting_scopes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._counting_rounds.stateChanged.connect(self._workspace.stateChanged.emit)
         self._outages.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._constituency_results.stateChanged.connect(self._workspace.stateChanged.emit)
         self._fallback.stateChanged.connect(self._workspace.stateChanged.emit)
         self._turnout.stateChanged.connect(self._workspace.stateChanged.emit)
         self._complaints.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -296,8 +306,16 @@ class DesktopController(QObject):
         return self._recovery
 
     @Property(QObject, constant=True)
+    def serverBackups(self) -> ServerBackupsController:
+        return self._server_backups
+
+    @Property(QObject, constant=True)
     def countingRounds(self) -> CountingRoundsController:
         return self._counting_rounds
+
+    @Property(QObject, constant=True)
+    def constituencyResults(self) -> ConstituencyResultsController:
+        return self._constituency_results
 
     @Property(QObject, constant=True)
     def fallback(self) -> FallbackController:
@@ -339,6 +357,7 @@ class DesktopController(QObject):
         self._boxes.set_context(context)
         self._counting_scopes.set_context(context)
         self._counting_rounds.set_context(context)
+        self._constituency_results.set_context(context)
         self._fallback.set_context(context)
         self._turnout.set_context(context)
         self._complaints.set_context(context)
@@ -494,6 +513,7 @@ class DesktopController(QObject):
             and account.get("role") == "administrator"
             and not account.get("must_change_password", True)
         )
+        self._server_backups.set_account(account if administrator else {})
         self._configuration.set_available(administrator)
         self._lifecycle.set_available(administrator)
         account_id = account.get("id", 0)
@@ -780,6 +800,7 @@ class DesktopController(QObject):
             self._counting_scopes.refresh()
             self._counting_rounds.refresh()
             self._outages.refresh()
+            self._constituency_results.refresh()
             self._fallback.refresh()
             self._turnout.refresh()
             self._complaints.refresh()
@@ -822,6 +843,7 @@ class DesktopController(QObject):
         self._counting_scopes.reset()
         self._counting_rounds.reset()
         self._outages.reset()
+        self._constituency_results.reset()
         self._fallback.reset()
         self._turnout.reset()
         self._complaints.reset()

@@ -8,10 +8,13 @@ from sqlalchemy import create_engine, pool
 from election.server import (  # noqa: F401 -- register tables with Base.metadata
     accounting_models,
     allocation_models,
+    backup_models,
     box_models,
     complaint_models,
     complaint_period_models,
     configuration_models,
+    constituency_result_models,
+    counting_discrepancy_models,
     counting_round_models,
     counting_scope_models,
     fallback_models,

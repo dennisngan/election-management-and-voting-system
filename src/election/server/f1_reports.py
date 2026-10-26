@@ -15,6 +15,7 @@ from election.server.counting_rounds import round_at, round_context, round_view
 from election.server.f1_labels import LABELS
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
+from election.server.physical_decision_reports import physical_tables
 from election.server.stock_reports import ReportLocale
 from election.server.turnout_reports import hong_kong_time
 
@@ -37,8 +38,8 @@ def _value(key: str, value: Any, labels: dict[str, str]) -> str:
         return labels["yes" if value else "no"]
     if key.endswith("_at"):
         return hong_kong_time(value)
-    if key in ("status", "p18_status", "translation_provenance"):
-        return labels[str(value)]
+    if key in ("status", "p18_status", "translation_provenance", "comparison_status"):
+        return labels.get(str(value), str(value))
     return str(value)
 
 
@@ -121,6 +122,7 @@ def _tables(report: dict[str, Any]) -> list[HistoryTable]:
             labels,
         )
     ]
+    tables.extend(physical_tables(record, labels, include_empty_placeholders=False))
     f1_blockers = record.get("f1_blockers", record["blockers"])
     blockers = [
         [

@@ -77,6 +77,7 @@ class CountingRoundsController(QObject):
             "scope": {},
             "latest_scope": {},
             "edit_scope_revision": 0,
+            "acknowledged_scope_revision": 0,
             "candidates": [],
             "invalid_reasons": [],
             "f2_invalid_reasons": [],
@@ -93,6 +94,9 @@ class CountingRoundsController(QObject):
             "accepted_inputs": [],
             "rejected_inputs": [],
             "dirty_stage": "",
+            "correction_stage": "",
+            "refresh_basis": False,
+            "decisions_changed": False,
             "candidate_inputs": [],
             "invalid_inputs": [],
             "dirty": False,
@@ -471,6 +475,9 @@ class CountingRoundsController(QObject):
             error_origin="",
             notice="",
             uncertain_save=False,
+            correction_stage="",
+            refresh_basis=False,
+            decisions_changed=False,
             edit_scope_revision=record.get(
                 "scope_revision", self._state["scope"].get("revision", 0)
             ),
@@ -548,6 +555,12 @@ class CountingRoundsController(QObject):
                 )
             )
         )
+        decisions_changed = selected.get("physical_decisions", []) != same.get(
+            "physical_decisions", []
+        )
+        if decisions_changed:
+            self._clear_report()
+            self._state["decisions_changed"] = True
         self._state.update(
             selected=deepcopy(same),
             newer_revision=(
@@ -555,7 +568,7 @@ class CountingRoundsController(QObject):
                 and (
                     record["revision"] != selected["revision"]
                     or self._state["latest_scope"].get("revision")
-                    != self._state["edit_scope_revision"]
+                    != self._state["acknowledged_scope_revision"]
                 )
             )
             or stale_catalog
@@ -575,9 +588,11 @@ class CountingRoundsController(QObject):
             self._error("invalid_response", "read")
             return
         scope_changed = bool(
-            self._state["edit_scope_revision"]
-            and data["scope"]["revision"] != self._state["edit_scope_revision"]
+            self._state["acknowledged_scope_revision"]
+            and data["scope"]["revision"] != self._state["acknowledged_scope_revision"]
         )
+        if foreground:
+            self._state["acknowledged_scope_revision"] = data["scope"]["revision"]
         keep_unsaved_basis = not foreground and not self._state["selected"] and scope_changed
         self._state.update(
             scope=deepcopy(self._state["scope"] if keep_unsaved_basis else data["scope"]),
@@ -723,6 +738,7 @@ class CountingRoundsController(QObject):
             scope={},
             latest_scope={},
             edit_scope_revision=0,
+            acknowledged_scope_revision=0,
             selected={},
             history=[],
             rounds=[],
@@ -818,6 +834,67 @@ class CountingRoundsController(QObject):
         self._send(self._path() + f"/{selected['id']}/revisions/{revision}", "GET", None, loaded)
         return True
 
+    @Slot(str, bool)
+    def startCorrection(self, stage: str, refresh_basis: bool = False) -> None:
+        selected = self._state["selected"]
+        if self._state["role"] != "counting_officer":
+            self._error("counting_officer_required")
+            return
+        if self._state["busy"]:
+            return
+        if self._state["dirty"] or self._state["uncertain_save"]:
+            self._error("unsaved_count_changes")
+            return
+        if stage not in ("f1", "f2") or not selected or self._state["historical"]:
+            self._error("count_round_read_only")
+            return
+        if self._state["newer_revision"]:
+            self._error("revision_conflict")
+            return
+        if self._state["context"].get("election", {}).get("status") != "active":
+            self._error("active_election_required")
+            return
+        if not self._state["latest_scope"].get("count_ready"):
+            self._error("count_scope_not_ready")
+            return
+        if not selected["source_current"] and not (stage == "f1" and refresh_basis):
+            self._error("count_round_basis_stale")
+            return
+        if stage == "f2" and not selected["f1_complete"]:
+            self._error("f1_incomplete")
+            return
+        editable = deepcopy(selected)
+        editable["status"] = "draft"
+        if stage == "f1" and refresh_basis:
+            saved = {row["candidate_id"]: row for row in selected["candidate_votes"]}
+            editable["candidate_votes"] = [
+                {
+                    **row,
+                    "candidate_id": row["id"],
+                    "quantity": saved.get(row["id"], {}).get("quantity"),
+                }
+                for row in self._state["candidates"]
+            ]
+        self._forms_for(editable)
+        self._state.update(
+            correction_stage=stage,
+            refresh_basis=bool(stage == "f1" and refresh_basis),
+            edit_scope_revision=self._state["latest_scope"]["revision"],
+            scope=deepcopy(self._state["latest_scope"]),
+            dirty=True,
+            dirty_stage=stage,
+        )
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelCorrection(self) -> None:
+        if self._state["busy"] or self._state["uncertain_save"]:
+            return
+        if self._state["correction_stage"]:
+            self._pending = None
+            self._forms_for(self._state["selected"])
+            self.stateChanged.emit()
+
     def _editable(self) -> bool:
         return bool(
             self._state["role"] == "counting_officer"
@@ -825,7 +902,11 @@ class CountingRoundsController(QObject):
             and not self._state["busy"]
             and not self._paper_binding_is_locked()
             and not self._state["historical"]
-            and self._state["selected"].get("status", "draft") == "draft"
+            and (
+                self._state["correction_stage"] == "f1"
+                or self._state["selected"].get("status", "draft") == "draft"
+            )
+            and self._state["correction_stage"] in ("", "f1")
             and self._state["dirty_stage"] in ("", "f1")
             and self._state["context"].get("election", {}).get("status") == "active"
         )
@@ -960,13 +1041,22 @@ class CountingRoundsController(QObject):
         if not self._state["scope"].get("count_ready"):
             self._error("count_scope_not_ready")
             return
-        if self._state["selected"] and not self._state["selected"]["source_current"]:
+        if (
+            self._state["selected"] and not self._state["selected"]["source_current"]
+            and not self._state["refresh_basis"]
+        ):
             self._error("count_round_basis_stale")
             return
         payload = self._payload()
         if payload is None:
             return
         selected = self._state["selected"]
+        correction = self._state["correction_stage"] == "f1"
+        if correction:
+            if not payload["amendment_reason"].strip():
+                self._error("count_amendment_reason_required")
+                return
+            payload["refresh_basis"] = self._state["refresh_basis"]
         if discard_f2:
             payload["discard_f2"] = True
         signature = json.dumps(
@@ -975,6 +1065,7 @@ class CountingRoundsController(QObject):
                 "scope": self._state["selected_scope_id"],
                 "round": selected.get("id"),
                 "data": payload,
+                **({"action": "amend-f1"} if correction else {}),
             },
             sort_keys=True,
         )
@@ -1013,8 +1104,11 @@ class CountingRoundsController(QObject):
             self._send(self._path() + f"/{row['id']}", "GET", None, reviewed)
 
         self._send(
-            self._path() + (f"/{selected['id']}" if selected else ""),
-            "PUT" if selected else "POST",
+            self._path() + (
+                f"/{selected['id']}/amend-f1" if correction
+                else f"/{selected['id']}" if selected else ""
+            ),
+            "POST" if correction or not selected else "PUT",
             payload,
             saved,
         )
@@ -1093,7 +1187,8 @@ class CountingRoundsController(QObject):
         return bool(
             self._state["role"] == "counting_officer"
             and selected
-            and selected["status"] == "draft"
+            and (selected["status"] == "draft" or self._state["correction_stage"] == "f2")
+            and self._state["correction_stage"] in ("", "f2")
             and selected["f1_complete"]
             and selected["source_current"]
             and not self._state["busy"]
@@ -1149,6 +1244,10 @@ class CountingRoundsController(QObject):
         if not self._f2_editable():
             return
         selected, forms = self._state["selected"], self._state["f2_forms"]
+        correction = self._state["correction_stage"] == "f2"
+        if correction and not forms["amendment_reason"].strip():
+            self._error("count_amendment_reason_required")
+            return
         prior = selected.get("f2") or {}
         try:
             event_at = parse_event_time(forms["event_at"], prior.get("event_at"))
@@ -1204,7 +1303,7 @@ class CountingRoundsController(QObject):
             "notes": forms["notes"],
             "amendment_reason": forms["amendment_reason"],
         }
-        path = self._path() + f"/{selected['id']}/f2"
+        path = self._path() + f"/{selected['id']}/" + ("amend-f2" if correction else "f2")
         signature = json.dumps([path, payload], sort_keys=True, ensure_ascii=False)
         retry = bool(
             self._state["uncertain_save"] and self._pending and self._pending[0] == signature
@@ -1232,9 +1331,11 @@ class CountingRoundsController(QObject):
 
             self._send(self._path() + f"/{row['id']}", "GET", None, reviewed)
 
-        self._send(path, "PUT", payload, saved)
+        self._send(path, "POST" if correction else "PUT", payload, saved)
 
-    def _workflow(self, action: str, password: str | None = None) -> None:
+    def _workflow(
+        self, action: str, password: str | None = None, *, extra: dict[str, Any] | None = None
+    ) -> None:
         role = "counting_officer" if action == "submit" else "supervisor"
         if self._state["role"] != role:
             self._error(role + "_required")
@@ -1258,6 +1359,8 @@ class CountingRoundsController(QObject):
             "expected_revision": selected["revision"],
             "scope_revision": self._state["edit_scope_revision"],
         }
+        if extra:
+            payload.update(extra)
         if action == "select":
             pointer = selected.get("selection")
             payload["expected_selection_revision"] = pointer["revision"] if pointer else 0
@@ -1350,11 +1453,32 @@ class CountingRoundsController(QObject):
                         "submit": "count_submitted",
                         "approve": "count_approved",
                         "select": "count_selected",
-                    }[action]
+                    }.get(action, "physical_difference_accepted")
 
             self._send(self._path() + f"/{row['id']}", "GET", None, reviewed)
 
         self._send(path, "POST", command, saved)
+
+    @Slot(str, str, str)
+    def acceptPhysicalDifference(self, source: str, reason: str, password: str) -> None:
+        if self._state["role"] != "supervisor":
+            self._error("supervisor_required")
+            return
+        if source not in ("stock", "turnout"):
+            self._error("physical_difference_unavailable")
+            return
+        if not reason.strip() or len(reason) > 2000:
+            self._error("physical_difference_reason_required")
+            return
+        selected = self._state["selected"]
+        revisions = [
+            row["revision"] for row in selected.get("physical_decisions", [])
+            if row["source"] == source
+        ]
+        self._workflow(
+            "physical-differences/" + source + "/accept", password,
+            extra={"reason": reason, "expected_decision_revision": max(revisions, default=0)},
+        )
 
     @Slot()
     def submitCount(self) -> None:
