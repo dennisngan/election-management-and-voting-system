@@ -539,11 +539,12 @@ def dump_mysql(
             f"--host={host}",
             f"--port={port}",
         ]
+        output_file = os.fdopen(descriptor, "wb")
+        descriptor = None
         with (
-            os.fdopen(descriptor, "wb") as output,
+            output_file as output,
             tempfile.TemporaryFile(mode="w+b", dir=parent) as stderr,
         ):
-            descriptor = None
             if not private_file_descriptor(output.fileno()) or not private_file_descriptor(
                 stderr.fileno()
             ):
