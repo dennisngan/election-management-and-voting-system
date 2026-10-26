@@ -13,11 +13,12 @@ from sqlalchemy.orm import Session
 from election.server.allocation_models import StockAllocation, StockAllocationRevision
 from election.server.counting_round_models import CountRound, CountRoundRevision
 from election.server.counting_scope_models import CountingScope
-from election.server.models import Account
+from election.server.models import Account, AuditEvent
 from election.server.outage_models import OutagePaperRecord, OutagePaperRevision
 from election.server.paper_reentry import RECEIPT_ADAPTER
 from election.server.polling import as_utc
 from election.server.request_outcomes import read_request_outcome
+from election.server.turnout_models import TurnoutRecord
 
 
 def _receipt_mismatch() -> HTTPException:
@@ -175,6 +176,76 @@ def _allocation_receipt_preview(
     return _receipt_preview(db, paper, outcome, allocation_revision.entered_at)
 
 
+def _turnout_save_receipt_preview(
+    db: Session,
+    actor: Account,
+    station_id: int,
+    paper: OutagePaperRecord,
+    revision: OutagePaperRevision,
+    original_request_id: UUID,
+) -> dict[str, Any]:
+    outcome = read_request_outcome(db, actor, station_id, original_request_id, "turnout")
+    if outcome.get("status") != "committed":
+        raise HTTPException(404, detail={"code": "request_not_found"})
+
+    record = outcome.get("record")
+    target = revision.data.get("target")
+    if (
+        not isinstance(record, dict)
+        or not isinstance(target, dict)
+        or set(target) != {"period_index"}
+        or type(target.get("period_index")) is not int
+        or target["period_index"] < 1
+        or record.get("status") != "draft"
+        or type(record.get("id")) is not int
+        or type(record.get("revision")) is not int
+        or type(record.get("station_id")) is not int
+        or type(record.get("period_index")) is not int
+        or type(record.get("actor_id")) is not int
+        or record.get("station_id") != station_id
+        or record.get("period_index") != target["period_index"]
+        or not isinstance(record.get("event_at"), str)
+    ):
+        raise _receipt_mismatch()
+
+    turnout_record = db.scalar(
+        select(TurnoutRecord).where(
+            TurnoutRecord.id == record["id"],
+            TurnoutRecord.station_id == station_id,
+            TurnoutRecord.period_index == target["period_index"],
+            TurnoutRecord.revision == record["revision"],
+            TurnoutRecord.actor_id == actor.id,
+        )
+    )
+    if (
+        turnout_record is None
+        or turnout_record.status != "draft"
+        or turnout_record.event_at is None
+        or turnout_record.entered_at is None
+        or turnout_record.actor_id != record["actor_id"]
+        or record["event_at"] != as_utc(turnout_record.event_at)
+        or revision.data.get("original_event_at") != as_utc(turnout_record.event_at)
+    ):
+        raise _receipt_mismatch()
+
+    save_audit = db.scalar(
+        select(AuditEvent)
+        .where(
+            AuditEvent.action == "turnout_save",
+            AuditEvent.actor_id == actor.id,
+            AuditEvent.details["station_id"].as_integer() == station_id,
+            AuditEvent.details["record"]["id"].as_integer() == turnout_record.id,
+            AuditEvent.details["record"]["revision"].as_integer() == turnout_record.revision,
+        )
+        .order_by(AuditEvent.id.desc())
+        .limit(1)
+    )
+    if save_audit is None:
+        raise _receipt_mismatch()
+
+    return _receipt_preview(db, paper, outcome, turnout_record.entered_at)
+
+
 def preview_existing_receipt(
     db: Session,
     actor: Account,
@@ -191,6 +262,10 @@ def preview_existing_receipt(
         )
     if paper.workflow == "allocation" and action in {"create", "amend"}:
         return _allocation_receipt_preview(
+            db, actor, station_id, paper, revision, original_request_id
+        )
+    if paper.workflow == "turnout" and action == "save":
+        return _turnout_save_receipt_preview(
             db, actor, station_id, paper, revision, original_request_id
         )
     raise HTTPException(409, detail={"code": "paper_receipt_workflow_unsupported"})
