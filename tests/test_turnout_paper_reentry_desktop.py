@@ -170,7 +170,13 @@ def test_material_turnout_save_submit_paper_receipts_and_unbound_legacy_save(
             assert control('turnoutSave').property('enabled') is True
             click('turnoutSave')
             wait(lambda: not turnout.property('state')['busy'])
-            assert turnout.property('state')['selected']['revision'] == 2
+            save_state = turnout.property('state')
+            assert save_state['selected'].get('revision') == 2, {{
+                'error': save_state['error'],
+                'notice': save_state['notice'],
+                'selected': save_state['selected'],
+                'busy': save_state['busy'],
+            }}
             assert turnout.property('state')['selected']['status'] == 'draft'
             assert turnout.property('state')['paper_record'] == {{}}
 
@@ -359,6 +365,11 @@ def test_uncertain_turnout_paper_write_stays_bound_until_public_outcome_is_commi
                 ),
             )
             wait_for(qt_app, lambda: editor.property("state")["paper_record"] == {})
+            wait_for(
+                qt_app,
+                lambda: not editor.property("state")["busy"]
+                and editor.property("state")["selected"].get("status") == "draft",
+            )
             assert editor.property("state")["selected"]["status"] == "draft"
             assert editor.property("state")["selected"]["supplied_hourly"] == 0
 
