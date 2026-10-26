@@ -3,6 +3,7 @@
 import csv
 from datetime import UTC, datetime
 from io import BytesIO, StringIO
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -34,6 +35,7 @@ def test_missing_outage_statement_returns_the_assigned_api_not_found_dto(
 def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliation(
     admin: TestClient,
     database_url: str,
+    tmp_path: Path,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         officer = setup["counter"]
@@ -265,6 +267,11 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
         pdf_response = officer.get(statement_path + ".pdf", params={"locale": "en"})
         assert pdf_response.status_code == 200, pdf_response.text
         assert pdf_response.headers["content-type"] == "application/pdf"
+        (tmp_path / "outage-report-en.pdf").write_bytes(pdf_response.content)
+        (tmp_path / "outage-report-en.csv").write_bytes(csv_response.content)
+        (tmp_path / "expected-references.txt").write_text(
+            "\n".join((outage_reference, paper_reference, pending_reference, submission_request_id))
+        )
         pdf = PdfReader(BytesIO(pdf_response.content))
         page_texts = [page.extract_text() or "" for page in pdf.pages]
         assert page_texts and all(page_texts)
