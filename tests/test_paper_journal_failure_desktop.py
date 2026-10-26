@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import uvicorn
@@ -30,6 +31,10 @@ from tests.test_outage_reports_desktop import (
     clear_private_active_pointer as clear_private_active_pointer,
 )
 from tests.test_outage_reports_desktop import database_url as database_url
+from tests.test_turnout_paper_reentry_desktop import _outage as turnout_outage
+from tests.test_turnout_paper_reentry_desktop import _paper as turnout_paper
+from tests.turnout_support import READY_PASSWORD as TURNOUT_READY_PASSWORD
+from tests.turnout_support import TurnoutClock, turnout_scope, turnout_staff
 
 
 @dataclass
@@ -105,11 +110,11 @@ def completed_write_server(
 @contextmanager
 def signed_in_client(
     endpoint: CompletedWriteServer, username: str, station_id: int,
-    qt_app: QCoreApplication,
+    qt_app: QCoreApplication, *, password: str = READY_PASSWORD,
 ) -> Iterator[DesktopController]:
     client = DesktopController(endpoint.url, str(TLS_DIRECTORY / "ca.pem"))
     try:
-        client.signIn(endpoint.url, username, READY_PASSWORD)
+        client.signIn(endpoint.url, username, password)
         wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
         workspace = client.property("workspace")
         wait_for_editor_idle(qt_app, workspace)
@@ -473,3 +478,127 @@ def test_allocation_journal_failure_before_dispatch_leaves_pending_paper_correct
             if private_command_directory.is_file():
                 private_command_directory.unlink()
                 private_command_directory.mkdir(mode=0o700)
+
+
+@pytest.fixture
+def turnout_paper_setup(
+    admin: TestClient, database_url: str, completed_write_server: CompletedWriteServer,
+) -> Iterator[dict]:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    clock = TurnoutClock()
+    completed_write_server.clock.value = clock.value
+    with turnout_staff(admin, database_url, clock, [station_id]) as (officer, account):
+        outage = turnout_outage(
+            officer, station_id, reference="Journal fault turnout " + uuid4().hex[:8],
+        )
+        paper = turnout_paper(
+            officer, station_id, outage["id"], reference="JOURNAL-TURNOUT-" + uuid4().hex[:8],
+            action="save", period_index=1, event_at="2026-11-15T09:30:00+08:00",
+        )
+        yield {
+            "officer": officer, "account": account, "station_id": station_id,
+            "write_path": scope["path"] + "/1", "paper": paper,
+            "outage_path": (
+                f"/api/workspace/stations/{station_id}/outages/{outage['id']}"
+            ),
+        }
+
+
+def open_turnout_paper(client: DesktopController, setup: dict, qt_app: QCoreApplication):
+    editor = client.property("turnout")
+    assert editor.open() is True
+    wait_for_editor_idle(qt_app, editor)
+    editor.refreshPaperRecords()
+    wait_for(qt_app, lambda: (
+        not editor.property("state")["paper_refreshing"]
+        and any(row["id"] == setup["paper"]["id"]
+                for row in editor.property("state")["paper_records"])
+    ))
+    assert editor.selectPaperRecord(setup["paper"]["id"]) is True
+    for name, value in {
+        "supplied_hourly": "0", "supplied_cumulative": "0",
+        "event_time": "2026-11-15 09:30", "source_context": "Signed turnout paper.",
+    }.items():
+        editor.setField(name, value)
+    return editor
+
+
+def test_committed_turnout_keeps_paper_locked_until_journal_outcome_can_be_checked(
+    turnout_paper_setup: dict,
+    qt_app: QCoreApplication,
+    completed_write_server: CompletedWriteServer,
+    private_command_directory: Path,
+) -> None:
+    setup = turnout_paper_setup
+    endpoint = completed_write_server
+    write_path = setup["write_path"]
+    paper_id = setup["paper"]["id"]
+    with signed_in_client(
+        endpoint, setup["account"]["username"], setup["station_id"], qt_app,
+        password=TURNOUT_READY_PASSWORD,
+    ) as client:
+        editor = open_turnout_paper(client, setup, qt_app)
+        endpoint.hold_path = write_path
+        editor.save()
+        wait_for(qt_app, endpoint.entered.is_set)
+        files = list(private_command_directory.glob("*.json"))
+        assert len(files) == 1
+        journal_path = files[0]
+        original = json.loads(journal_path.read_text())
+        assert original["status"] == "pending"
+        assert original["payload"]["paper_record_id"] == paper_id
+        with obstructed_journal_file(journal_path, endpoint) as restore_journal:
+            endpoint.release.set()
+            wait_for(qt_app, lambda: not editor.property("state")["busy"])
+            entered = setup["officer"].get(setup["outage_path"])
+            assert entered.status_code == 200, entered.text
+            linked = entered.json()["record"]["paper_records"][0]
+            assert linked["status"] == "entered"
+            assert linked["reentry"]["request_id"] == original["request_id"]
+            assert linked["reentry"]["record"]["supplied_hourly"] == 0
+            history_path = write_path + "/history"
+            committed = setup["officer"].get(history_path)
+            assert committed.status_code == 200, committed.text
+            assert len(committed.json()["items"]) == 1
+            assert endpoint.request_count("PUT", write_path) == 1
+
+            state = editor.property("state")
+            assert state["error"] == "recovery_journal_outcome_unavailable"
+            assert state["uncertain_save"] is True
+            assert state["paper_pending_request_id"] == original["request_id"]
+            assert state["paper_record"]["id"] == paper_id
+            assert editor.selectPaperRecord(0) is False
+            assert editor.selectPeriod(2, True) is False
+            workspace = client.property("workspace")
+            assert workspace.property("unresolvedRequest") is True
+            workspace.selectStation(0, True)
+            assert workspace.property("state")["error"] == "workspace_uncertain_request"
+            assert workspace.property("state")["selected"]["station"]["id"] == setup["station_id"]
+
+            restore_journal()
+            recovery = client.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            command = next(row for row in recovery.property("state")["commands"]
+                           if row["request_id"] == original["request_id"])
+            assert command["payload"] == original["payload"]
+            assert command["status"] == "pending"
+            recovery.checkOutcome(command["request_id"])
+            wait_for(qt_app, lambda: (
+                not recovery.property("state")["busy"]
+                and next(row for row in recovery.property("state")["commands"]
+                         if row["request_id"] == command["request_id"])["status"] == "committed"
+            ))
+            wait_for(qt_app, lambda: (
+                not editor.property("state")["busy"]
+                and not editor.property("state")["uncertain_save"]
+                and editor.property("state")["selected"].get("status") == "draft"
+            ))
+            assert editor.property("state")["paper_record"] == {}
+            assert editor.property("state")["paper_pending_request_id"] == ""
+            assert workspace.property("unresolvedRequest") is False
+            assert endpoint.request_count("PUT", write_path) == 1
+            after_check = setup["officer"].get(history_path)
+            assert after_check.status_code == 200, after_check.text
+            assert after_check.json() == committed.json()
