@@ -175,6 +175,9 @@ def test_material_turnout_save_submit_paper_receipts_and_unbound_legacy_save(
                 'error': save_state['error'],
                 'notice': save_state['notice'],
                 'selected': save_state['selected'],
+                'paper_record': save_state['paper_record'],
+                'selected_period': save_state['selected_period'],
+                'role': save_state['role'],
                 'busy': save_state['busy'],
             }}
             assert turnout.property('state')['selected']['status'] == 'draft'
@@ -320,6 +323,7 @@ def test_uncertain_turnout_paper_write_stays_bound_until_public_outcome_is_commi
         with turnout_editor(server, qt_app, account, station_id) as (client, editor):
             editor.refreshPaperRecords()
             wait_for_editor_idle(qt_app, editor)
+            wait_for(qt_app, lambda: not editor.property("state")["paper_refreshing"])
             assert any(
                 row["id"] == paper["id"]
                 for row in editor.property("state")["paper_records"]
