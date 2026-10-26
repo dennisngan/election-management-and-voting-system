@@ -187,6 +187,7 @@ class DesktopController(QObject):
                 or self._turnout.property("state").get("uncertain_save", False)
                 or self._turnout.property("state").get("paper_pending_request_id")
                 or self._outages.property("state").get("uncertain_save", False)
+                or self._constituency_results.property("state").get("uncertain_save", False)
             ),
         )
         self._accounting.stateChanged.connect(self._workspace.stateChanged.emit)
