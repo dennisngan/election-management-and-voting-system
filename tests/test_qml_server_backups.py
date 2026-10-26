@@ -189,3 +189,52 @@ def test_material_outcome_check_resolves_committed_backup_after_lost_tls_reply(
     new_jobs = [row for row in response.json()["backups"] if row["id"] not in before]
     assert len(new_jobs) == 1
     assert new_jobs[0]["status"] == "succeeded", new_jobs[0]
+
+
+def test_backup_metadata_inherits_readable_text_font_at_supported_size(
+    admin: TestClient,
+    https_server: HttpsServer,
+    configure_private_backup_runtime: Path,
+) -> None:
+    account = _credentials(admin)
+    run_workspace_qml(
+        {
+            "server": https_server.url,
+            "username": account["username"],
+            "password": account["password"],
+            "station_id": 0,
+            "locale": "en",
+        },
+        """
+        from PySide6.QtGui import QFontInfo
+        window.setWidth(1366)
+        window.setHeight(768)
+        frame()
+        click('serverBackupsNavigation')
+        page = controller.property('serverBackups')
+        wait(lambda: not page.property('state')['refreshing'])
+        prior = {row['id'] for row in page.property('state')['jobs']}
+        click('serverBackupCreate')
+        wait(lambda: any(row['id'] not in prior and row['status'] in ('succeeded', 'failed')
+            for row in page.property('state')['jobs']))
+        job = next(row for row in page.property('state')['jobs'] if row['id'] not in prior)
+        assert job['status'] == 'succeeded'
+        for locale in ('tc', 'sc', 'en'):
+            controller.setLocale(locale)
+            frame()
+            preferred_family = QFontInfo(window.property('font')).family()
+            for name, expected in (
+                    ('serverBackupLatestRequestId', job['request_id']),
+                    ('serverBackupLatestSize', str(job['size_bytes']))):
+                label = control(name)
+                assert label.property('text') == expected
+                resolved_family = QFontInfo(label.property('font')).family()
+                assert 'emoji' not in resolved_family.lower()
+                assert resolved_family == preferred_family
+                assert label.property('lineCount') == 1
+            fingerprint = control('serverBackupLatestSha256')
+            assert fingerprint.property('text') == job['sha256']
+            assert QFontInfo(fingerprint.property('font')).fixedPitch()
+        """,
+    )
+    assert https_server.request_count("POST", "/api/backups") == 1
