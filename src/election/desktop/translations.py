@@ -13,6 +13,7 @@ from election.desktop.fallback_translations import FALLBACK_TRANSLATIONS
 from election.desktop.fallback_turnout_translations import FALLBACK_TURNOUT_TRANSLATIONS
 from election.desktop.invalid_reason_translations import INVALID_REASON_TRANSLATIONS
 from election.desktop.outage_translations import OUTAGE_TRANSLATIONS
+from election.desktop.paper_reentry_translations import PAPER_REENTRY_TRANSLATIONS
 from election.desktop.recovery_translations import RECOVERY_TRANSLATIONS
 from election.desktop.special_paper_translations import SPECIAL_PAPER_TRANSLATIONS
 from election.desktop.stock_snapshot_translations import STOCK_SNAPSHOT_TRANSLATIONS
@@ -1987,4 +1988,7 @@ for language, labels in RECOVERY_TRANSLATIONS.items():
     TRANSLATIONS[language].update(labels)
 
 for language, labels in OUTAGE_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)
+
+for language, labels in PAPER_REENTRY_TRANSLATIONS.items():
     TRANSLATIONS[language].update(labels)
