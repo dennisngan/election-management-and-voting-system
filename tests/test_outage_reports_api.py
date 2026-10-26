@@ -294,3 +294,122 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
         )
         assert forbidden.status_code == 403, forbidden.text
         assert forbidden.json()["detail"]["code"] == "station_access_denied"
+
+
+def _link_original_count_receipt(setup: dict) -> dict:
+    officer = setup["counter"]
+    rounds_path = setup["rounds_path"]
+    options = officer.get(rounds_path).json()
+    initial = officer.post(rounds_path, json=complete_f1_command(options))
+    assert initial.status_code == 201, initial.text
+    round_path = rounds_path + f"/{initial.json()['id']}"
+    f2 = officer.put(round_path + "/f2", json=complete_f2_command(options))
+    assert f2.status_code == 200, f2.text
+    setup["clock"].value = datetime(2026, 11, 15, 16, 0, 0, 123456, tzinfo=UTC)
+    original_request_id = str(uuid4())
+    submitted = officer.post(
+        round_path + "/submit",
+        json={
+            "request_id": original_request_id,
+            "expected_revision": f2.json()["revision"],
+            "scope_revision": options["scope"]["revision"],
+        },
+    )
+    assert submitted.status_code == 200, submitted.text
+    original_record = submitted.json()
+    station_id = setup["stations"]["N1"]["id"]
+    outcome_path = f"/api/workspace/stations/{station_id}/request-outcomes/{original_request_id}"
+    original_outcome = officer.get(outcome_path, params={"workflow": "count"})
+    assert original_outcome.status_code == 200, original_outcome.text
+
+    setup["clock"].value = datetime(2026, 11, 15, 16, 30, 0, 234567, tzinfo=UTC)
+    outage_path = f"/api/workspace/stations/{station_id}/outages"
+    outage = officer.post(
+        outage_path,
+        json={
+            "request_id": str(uuid4()),
+            "reference": "LATER-LINK-" + uuid4().hex[:10],
+            "kind": "network",
+            "started_at": "2026-11-15T23:00:00+08:00",
+            "ended_at": "2026-11-15T23:30:00+08:00",
+            "notes": "The count was committed before its paper reference was registered.",
+        },
+    )
+    assert outage.status_code == 201, outage.text
+    record_path = outage_path + f"/{outage.json()['id']}"
+    paper = officer.post(
+        record_path + "/paper-records",
+        json={
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "paper_reference": "LATER-COUNT-" + uuid4().hex[:10],
+            "workflow": "count",
+            "action": "submit",
+            "original_event_at": "2026-11-15T23:25:33.123456+08:00",
+            "target": {"scope_id": setup["scope"]["id"], "round_id": original_record["id"]},
+            "notes": "Preserve the signed original return beside its existing receipt.",
+        },
+    )
+    assert paper.status_code == 201, paper.text
+    paper_path = record_path + f"/paper-records/{paper.json()['id']}"
+    checked = officer.get(paper_path + "/receipt", params={"request_id": original_request_id})
+    assert checked.status_code == 200, checked.text
+    link_request_id = str(uuid4())
+    reason = "Compared the signed original return with the committed count."
+    setup["clock"].value = datetime(2026, 11, 15, 16, 45, 0, 345678, tzinfo=UTC)
+    linked = officer.post(
+        paper_path + "/link-receipt",
+        json={
+            "request_id": link_request_id,
+            "expected_outage_revision": 1,
+            "expected_paper_revision": 1,
+            "original_request_id": original_request_id,
+            "expected_receipt_digest": checked.json()["receipt_digest"],
+            "reason": reason,
+        },
+    )
+    assert linked.status_code == 200, linked.text
+    reentry = linked.json()["reentry"]
+    assert reentry["request_id"] == original_request_id
+    assert reentry["record"] == original_record
+    assert reentry["link"] == {
+        "request_id": link_request_id,
+        "reason": reason,
+        "actor_id": original_record["actor_id"],
+        "linked_at": "2026-11-15T16:45:00.345678Z",
+        "receipt_digest": checked.json()["receipt_digest"],
+    }
+    outcome_after = officer.get(outcome_path, params={"workflow": "count"})
+    assert outcome_after.status_code == 200, outcome_after.text
+    assert outcome_after.json() == original_outcome.json()
+    return {
+        "record_path": record_path,
+        "original_request_id": original_request_id,
+        "original_record": original_record,
+        "link": reentry["link"],
+    }
+
+
+def test_outage_preview_separates_later_link_metadata_from_the_original_receipt(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        linked = _link_original_count_receipt(setup)
+        statement = setup["counter"].get(
+            linked["record_path"] + "/statement", params={"locale": "en"},
+        )
+        assert statement.status_code == 200, statement.text
+        rows = next(
+            section["rows"] for section in statement.json()["sections"]
+            if section["title"] == "Immutable receipt details"
+        )
+        assert ["Re-entry request ID", linked["original_request_id"]] in rows
+        assert ["Original business record status", "Submitted"] in rows
+        assert ["Later receipt link request ID", linked["link"]["request_id"]] in rows
+        assert ["Later receipt link reason", linked["link"]["reason"]] in rows
+        assert ["Later receipt link account ID", str(linked["link"]["actor_id"])] in rows
+        assert [
+            "Later receipt link time (Hong Kong time)", "2026-11-16 00:45:00.345678 HKT",
+        ] in rows
+        assert ["Linked original receipt fingerprint", linked["link"]["receipt_digest"]] in rows
