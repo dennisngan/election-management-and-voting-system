@@ -105,6 +105,9 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
             return not any(editor.property('state')[key] for key in ('busy', 'refreshing'))
         wait(idle)
         frame()
+        choose('allocationCounter', 0)
+        click('allocationPaperRefresh')
+        wait(idle)
         state = editor.property('state')
         assert [row['id'] for row in state.get('paper_records', [])] == [PAPER_ID]
         assert control('allocationPaperRecord').property('visible')
