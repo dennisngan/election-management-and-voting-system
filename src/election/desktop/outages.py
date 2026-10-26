@@ -900,9 +900,17 @@ class OutagesController(QObject):
         if self._state["role"] != "supervisor":
             self._error("supervisor_required")
             return
-        if not selected or self._state["dirty"] or self._state["newer_revision"]:
+        retrying_approval = bool(
+            self._state["uncertain_save"] and self._pending
+            and self._pending["kind"] == "approve"
+        )
+        if (
+            not selected or self._state["newer_revision"]
+            or self._state["dirty"] and not retrying_approval
+        ):
             self._error("outage_review_required")
             return
+        # The pending-command signature still requires the original basis and reason.
         papers = selected["paper_records"]
         if not papers or any(row["status"] != "entered" for row in papers):
             self._error("outage_papers_pending")
