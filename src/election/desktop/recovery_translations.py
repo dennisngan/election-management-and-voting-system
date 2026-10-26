@@ -170,7 +170,9 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "recovery_cancel": "Cancel",
         "recovery_requires_check": "Check the server outcome before retrying.",
         "recovery_not_found": "No server receipt. You may retry the original request.",
-        "recovery_request_not_found": "No server receipt exists; you may retry the original request.",
+        "recovery_request_not_found": (
+            "No server receipt exists; you may retry the original request."
+        ),
         "recovery_receipt": "Server receipt",
         "recovery_receipt_revision": "Original revision",
         "recovery_receipt_status": "Record status",
