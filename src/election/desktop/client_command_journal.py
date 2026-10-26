@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import re
-import stat
 import tempfile
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -12,6 +11,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
+
+from election.desktop.private_client_paths import (
+    private_directory,
+    private_file,
+    private_file_descriptor,
+)
 
 UNRESOLVED = {"pending", "uncertain"}
 SENSITIVE_KEYS = {
@@ -82,9 +87,7 @@ class CommandJournal:
             if not create:
                 return False
             self.directory.mkdir(mode=0o700, parents=True)
-        if self.directory.is_symlink() or not self.directory.is_dir():
-            raise JournalError("recovery_journal_unavailable")
-        if stat.S_IMODE(self.directory.stat().st_mode) != 0o700:
+        if not private_directory(self.directory):
             raise JournalError("recovery_journal_unavailable")
         return True
 
@@ -98,6 +101,8 @@ class CommandJournal:
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as output:
                 os.fchmod(output.fileno(), 0o600)
+                if not private_file_descriptor(output.fileno()):
+                    raise JournalError("recovery_journal_unavailable")
                 json.dump(_safe(row), output, ensure_ascii=False, sort_keys=True)
                 output.write("\n")
                 output.flush()
@@ -112,7 +117,7 @@ class CommandJournal:
         origin = _origin(server_url)
         rows = []
         for path in self.directory.glob("*.json"):
-            if path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o600:
+            if not private_file(path):
                 raise JournalError("recovery_journal_unavailable")
             row = json.loads(path.read_text())
             if (row.get("server_url"), row.get("actor_id"), row.get("station_id")) != (
@@ -198,7 +203,7 @@ class CommandJournal:
         error: str = "",
     ) -> None:
         path = self._path(server_url, actor_id, request_id)
-        if path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o600:
+        if not private_file(path):
             raise JournalError("recovery_journal_unavailable")
         row = json.loads(path.read_text())
         if row["status"] == "committed":
