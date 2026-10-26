@@ -641,7 +641,7 @@ def test_turnout_uncertain_save_retry_keeps_one_revision_and_preserves_dirty_ref
     server.clock.value = clock.value
     with (
         turnout_staff(admin, database_url, clock, [station_id]) as (api, account),
-        turnout_editor(server, qt_app, account, station_id) as (_, editor),
+        turnout_editor(server, qt_app, account, station_id) as (client, editor),
     ):
         fill_turnout(editor, source="只能新增一次的紙本資料")
         form = editor.property("state")["forms"]
@@ -660,13 +660,61 @@ def test_turnout_uncertain_save_retry_keeps_one_revision_and_preserves_dirty_ref
         assert uncertain["selected"] == {}
         persisted = api.get(path + "/1/history").json()["items"]
         assert len(persisted) == 1
-        editor.save()
+        recovery = client.property("recovery")
+        recovery.reload()
+        wait_for(qt_app, lambda: setup_idle(recovery))
+        command = next(
+            row for row in recovery.property("state")["commands"]
+            if row["workflow"] == "turnout" and row["path"] == path + "/1"
+        )
+        request_id = command["request_id"]
+        original_payload = command["payload"].copy()
+        assert command["payload"]["source_context"] == form["source_context"]
+        assert command["payload"]["supplied_hourly"] == 10
+        assert command["payload"]["supplied_cumulative"] is None
+        if lost_stage == "mutation":
+            assert command["status"] == "uncertain"
+            editor.save()
+            wait_for(qt_app, lambda: setup_idle(editor))
+            blocked = editor.property("state")
+            assert blocked["error"] == "recovery_outcome_check_required"
+            assert blocked["dirty"] is True
+            assert blocked["forms"] == form
+            recovery.reload()
+            wait_for(qt_app, lambda: setup_idle(recovery))
+            blocked_command = next(
+                row for row in recovery.property("state")["commands"]
+                if row["request_id"] == request_id
+            )
+            assert blocked_command["status"] == "uncertain"
+            assert blocked_command["payload"] == original_payload
+            assert server.request_count("PUT", path + "/1") == 1
+            recovery.checkOutcome(request_id)
+            wait_for(
+                qt_app,
+                lambda: setup_idle(recovery)
+                and next(
+                    row for row in recovery.property("state")["commands"]
+                    if row["request_id"] == request_id
+                )["status"] == "committed",
+            )
+        else:
+            assert command["status"] == "committed"
+        command = next(
+            row for row in recovery.property("state")["commands"]
+            if row["request_id"] == request_id
+        )
+        assert command["status"] == "committed"
+        assert command["payload"] == original_payload
+        assert command["receipt"]["record"] == persisted[0]
+        assert server.request_count("PUT", path + "/1") == 1
+        assert editor.reload(True)
         wait_for(qt_app, lambda: setup_idle(editor))
-        retried = editor.property("state")
-        assert retried["error"] == ""
-        assert retried["notice"] == "turnout_saved"
-        assert retried["selected"]["revision"] == 1
-        assert retried["selected"]["id"] == persisted[0]["id"]
+        reloaded = editor.property("state")
+        assert reloaded["error"] == ""
+        assert reloaded["dirty"] is False
+        assert reloaded["selected"]["revision"] == 1
+        assert reloaded["selected"]["id"] == persisted[0]["id"]
         assert api.get(path + "/1/history").json()["items"] == persisted
         editor.setField("source_context", "網絡失敗時保留下一次草稿")
         dirty = editor.property("state")["forms"]
