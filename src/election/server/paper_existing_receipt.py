@@ -113,6 +113,10 @@ def _allocation_receipt_preview(
     revision: OutagePaperRevision,
     original_request_id: UUID,
 ) -> dict[str, Any]:
+    action = revision.data.get("action")
+    if action not in {"create", "amend"}:
+        raise HTTPException(409, detail={"code": "paper_receipt_workflow_unsupported"})
+
     outcome = read_request_outcome(
         db, actor, station_id, original_request_id, "allocation"
     )
@@ -123,12 +127,17 @@ def _allocation_receipt_preview(
     target = revision.data.get("target")
     counter = record.get("counter") if isinstance(record, dict) else None
     record_event_at = record.get("event_at") if isinstance(record, dict) else None
+    target_keys = {"counter_id"} if action == "create" else {"counter_id", "allocation_id"}
     if (
         not isinstance(record, dict)
         or not isinstance(target, dict)
-        or set(target) != {"counter_id"}
+        or set(target) != target_keys
         or type(target.get("counter_id")) is not int
         or target["counter_id"] < 1
+        or (
+            action == "amend"
+            and (type(target.get("allocation_id")) is not int or target["allocation_id"] < 1)
+        )
         or record.get("status") != "recorded"
         or type(record.get("id")) is not int
         or type(record.get("revision")) is not int
@@ -137,6 +146,7 @@ def _allocation_receipt_preview(
         or not isinstance(counter, dict)
         or type(counter.get("id")) is not int
         or counter.get("id") != target["counter_id"]
+        or (action == "amend" and target.get("allocation_id") != record.get("id"))
         or not isinstance(record_event_at, datetime)
     ):
         raise _receipt_mismatch()
@@ -147,7 +157,6 @@ def _allocation_receipt_preview(
         .where(
             StockAllocationRevision.request_id == str(original_request_id),
             StockAllocationRevision.actor_id == actor.id,
-            StockAllocationRevision.revision == 1,
             StockAllocationRevision.allocation_id == record["id"],
             StockAllocationRevision.counter_id == target["counter_id"],
             StockAllocation.station_id == station_id,
@@ -155,6 +164,8 @@ def _allocation_receipt_preview(
     )
     if (
         allocation_revision is None
+        or (action == "create" and allocation_revision.revision != 1)
+        or (action == "amend" and allocation_revision.revision < 2)
         or allocation_revision.revision != record["revision"]
         or as_utc(record_event_at) != as_utc(allocation_revision.event_at)
         or revision.data.get("original_event_at") != as_utc(allocation_revision.event_at)
@@ -178,7 +189,7 @@ def preview_existing_receipt(
         return _count_receipt_preview(
             db, actor, station_id, paper, revision, original_request_id
         )
-    if paper.workflow == "allocation" and action == "create":
+    if paper.workflow == "allocation" and action in {"create", "amend"}:
         return _allocation_receipt_preview(
             db, actor, station_id, paper, revision, original_request_id
         )
