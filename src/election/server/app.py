@@ -25,6 +25,9 @@ from election.server.complaint_reports import complaint_reports_router
 from election.server.complaints import complaints_router
 from election.server.config import Settings
 from election.server.configuration import configuration_router
+from election.server.constituency_reports import constituency_reports_router
+from election.server.constituency_results import constituency_results_router
+from election.server.constituency_ties import constituency_ties_router
 from election.server.count_reports import count_reports_router
 from election.server.counting_discrepancies import counting_discrepancies_router
 from election.server.counting_outcomes import counting_outcomes_router
@@ -145,6 +148,9 @@ def create_app(
         return account
 
     app.include_router(configuration_router(database, administrator, timestamp))
+    app.include_router(constituency_results_router(database, ready_account, timestamp))
+    app.include_router(constituency_reports_router(database, ready_account, timestamp))
+    app.include_router(constituency_ties_router(database, ready_account, timestamp))
     app.include_router(
         complaint_categories_router(database, administrator, ready_account, timestamp)
     )
