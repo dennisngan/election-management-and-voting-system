@@ -568,3 +568,84 @@ def test_existing_turnout_submit_receipt_remains_linkable_after_supervisor_appro
         history_after = officer.get(path + "/1/history")
         assert history_after.status_code == 200, history_after.text
         assert history_after.json() == history_before.json()
+
+
+def test_turnout_submit_receipt_belongs_to_the_submitter_rather_than_the_draft_author(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    path = scope["path"]
+    clock = TurnoutClock()
+    with (
+        turnout_staff(admin, database_url, clock, [station_id]) as (author, author_account),
+        turnout_staff(admin, database_url, clock, [station_id]) as (submitter, submitter_account),
+    ):
+        saved = author.put(
+            path + "/1",
+            json=turnout_draft(
+                supplied_hourly=7,
+                supplied_cumulative=7,
+                event_at="2026-11-15T09:30:00+08:00",
+                source_context="One assigned officer prepares the report for another to submit.",
+            ),
+        )
+        assert saved.status_code == 200, saved.text
+        clock.value += timedelta(minutes=5)
+        submit_command = turnout_command(saved.json()["revision"])
+        submitted = submitter.post(path + "/1/submit", json=submit_command)
+        assert submitted.status_code == 200, submitted.text
+        original_record = submitted.json()
+        assert original_record["status"] == "submitted"
+        assert original_record["actor_id"] == author_account["id"]
+        assert original_record["submitted_by"] == submitter_account["id"]
+        assert original_record["actor_id"] != original_record["submitted_by"]
+        outcome_path = (
+            f"/api/workspace/stations/{station_id}/request-outcomes/"
+            + submit_command["request_id"]
+        )
+        original_outcome = submitter.get(outcome_path, params={"workflow": "turnout"})
+        assert original_outcome.status_code == 200, original_outcome.text
+        assert original_outcome.json()["record"] == original_record
+        author_outcome = author.get(outcome_path, params={"workflow": "turnout"})
+        assert author_outcome.status_code == 200, author_outcome.text
+        assert author_outcome.json() == {
+            "request_id": submit_command["request_id"],
+            "workflow": "turnout",
+            "status": "not_found",
+        }
+        paper_path, paper_record = _register_later_turnout_paper(
+            submitter, station_id, clock, "submit", "2026-11-15T09:45:00+08:00"
+        )
+        author_preview = author.get(
+            paper_path + "/receipt", params={"request_id": submit_command["request_id"]}
+        )
+        assert author_preview.status_code == 404, author_preview.text
+        assert author_preview.json()["detail"]["code"] == "request_not_found"
+        preview = submitter.get(
+            paper_path + "/receipt", params={"request_id": submit_command["request_id"]}
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["record"] == original_record
+        linked = submitter.post(
+            paper_path + "/link-receipt",
+            json={
+                "request_id": str(uuid4()),
+                "expected_outage_revision": 1,
+                "expected_paper_revision": paper_record["revision"],
+                "original_request_id": submit_command["request_id"],
+                "expected_receipt_digest": preview.json()["receipt_digest"],
+                "reason": "The submitting officer links their own original submission receipt.",
+            },
+        )
+        assert linked.status_code == 200, linked.text
+        assert linked.json()["status"] == "entered"
+        assert linked.json()["reentry"]["record"] == original_record
+        assert linked.json()["reentry"]["link"]["actor_id"] == submitter_account["id"]
+        after_outcome = submitter.get(outcome_path, params={"workflow": "turnout"})
+        assert after_outcome.status_code == 200, after_outcome.text
+        assert after_outcome.json() == original_outcome.json()
+        current = submitter.get(path + "/1")
+        assert current.status_code == 200, current.text
+        assert current.json() == original_record
