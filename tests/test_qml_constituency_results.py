@@ -72,6 +72,18 @@ def test_supervisor_result_page_exposes_complete_zero_tie_and_secure_resolution(
                 row['candidate_id'] for row in record['candidate_totals']
             ]
             assert state['selected_candidate_id'] == 0
+            page = control('constituencyResultsPage')
+            for locale in ('en', 'tc', 'sc'):
+                controller.setLocale(locale)
+                expected_captions = {
+                    controller.texts['selected_election'],
+                    controller.texts['constituency_name'],
+                }
+                def result_captions():
+                    return {item.property('text') for item in page.findChildren(QObject)
+                            if isinstance(item.property('text'), str)}
+                wait(lambda: expected_captions <= result_captions())
+            controller.setLocale('en')
             received_box = control(
                 'constituencyResultBox_' + str(setup['transferred_box_id'])
             )
