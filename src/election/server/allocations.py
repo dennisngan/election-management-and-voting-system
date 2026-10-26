@@ -300,7 +300,9 @@ def allocation_router(
                 .with_for_update()
             )
             if saved is not None:
-                if saved.payload_digest != digest:
+                if saved.payload_digest != digest or (
+                    paper is not None and saved.actor_id != actor.id
+                ):
                     raise HTTPException(409, detail={"code": "request_conflict"})
                 response.status_code = 200
                 result = allocation_view(saved, scope)
