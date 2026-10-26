@@ -1,6 +1,6 @@
 """Attach paper provenance inside an existing validated operational transaction."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -61,7 +61,8 @@ def guard_paper_entry(
     if event_at is not None:
         from election.server.polling import as_utc
 
-        if revision.data.get("original_event_at") != as_utc(event_at):
+        normalized = event_at.astimezone(UTC) if event_at.tzinfo else event_at.replace(tzinfo=UTC)
+        if revision.data.get("original_event_at") != as_utc(normalized):
             raise HTTPException(409, detail={"code": "paper_record_time_conflict"})
     prior = db.get(PaperReentry, paper.id, with_for_update=True)
     if prior is not None and (prior.request_id != str(request_id) or prior.actor_id != actor.id):
