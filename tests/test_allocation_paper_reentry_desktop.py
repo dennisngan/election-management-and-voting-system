@@ -154,7 +154,6 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
     setup = allocation_paper_setup
     paper_id = setup["paper"]["id"]
     wrong_index = _counter_index_script("editor", setup["second_counter"]["id"])
-    correct_index = _counter_index_script("editor", setup["counter"]["id"])
     scenario = """
         click('allocationNavigation')
         editor = controller.property('allocations')
@@ -169,7 +168,7 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
         assert editor.property('state')['paper_records'] == []
         assert editor.selectPaperRecord(PAPER_ID) is False
         assert editor.property('state')['paper_record'] == {}
-        choose('allocationCounter', CORRECT_INDEX)
+        editor.setField('counter_id', 'CORRECT_ID')
         wait(idle)
         click('allocationPaperRefresh')
         wait(idle)
@@ -183,15 +182,14 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
         assert state['paper_record']['id'] == PAPER_ID
         assert state['paper_record']['status'] == 'pending'
         assert control('allocationEventAt').property('text') == '2026-11-15 08:15'
-        choose('allocationCounter', WRONG_INDEX)
+        editor.setField('counter_id', 'WRONG_ID')
         state = editor.property('state')
         assert state['paper_record'] == {}
-        choose('allocationCounter', CORRECT_INDEX)
+        editor.setField('counter_id', 'CORRECT_ID')
         wait(idle)
         click('allocationPaperRefresh')
         wait(idle)
         choose('allocationPaperRecord', 1)
-        choose('allocationCounter', CORRECT_INDEX)
         enter('allocationSeries', 'SERIES_VALUE')
         enter('allocationSerialFrom', '000001')
         enter('allocationSerialTo', '000002')
@@ -201,7 +199,9 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
         assert state['error'] == ''
         assert state['selected']['revision'] == 1
     """.replace("PAPER_ID", str(paper_id))
-    scenario = scenario.replace("WRONG_INDEX", wrong_index).replace("CORRECT_INDEX", correct_index)
+    scenario = scenario.replace("WRONG_INDEX", wrong_index)
+    scenario = scenario.replace("CORRECT_ID", str(setup["counter"]["id"]))
+    scenario = scenario.replace("WRONG_ID", str(setup["second_counter"]["id"]))
     scenario = scenario.replace("SERIES_VALUE", setup["series"])
     run_workspace_qml(
         {
