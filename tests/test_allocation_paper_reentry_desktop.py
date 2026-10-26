@@ -30,7 +30,8 @@ def allocation_base_setup(
     database_url: str,
     https_server: HttpsServer,
 ) -> Iterator[dict]:
-    station = box_stations(admin)["N1"]
+    stations = box_stations(admin, activate=False)
+    station = stations["N1"]
     station_id = station["id"]
     counter_path = (
         f"/api/elections/{station['election_id']}/constituencies/"
@@ -45,6 +46,14 @@ def allocation_base_setup(
         },
     )
     assert second_counter.status_code == 201, second_counter.text
+    activated = admin.post(
+        f"/api/elections/{stations['election']['id']}/activate",
+        json={
+            "election_revision": stations["election"]["revision"],
+            "schedule_revision": 1,
+        },
+    )
+    assert activated.status_code == 200, activated.text
     clock = BoxClock()
     https_server.clock.value = clock.value
     with box_staff(admin, database_url, clock, "polling_officer", [station_id]) as (
