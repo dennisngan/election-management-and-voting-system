@@ -70,6 +70,13 @@ def test_statement_endpoint_reads_a_complete_public_result(
             localized = setup["clients"]["supervisor"].get(path, params={"locale": locale})
             assert localized.status_code == 200
             assert localized.json()["title"] == title
+            localized_labels = localized.json()["labels"]
+            assert localized_labels["candidate_id"] != localized_labels["ballot_number"]
+            totals_table = next(table for table in localized.json()["tables"]
+                                if table["title"] == localized_labels["candidate_totals"])
+            assert totals_table["rows"][0][:2] == [
+                localized_labels["candidate_id"], localized_labels["ballot_number"]
+            ]
 
 
 def test_partial_result_statement_keeps_zero_distinct_from_missing(
