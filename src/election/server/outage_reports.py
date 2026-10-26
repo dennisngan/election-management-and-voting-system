@@ -201,10 +201,9 @@ def _receipt_rows(
     elif paper["workflow"] == "count":
         for key in ("scope_id", "round_number", "round_id", "event_at", "completed_at"):
             if key in record:
-                label_key = "round_id" if key in ("round_number", "round_id") else key
                 rows.append(
                     [
-                        labels.get(label_key, labels["event_at"]),
+                        labels.get(key, labels["event_at"]),
                         _time(record[key], labels)
                         if key.endswith("_at")
                         else _display(record[key], labels),
