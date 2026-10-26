@@ -11,7 +11,13 @@ from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
 from tests.test_turnout_desktop import turnout_boundary_server as turnout_boundary_server
 from tests.test_turnout_desktop import turnout_editor as turnout_editor
-from tests.turnout_support import READY_PASSWORD, TurnoutClock, turnout_scope, turnout_staff
+from tests.turnout_support import (
+    READY_PASSWORD,
+    TurnoutClock,
+    turnout_draft,
+    turnout_scope,
+    turnout_staff,
+)
 
 
 @pytest.fixture(scope="session")
@@ -30,6 +36,7 @@ def _outage(
     station_id: int,
     *,
     reference: str,
+    ended_at: str = "2026-11-15T09:00:00+08:00",
 ) -> dict:
     response = officer.post(
         f"/api/workspace/stations/{station_id}/outages",
@@ -38,7 +45,7 @@ def _outage(
             "reference": reference,
             "kind": "network",
             "started_at": "2026-11-15T08:00:00+08:00",
-            "ended_at": "2026-11-15T09:00:00+08:00",
+            "ended_at": ended_at,
             "notes": "Turnout reporting was recorded on the signed paper form.",
         },
     )
@@ -296,6 +303,132 @@ def test_assigned_counting_officer_cannot_write_turnout_paper_reentry(
                 f"/api/workspace/stations/{station_id}/outages/{outage['id']}"
             ).json()["record"]["paper_records"]
             assert next(row for row in record if row["id"] == paper["id"])["status"] == "pending"
+
+
+def test_submit_paper_keeps_saved_observation_time_when_paper_time_differs(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    path = scope["path"]
+    clock = TurnoutClock()
+    https_server.clock.value = clock.value
+    with turnout_staff(admin, database_url, clock, [station_id]) as (officer, account):
+        outage = _outage(
+            officer,
+            station_id,
+            reference="N1 submit paper time " + uuid4().hex[:8],
+            ended_at="2026-11-15T10:00:00+08:00",
+        )
+        paper = _paper(
+            officer,
+            station_id,
+            outage["id"],
+            reference="N1-TURNOUT-SUBMIT-TIME-" + uuid4().hex[:8],
+            action="submit",
+            period_index=1,
+            event_at="2026-11-15T09:45:00+08:00",
+        )
+        draft = officer.put(
+            f"{path}/1",
+            json=turnout_draft(
+                supplied_hourly=0,
+                supplied_cumulative=0,
+                event_at="2026-11-15T09:30:00+08:00",
+                source_context="Saved observation time differs from paper completion.",
+            ),
+        )
+        assert draft.status_code == 200, draft.text
+        monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "client-state"))
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": "en",
+            },
+            f"""
+            click('turnoutNavigation')
+            turnout = controller.property('turnout')
+            wait(lambda: not turnout.property('state')['busy'])
+            click('turnoutPaperRefresh')
+            wait(lambda: len(turnout.property('state')['paper_records']) == 1)
+            choose('turnoutPaperPicker', 1)
+            wait(lambda: turnout.property('state')['paper_record'].get('id') == {paper['id']})
+            assert turnout.property('state')['forms']['event_time'] == '2026-11-15 09:30'
+            assert control('turnoutSubmit').property('enabled') is True
+            click('turnoutSubmit')
+            wait(lambda: not turnout.property('state')['busy'])
+            state = turnout.property('state')
+            assert state['error'] == '', state['error']
+            assert state['selected'].get('status') == 'submitted', state['selected']
+            assert turnout.property('state')['selected']['event_at'] == '2026-11-15T01:30:00Z'
+            assert turnout.property('state')['paper_record'] == {{}}
+            """,
+        )
+
+        submitted = officer.get(f"{path}/1")
+        assert submitted.status_code == 200, submitted.text
+        assert submitted.json()["event_at"] == "2026-11-15T01:30:00Z"
+        record = officer.get(f"/api/workspace/stations/{station_id}/outages/{outage['id']}")
+        assert record.status_code == 200, record.text
+        linked = record.json()["record"]["paper_records"][0]
+        assert linked["id"] == paper["id"]
+        assert linked["status"] == "entered"
+        assert linked["original_event_at"] == "2026-11-15T01:45:00Z"
+        assert linked["reentry"]["record"]["event_at"] == "2026-11-15T01:30:00Z"
+
+
+def test_period_change_invalidates_inflight_turnout_paper_list_read(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    clock = TurnoutClock()
+    https_server.clock.value = clock.value
+    with turnout_staff(admin, database_url, clock, [station_id]) as (officer, account):
+        outage = _outage(officer, station_id, reference="N1 period switch " + uuid4().hex[:8])
+        period_one = _paper(
+            officer,
+            station_id,
+            outage["id"],
+            reference="N1-TURNOUT-PERIOD-1-" + uuid4().hex[:8],
+            action="save",
+            period_index=1,
+            event_at="2026-11-15T09:00:00+08:00",
+        )
+        period_two = _paper(
+            officer,
+            station_id,
+            outage["id"],
+            reference="N1-TURNOUT-PERIOD-2-" + uuid4().hex[:8],
+            action="save",
+            period_index=2,
+            event_at="2026-11-15T10:00:00+08:00",
+        )
+        with turnout_editor(https_server, qt_app, account, station_id) as (_, editor):
+            wait_for_editor_idle(qt_app, editor)
+            if not editor.state["paper_refreshing"]:
+                assert [row["id"] for row in editor.state["paper_records"]] == [
+                    period_one["id"]
+                ]
+                assert editor.refreshPaperRecords() is True
+            assert editor.state["paper_refreshing"] is True
+            assert editor.selectPeriod(2, False) is True
+            wait_for(
+                qt_app,
+                lambda: editor.state["selected_period"] == 2 and not editor.state["busy"],
+            )
+            wait_for(qt_app, lambda: not editor.state["paper_refreshing"])
+            assert [row["id"] for row in editor.state["paper_records"]] == [period_two["id"]]
 
 
 def test_uncertain_turnout_paper_write_stays_bound_until_public_outcome_is_committed(
