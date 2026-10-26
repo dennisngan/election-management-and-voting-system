@@ -67,15 +67,21 @@ ColumnLayout {
         Layout.fillWidth: true
         Caption { text: parent.label }
         Label {
+            id: detailValue
             objectName: parent.valueObjectName
             text: parent.value
             color: "#25344b"
             font.pixelSize: 14
-            font.family: parent.valueObjectName.indexOf("Sha256") >= 0
-                ? (Qt.platform.os === "windows" ? "Consolas" : "Menlo") : ""
             textFormat: Text.PlainText
             wrapMode: Text.WrapAnywhere
             Layout.fillWidth: true
+            Binding {
+                target: detailValue
+                property: "font.family"
+                when: detailValue.objectName.indexOf("Sha256") >= 0
+                value: Qt.platform.os === "windows" ? "Consolas" : "Menlo"
+                restoreMode: Binding.RestoreBindingOrValue
+            }
         }
     }
     component Action: FormButton {
