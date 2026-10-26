@@ -446,7 +446,10 @@ ColumnLayout {
                         }
                     }
                 }
-                FormCaption { text: page.t("constituency_results_candidate_votes") }
+                FormCaption {
+                    objectName: "constituencyResultVotesCaption_" + String(modelData.scope_id)
+                    text: page.t("constituency_results_candidate_votes")
+                }
                 Repeater {
                     model: modelData.final_candidate_votes || []
                     delegate: Label {
