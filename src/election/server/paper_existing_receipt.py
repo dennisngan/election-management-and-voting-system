@@ -176,7 +176,7 @@ def _allocation_receipt_preview(
     return _receipt_preview(db, paper, outcome, allocation_revision.entered_at)
 
 
-def _turnout_save_receipt_preview(
+def _turnout_receipt_preview(
     db: Session,
     actor: Account,
     station_id: int,
@@ -184,24 +184,33 @@ def _turnout_save_receipt_preview(
     revision: OutagePaperRevision,
     original_request_id: UUID,
 ) -> dict[str, Any]:
+    action = revision.data.get("action")
+    if action not in {"save", "submit"}:
+        raise HTTPException(409, detail={"code": "paper_receipt_workflow_unsupported"})
+
     outcome = read_request_outcome(db, actor, station_id, original_request_id, "turnout")
     if outcome.get("status") != "committed":
         raise HTTPException(404, detail={"code": "request_not_found"})
 
     record = outcome.get("record")
     target = revision.data.get("target")
+    expected_status = "draft" if action == "save" else "submitted"
+    compatible_statuses = {"submitted", "approved"}
+    if action == "save":
+        compatible_statuses.add("draft")
     if (
         not isinstance(record, dict)
         or not isinstance(target, dict)
         or set(target) != {"period_index"}
         or type(target.get("period_index")) is not int
         or target["period_index"] < 1
-        or record.get("status") != "draft"
+        or record.get("status") != expected_status
         or type(record.get("id")) is not int
         or type(record.get("revision")) is not int
         or type(record.get("station_id")) is not int
         or type(record.get("period_index")) is not int
         or type(record.get("actor_id")) is not int
+        or (action == "submit" and type(record.get("submitted_by")) is not int)
         or record.get("station_id") != station_id
         or record.get("period_index") != target["period_index"]
         or not isinstance(record.get("event_at"), str)
@@ -214,24 +223,37 @@ def _turnout_save_receipt_preview(
             TurnoutRecord.station_id == station_id,
             TurnoutRecord.period_index == target["period_index"],
             TurnoutRecord.revision == record["revision"],
-            TurnoutRecord.actor_id == actor.id,
+            (TurnoutRecord.actor_id if action == "save" else TurnoutRecord.submitted_by)
+            == actor.id,
         )
     )
     if (
         turnout_record is None
-        or turnout_record.status != "draft"
+        or turnout_record.status not in compatible_statuses
         or turnout_record.event_at is None
         or turnout_record.entered_at is None
         or turnout_record.actor_id != record["actor_id"]
         or record["event_at"] != as_utc(turnout_record.event_at)
-        or revision.data.get("original_event_at") != as_utc(turnout_record.event_at)
+        or record["entered_at"] != as_utc(turnout_record.entered_at)
+        or (
+            action == "save"
+            and revision.data.get("original_event_at") != as_utc(turnout_record.event_at)
+        )
+        or (
+            action == "submit"
+            and (
+                turnout_record.submitted_at is None
+                or record.get("submitted_by") != turnout_record.submitted_by
+                or record.get("submitted_at") != as_utc(turnout_record.submitted_at)
+            )
+        )
     ):
         raise _receipt_mismatch()
 
     save_audit = db.scalar(
         select(AuditEvent)
         .where(
-            AuditEvent.action == "turnout_save",
+            AuditEvent.action == f"turnout_{action}",
             AuditEvent.actor_id == actor.id,
             AuditEvent.details["station_id"].as_integer() == station_id,
             AuditEvent.details["record"]["id"].as_integer() == turnout_record.id,
@@ -243,7 +265,12 @@ def _turnout_save_receipt_preview(
     if save_audit is None:
         raise _receipt_mismatch()
 
-    return _receipt_preview(db, paper, outcome, turnout_record.entered_at)
+    original_effect_at = (
+        turnout_record.submitted_at if action == "submit" else turnout_record.entered_at
+    )
+    if original_effect_at is None:
+        raise _receipt_mismatch()
+    return _receipt_preview(db, paper, outcome, original_effect_at)
 
 
 def preview_existing_receipt(
@@ -264,8 +291,8 @@ def preview_existing_receipt(
         return _allocation_receipt_preview(
             db, actor, station_id, paper, revision, original_request_id
         )
-    if paper.workflow == "turnout" and action == "save":
-        return _turnout_save_receipt_preview(
+    if paper.workflow == "turnout" and action in {"save", "submit"}:
+        return _turnout_receipt_preview(
             db, actor, station_id, paper, revision, original_request_id
         )
     raise HTTPException(409, detail={"code": "paper_receipt_workflow_unsupported"})
