@@ -1,4 +1,4 @@
-"""Turnout paper references are selected through the real Material desktop flow."""
+"""Turnout paper references are selected through public Material desktop controls."""
 
 from collections.abc import Iterator
 from uuid import uuid4
@@ -30,14 +30,13 @@ def _outage(
     station_id: int,
     *,
     reference: str,
-    kind: str = "network",
 ) -> dict:
     response = officer.post(
         f"/api/workspace/stations/{station_id}/outages",
         json={
             "request_id": str(uuid4()),
             "reference": reference,
-            "kind": kind,
+            "kind": "network",
             "started_at": "2026-11-15T08:00:00+08:00",
             "ended_at": "2026-11-15T09:00:00+08:00",
             "notes": "Turnout reporting was recorded on the signed paper form.",
@@ -74,7 +73,7 @@ def _paper(
     return response.json()
 
 
-def test_material_turnout_save_submit_paper_reentry_and_unbound_legacy_save(
+def test_material_turnout_save_submit_paper_receipts_and_unbound_legacy_save(
     admin: TestClient,
     database_url: str,
     https_server: HttpsServer,
@@ -124,7 +123,6 @@ def test_material_turnout_save_submit_paper_reentry_and_unbound_legacy_save(
                 "password": READY_PASSWORD,
                 "station_id": station_id,
                 "locale": "en",
-                "navigation_label": "P(15) hourly turnout",
             },
             f"""
             click('turnoutNavigation')
@@ -136,19 +134,19 @@ def test_material_turnout_save_submit_paper_reentry_and_unbound_legacy_save(
             wait(lambda: len(turnout.property('state')['paper_records']) == 3)
             assert turnout.property('state')['paper_record'] == {{}}
 
-            # Ordinary mode remains the default even when papers are available.
+            # The selector starts at ordinary entry; explicitly clear a paper choice.
             assert control('turnoutPaperPicker').property('currentIndex') == 0
             choose('turnoutPaperPicker', 1)
-            wait(lambda: turnout.property('state')['paper_record'].get('id') == {save_paper['id']})
-            assert {save_paper['id']} == turnout.property('state')['paper_record']['id']
-            assert '{save_paper['paper_reference']}' in str(
-                control('turnoutPaperPicker').property('displayText')
+            wait(lambda: turnout.property('state')['paper_record'].get('id')
+                == {save_paper['id']})
+            assert turnout.property('state')['paper_record']['paper_reference'] == (
+                '{save_paper['paper_reference']}'
             )
             assert turnout.property('state')['forms']['event_time'] == '2026-11-15 09:30'
             click('turnoutPaperClear')
             wait(lambda: turnout.property('state')['paper_record'] == {{}})
 
-            # Save a normal electronic draft with no binding; both paper records stay pending.
+            # An ordinary legacy draft works while a matching paper reference remains pending.
             enter('turnoutHourly', '0')
             enter('turnoutCumulative', '0')
             enter('turnoutEventTime', '2026-11-15 09:30')
@@ -163,7 +161,7 @@ def test_material_turnout_save_submit_paper_reentry_and_unbound_legacy_save(
             choose('turnoutPaperPicker', 1)
             wait(lambda: turnout.property('state')['paper_record'].get('id') == {save_paper['id']})
             assert turnout.property('state')['paper_record']['action'] == 'save'
-            # A save paper must not silently lose its provenance on Submit.
+            # A Save paper must not be silently omitted from an attempted Submit.
             turnout.submit()
             wait(lambda: not turnout.property('state')['busy'])
             assert turnout.property('state')['selected']['status'] == 'draft'
@@ -176,7 +174,7 @@ def test_material_turnout_save_submit_paper_reentry_and_unbound_legacy_save(
             assert turnout.property('state')['selected']['status'] == 'draft'
             assert turnout.property('state')['paper_record'] == {{}}
 
-            # A matching Submit paper can only be consumed by the saved period-one draft.
+            # The matching Submit paper re-enters the already saved, exact period-one draft.
             click('turnoutPaperRefresh')
             wait(lambda: len(turnout.property('state')['paper_records']) == 2)
             choose('turnoutPaperPicker', 1)
@@ -189,8 +187,7 @@ def test_material_turnout_save_submit_paper_reentry_and_unbound_legacy_save(
             assert turnout.property('state')['selected']['status'] == 'submitted'
             assert turnout.property('state')['paper_record'] == {{}}
 
-            # A target-period change clears the old binding; this ordinary save leaves
-            # the available period-two paper pending instead of sending paper_record_id=0.
+            # A target change clears binding; ordinary period-two Save leaves its paper pending.
             assert turnout.selectPeriod(2, False) is True
             wait(lambda: turnout.property('state')['selected_period'] == 2
                 and not turnout.property('state')['busy'])
@@ -237,7 +234,7 @@ def test_material_turnout_save_submit_paper_reentry_and_unbound_legacy_save(
         assert unchanged_legacy["reentry"] is None
 
 
-def test_assigned_counting_officer_cannot_apply_a_turnout_paper_reference(
+def test_assigned_counting_officer_cannot_write_turnout_paper_reentry(
     admin: TestClient,
     database_url: str,
     https_server: HttpsServer,
@@ -288,7 +285,7 @@ def test_assigned_counting_officer_cannot_apply_a_turnout_paper_reference(
             assert next(row for row in record if row["id"] == paper["id"])["status"] == "pending"
 
 
-def test_committed_uncertain_turnout_paper_binding_waits_for_public_outcome_check(
+def test_uncertain_turnout_paper_write_stays_bound_until_public_outcome_is_committed(
     admin: TestClient,
     database_url: str,
     turnout_boundary_server,
