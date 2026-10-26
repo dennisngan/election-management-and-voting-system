@@ -550,6 +550,15 @@ def _paper_ref_list(papers: list[PaperRevisionRef]) -> list[dict[str, int]]:
     return sorted((row.model_dump() for row in papers), key=lambda row: row["paper_id"])
 
 
+def read_outage_snapshot(
+    db: Session, actor: Account, station_id: int, outage_id: int,
+) -> dict[str, Any]:
+    """Read one assigned station's immutable outage and paper history."""
+    stock_scope(db, actor, station_id)
+    outage = _get_outage(db, station_id, outage_id, lock=False)
+    return {"record": outage_view(db, outage), "history": _history(db, outage_id)}
+
+
 def outage_router(
     database: Callable[[], Generator[Session]],
     ready_account: Callable[..., Account],
@@ -618,9 +627,7 @@ def outage_router(
 
     @router.get("/{outage_id}")
     def read_outage(station_id: int, outage_id: int, db: Database, actor: Actor) -> dict[str, Any]:
-        stock_scope(db, actor, station_id)
-        outage = _get_outage(db, station_id, outage_id, lock=False)
-        return {"record": outage_view(db, outage), "history": _history(db, outage_id)}
+        return read_outage_snapshot(db, actor, station_id, outage_id)
 
     @router.put("/{outage_id}")
     def amend_outage(
