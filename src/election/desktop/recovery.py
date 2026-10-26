@@ -42,6 +42,8 @@ class RecoveryController(QObject):
         self._request, self._journal = request, journal
         self._generation = 0
         self._opened = False
+        self._server_url = ""
+        self._account_id = 0
         self._state: dict[str, Any] = {}
         self.reset()
 
@@ -52,11 +54,11 @@ class RecoveryController(QObject):
     def reset(self) -> None:
         self._generation += 1
         self._opened = False
+        self._server_url = ""
+        self._account_id = 0
         self._state = {
             "station_id": 0,
             "role": "",
-            "account_id": 0,
-            "server_url": "",
             "commands": [],
             "busy": False,
             "refreshing": False,
@@ -90,15 +92,20 @@ class RecoveryController(QObject):
         values = {
             "station_id": station_id if type(station_id) is int and station_id > 0 else 0,
             "role": role if role in ROLES else "",
-            "account_id": account_id if type(account_id) is int and account_id > 0 else 0,
-            "server_url": origin,
         }
-        changed = any(self._state.get(key) != value for key, value in values.items())
+        normalized_account_id = account_id if type(account_id) is int and account_id > 0 else 0
+        changed = (
+            any(self._state.get(key) != value for key, value in values.items())
+            or self._server_url != origin
+            or self._account_id != normalized_account_id
+        )
         opened = self._opened
         if changed:
             self.reset()
             self._opened = opened
         self._state.update(values)
+        self._server_url = origin
+        self._account_id = normalized_account_id
         self.stateChanged.emit()
         if changed and self._opened:
             self.reload()
@@ -106,9 +113,9 @@ class RecoveryController(QObject):
     def _context_ready(self) -> bool:
         return bool(
             self._state["station_id"]
-            and self._state["account_id"]
+            and self._account_id
             and self._state["role"] in ROLES
-            and self._state["server_url"]
+            and self._server_url
         )
 
     def _workflow_allowed(self, workflow: Any) -> bool:
@@ -120,14 +127,12 @@ class RecoveryController(QObject):
         return False
 
     def _current_commands(self) -> list[dict[str, Any]]:
-        rows = self._journal.commands(
-            self._state["server_url"], self._state["account_id"], self._state["station_id"]
-        )
+        rows = self._journal.commands(self._server_url, self._account_id, self._state["station_id"])
         return [
             deepcopy(row)
             for row in rows
-            if row.get("server_url") == self._state["server_url"]
-            and row.get("actor_id") == self._state["account_id"]
+            if row.get("server_url") == self._server_url
+            and row.get("actor_id") == self._account_id
             and row.get("station_id") == self._state["station_id"]
             and self._workflow_allowed(row.get("workflow"))
             and row.get("status") in ("pending", "uncertain", "committed", "rejected")
@@ -237,8 +242,8 @@ class RecoveryController(QObject):
     ) -> None:
         self._generation += 1
         generation = self._generation
-        server_url = self._state["server_url"]
-        account_id = self._state["account_id"]
+        server_url = self._server_url
+        account_id = self._account_id
         self._state.update(busy=True, refreshing=False, error="", notice="")
         self.stateChanged.emit()
 
@@ -299,7 +304,8 @@ class RecoveryController(QObject):
             previous_status = command.get("status")
             status = (
                 "uncertain"
-                if code in NETWORK_ERRORS
+                if method == "GET"
+                or code in NETWORK_ERRORS
                 or (previous_status == "uncertain" and code == "invalid_credentials")
                 else "rejected"
             )
