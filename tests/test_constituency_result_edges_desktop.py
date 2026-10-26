@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication
 
-from tests.box_support import READY_PASSWORD, box_staff
+from tests.box_support import READY_PASSWORD, box_staff, event_command, prepared_box
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
@@ -457,6 +457,28 @@ def test_unreceived_scope_blocker_uses_selected_language_in_statement(
         receiver = setup["clients"]["receiveronly"]
         scope_path = setup["scope_path"]
         station_id = setup["stations"]["N2"]["id"]
+        polling = setup["clients"]["polling"]
+        n2_boxes_path = setup["paths"]["n2_boxes"]
+        prepared = polling.post(
+            n2_boxes_path,
+            json=prepared_box(
+                box_reference="Additional received N2 box " + uuid4().hex[:8],
+                prepared_at="2026-11-15T23:05:00+08:00",
+            ),
+        )
+        assert prepared.status_code == 201, prepared.text
+        received_box = prepared.json()
+        departure = polling.post(
+            f"{n2_boxes_path}/{received_box['id']}/departure",
+            json=event_command(1, "2026-11-15T23:06:00+08:00"),
+        )
+        assert departure.status_code == 201, departure.text
+        receipt = receiver.post(
+            f"{setup['paths']['n1_boxes']}/{received_box['id']}/receipt",
+            json=event_command(2, "2026-11-15T23:07:00+08:00"),
+        )
+        assert receipt.status_code == 201, receipt.text
+
         options = receiver.get(scope_path)
         assert options.status_code == 200, options.text
         source = next(
@@ -472,7 +494,10 @@ def test_unreceived_scope_blocker_uses_selected_language_in_statement(
                 "expected_revision": 0,
                 "reference": "Scope with an unreceived physical box " + uuid4().hex[:8],
                 "event_at": "2026-11-15T23:10:00+08:00",
-                "box_revisions": [{"box_id": unreceived["id"], "revision": unreceived["revision"]}],
+                "box_revisions": [
+                    {"box_id": receipt.json()["id"], "revision": receipt.json()["revision"]},
+                    {"box_id": unreceived["id"], "revision": unreceived["revision"]},
+                ],
                 "accounting_revisions": [
                     {"station_id": station_id, "revision": source["revision"]}
                 ],
