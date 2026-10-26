@@ -208,6 +208,7 @@ def _turnout_receipt_preview(
         or type(record.get("station_id")) is not int
         or type(record.get("period_index")) is not int
         or type(record.get("actor_id")) is not int
+        or (action == "submit" and type(record.get("submitted_by")) is not int)
         or record.get("station_id") != station_id
         or record.get("period_index") != target["period_index"]
         or not isinstance(record.get("event_at"), str)
@@ -220,7 +221,8 @@ def _turnout_receipt_preview(
             TurnoutRecord.station_id == station_id,
             TurnoutRecord.period_index == target["period_index"],
             TurnoutRecord.revision == record["revision"],
-            TurnoutRecord.actor_id == actor.id,
+            (TurnoutRecord.actor_id if action == "save" else TurnoutRecord.submitted_by)
+            == actor.id,
         )
     )
     if (
@@ -239,6 +241,7 @@ def _turnout_receipt_preview(
             action == "submit"
             and (
                 turnout_record.submitted_at is None
+                or record.get("submitted_by") != turnout_record.submitted_by
                 or record.get("submitted_at") != as_utc(turnout_record.submitted_at)
             )
         )
