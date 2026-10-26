@@ -8,6 +8,7 @@ from uuid import UUID
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest
+from election.desktop.event_times import format_event_time
 from election.desktop.exact_numbers import qt_state
 from election.desktop.operational_receipts import valid_operational_receipt
 
@@ -146,6 +147,10 @@ class RecoveryController(QObject):
     def _error(self, code: str) -> None:
         self._state.update(error=code, notice="")
         self.stateChanged.emit()
+
+    @Slot(str, result=str)
+    def formatTime(self, value: str) -> str:
+        return format_event_time(value)
 
     @Slot()
     def open(self) -> None:

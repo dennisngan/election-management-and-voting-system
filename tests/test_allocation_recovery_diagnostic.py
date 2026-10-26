@@ -60,7 +60,9 @@ def test_allocation_initial_read_uses_selected_station_context(
         diagnostic = {
             "expected_station_id": station_id,
             "workspace_error": workspace_state["error"],
-            "workspace_context_station_ids": [row["station"]["id"] for row in workspace_state["contexts"]],
+            "workspace_context_station_ids": [
+                row["station"]["id"] for row in workspace_state["contexts"]
+            ],
             "workspace_reads": [{"path": row["path"], "status": row["status"]}
                                 for row in https_server.request_timings
                                 if row["path"].startswith("/api/workspace/stations")],

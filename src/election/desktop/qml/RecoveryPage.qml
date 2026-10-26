@@ -60,7 +60,7 @@ ColumnLayout {
     function eventTime(row) {
         var payload = row.payload || ({})
         var value = payload.event_at || payload.original_event_at || ""
-        return value ? String(value).replace("T", " ").replace("Z", " UTC")
+        return value ? page.recovery.formatTime(value)
             : page.t("recovery_no_event_time")
     }
     function receiptRecord(row) {
@@ -259,7 +259,7 @@ ColumnLayout {
                 }
                 Detail {
                     caption: page.t("recovery_created_at")
-                    value: String(page.selectedCommand.created_at || "—").replace("T", " ").replace("Z", " UTC")
+                    value: page.recovery.formatTime(page.selectedCommand.created_at || "")
                 }
                 Detail {
                     caption: page.t("recovery_event_at")

@@ -39,6 +39,7 @@ from election.desktop.fallback import FallbackController
 from election.desktop.invalid_reasons import InvalidReasonsController
 from election.desktop.lifecycle import LifecycleController
 from election.desktop.operational_receipts import valid_operational_receipt
+from election.desktop.outages import OutagesController
 from election.desktop.polling import PollingController
 from election.desktop.queue import QueueController
 from election.desktop.recovery import RecoveryController
@@ -89,6 +90,7 @@ class DesktopController(QObject):
         )
         self._command_journal = CommandJournal(Path(journal_directory))
         self._recovery = RecoveryController(self._authorized_request, self._command_journal, self)
+        self._outages = OutagesController(self._authorized_request, self)
         self._configuration = ConfigurationController(self._authorized_request, self)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
@@ -135,7 +137,9 @@ class DesktopController(QObject):
             self._authorized_request,
             self,
             selection_guard=lambda: bool(
-                self._accounting.property("state")["dirty"]
+                self._outages.property("state")["dirty"]
+                or self._outages.property("state")["busy"]
+                or self._accounting.property("state")["dirty"]
                 or self._accounting.property("state")["busy"]
                 or self._polling.property("state")["dirty"]
                 or self._polling.property("state")["busy"]
@@ -178,6 +182,7 @@ class DesktopController(QObject):
         self._boxes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._counting_scopes.stateChanged.connect(self._workspace.stateChanged.emit)
         self._counting_rounds.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._outages.stateChanged.connect(self._workspace.stateChanged.emit)
         self._fallback.stateChanged.connect(self._workspace.stateChanged.emit)
         self._turnout.stateChanged.connect(self._workspace.stateChanged.emit)
         self._complaints.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -274,6 +279,10 @@ class DesktopController(QObject):
         return self._counting_scopes
 
     @Property(QObject, constant=True)
+    def outages(self) -> OutagesController:
+        return self._outages
+
+    @Property(QObject, constant=True)
     def recovery(self) -> RecoveryController:
         return self._recovery
 
@@ -309,6 +318,7 @@ class DesktopController(QObject):
             self._state["server_url"],
             self._state["account"].get("id", 0),
         )
+        self._outages.set_context(context)
         self._accounting.set_context(context)
         self._polling.set_context(context)
         self._stock.set_context(context)
@@ -755,6 +765,7 @@ class DesktopController(QObject):
             self._boxes.refresh()
             self._counting_scopes.refresh()
             self._counting_rounds.refresh()
+            self._outages.refresh()
             self._fallback.refresh()
             self._turnout.refresh()
             self._complaints.refresh()
@@ -796,6 +807,7 @@ class DesktopController(QObject):
         self._boxes.reset()
         self._counting_scopes.reset()
         self._counting_rounds.reset()
+        self._outages.reset()
         self._fallback.reset()
         self._turnout.reset()
         self._complaints.reset()
