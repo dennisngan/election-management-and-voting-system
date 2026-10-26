@@ -10,8 +10,8 @@ from tests.test_turnout_api import (
 )
 from tests.test_turnout_api import database_url as database_url
 from tests.turnout_support import (
-    approve_period,
     TurnoutClock,
+    approve_period,
     turnout_command,
     turnout_draft,
     turnout_scope,
