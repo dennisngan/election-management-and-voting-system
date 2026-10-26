@@ -134,6 +134,29 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
             "sc": "应用程序连接中断及纸本核对报表",
             "en": "Application connectivity outage and paper reconciliation statement",
         }
+        localized_receipt_values = {
+            "tc": {
+                "section": "不可變更收據內容",
+                "status_field": "原始業務記錄狀態",
+                "submitted": "已提交",
+                "round_field": "點票輪次",
+                "record_id_field": "原始業務記錄編號",
+            },
+            "sc": {
+                "section": "不可变更收据内容",
+                "status_field": "原始业务记录状态",
+                "submitted": "已提交",
+                "round_field": "点票轮次",
+                "record_id_field": "原始业务记录编号",
+            },
+            "en": {
+                "section": "Immutable receipt details",
+                "status_field": "Original business record status",
+                "submitted": "Submitted",
+                "round_field": "Round number",
+                "record_id_field": "Original business record ID",
+            },
+        }
         reports = {}
         for locale, title in localized_titles.items():
             response = officer.get(statement_path, params={"locale": locale})
@@ -164,6 +187,21 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
                 for section in report["sections"]
             )
             assert "record" not in report and "history" not in report
+            receipt_contract = localized_receipt_values[locale]
+            receipt_rows = next(
+                section["rows"]
+                for section in report["sections"]
+                if section["title"] == receipt_contract["section"]
+            )
+            assert [receipt_contract["status_field"], receipt_contract["submitted"]] in receipt_rows
+            assert [
+                receipt_contract["round_field"],
+                str(submitted.json()["round_number"]),
+            ] in receipt_rows
+            assert [
+                receipt_contract["record_id_field"],
+                str(submitted.json()["id"]),
+            ] in receipt_rows
 
         en_sections = {section["title"]: section["rows"] for section in reports["en"]["sections"]}
         paper_rows = en_sections["Paper references and re-entry status"]
