@@ -106,6 +106,7 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
         wait(idle)
         frame()
         choose('allocationCounter', 0)
+        wait(idle)
         click('allocationPaperRefresh')
         wait(idle)
         state = editor.property('state')
