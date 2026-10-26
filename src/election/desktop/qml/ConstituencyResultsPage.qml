@@ -506,7 +506,12 @@ ColumnLayout {
                 Layout.fillWidth: true
                 implicitHeight: Math.max(88, contentHeight + topPadding + bottomPadding)
                 text: page.editorState.reason || ""
-                placeholderText: page.t("constituency_results_reason_placeholder")
+                placeholderText: text.length ? "" : page.t("constituency_results_reason_placeholder")
+                leftPadding: 12
+                rightPadding: 12
+                topPadding: 12
+                bottomPadding: 12
+                topInset: 0
                 textFormat: TextEdit.PlainText
                 wrapMode: TextEdit.WordWrap
                 clip: true

@@ -150,10 +150,12 @@ class ConstituencyResultsController(QObject):
             self._state["refreshing"] = False
         generation = self._generation
         activity = "refreshing" if background else "busy"
-        preserve_uncertain_error = bool(self._state["uncertain_save"] and self._state["error"])
+        preserve_review_error = bool(
+            (self._state["dirty"] or self._state["uncertain_save"]) and self._state["error"]
+        )
         self._state.update(
             **{activity: True},
-            error=self._state["error"] if preserve_uncertain_error else "",
+            error=self._state["error"] if preserve_review_error else "",
             notice="",
         )
         self.stateChanged.emit()
@@ -187,7 +189,7 @@ class ConstituencyResultsController(QObject):
             if generation != self._generation:
                 return
             self._state[activity] = False
-            if background and self._state["uncertain_save"] and self._state["error"]:
+            if background and preserve_review_error:
                 self.stateChanged.emit()
                 return
             self._state.update(error=code, notice="")
