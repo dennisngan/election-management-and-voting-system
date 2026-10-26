@@ -180,3 +180,39 @@ def test_existing_count_receipt_can_be_linked_to_paper_without_another_count_eff
         replay = counter.post(paper_path + "/link-receipt", json=link_command)
         assert replay.status_code == 200, replay.text
         assert replay.json() == linked_paper
+
+        other_outage = counter.post(
+            outage_path,
+            json={
+                "request_id": str(uuid4()),
+                "reference": "N1 unrelated outage " + uuid4().hex[:8],
+                "kind": "backend",
+                "started_at": "2026-11-15T16:40:00Z",
+                "ended_at": "2026-11-15T16:50:00Z",
+                "notes": "Separate outage for checking request replay scope.",
+            },
+        )
+        assert other_outage.status_code == 201, other_outage.text
+        other_outage_path = outage_path + f"/{other_outage.json()['id']}"
+        wrong_outage_replay = counter.post(
+            other_outage_path + f"/paper-records/{pending_paper['id']}/link-receipt",
+            json=link_command,
+        )
+        assert wrong_outage_replay.status_code == 409, wrong_outage_replay.text
+        assert wrong_outage_replay.json() == {"detail": {"code": "request_conflict"}}
+
+        other_outage_snapshot = counter.get(other_outage_path)
+        assert other_outage_snapshot.status_code == 200, other_outage_snapshot.text
+        assert other_outage_snapshot.json()["record"]["paper_records"] == []
+        original_after_wrong_replay = counter.get(outage_record_path)
+        assert original_after_wrong_replay.status_code == 200, original_after_wrong_replay.text
+        assert original_after_wrong_replay.json()["record"]["paper_records"] == [linked_paper]
+        outcome_after_wrong_replay = counter.get(
+            original_outcome_path,
+            params={"workflow": "count"},
+        )
+        assert outcome_after_wrong_replay.status_code == 200, outcome_after_wrong_replay.text
+        assert outcome_after_wrong_replay.json() == original_outcome.json()
+        count_after_wrong_replay = counter.get(round_path)
+        assert count_after_wrong_replay.status_code == 200, count_after_wrong_replay.text
+        assert count_after_wrong_replay.json() == count_before_link.json()
