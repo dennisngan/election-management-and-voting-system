@@ -12,6 +12,7 @@ from election.desktop.configuration import AuthorizedRequest, ResultHandler, pos
 from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.exact_numbers import qt_state
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
+from election.outage_snapshots import outage_snapshot_digest
 
 OUTAGE_KINDS = ("network", "backend", "database", "unknown")
 PAPER_WORKFLOWS = ("count", "turnout", "allocation")
@@ -48,13 +49,15 @@ def _aware(value: Any) -> bool:
         return False
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is not None
-    except (TypeError, ValueError, OverflowError):
+    except TypeError, ValueError, OverflowError:
         return False
 
 
 def _event_form(value: str, original: str | None = None) -> str:
-    return format_event_time(original or value).removesuffix(" HKT") if original else (
-        format_event_time(value).removesuffix(" HKT") if value else ""
+    return (
+        format_event_time(original or value).removesuffix(" HKT")
+        if original
+        else (format_event_time(value).removesuffix(" HKT") if value else "")
     )
 
 
@@ -116,7 +119,7 @@ def _paper_record(row: Any, station_id: int) -> TypeGuard[dict[str, Any]]:
             return False
         try:
             UUID(reentry["request_id"])
-        except (ValueError, TypeError, AttributeError):
+        except ValueError, TypeError, AttributeError:
             return False
     elif row.get("reentry") is not None:
         return False
@@ -536,20 +539,19 @@ class OutagesController(QObject):
             return None
         if self._state["dirty"] or self._state["newer_revision"]:
             self._error(
-                "outage_revision_conflict" if self._state["newer_revision"]
+                "outage_revision_conflict"
+                if self._state["newer_revision"]
                 else "unsaved_outage_changes"
             )
             return None
         return (
             f"{self._path()}/{selected['id']}/statement{extension}?locale={locale}"
+            f"&expected_basis={self._report_identity()}"
         )
 
     def _report_identity(self) -> str:
-        return json.dumps(
-            {"record": self._state["selected"], "history": self._state["history"]},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
+        return outage_snapshot_digest(
+            {"record": self._state["selected"], "history": self._state["history"]}
         )
 
     @Slot(str)
@@ -559,7 +561,9 @@ class OutagesController(QObject):
             return
         selected = self._state["selected"]
         station_id, outage_id, revision = (
-            self._state["station_id"], selected["id"], selected["revision"]
+            self._state["station_id"],
+            selected["id"],
+            selected["revision"],
         )
         snapshot = self._report_identity()
         self._clear_report()
@@ -596,6 +600,10 @@ class OutagesController(QObject):
             ):
                 self._state.update(error="request_failed", notice="")
                 return
+            if data.get("basis_digest") != snapshot:
+                self._clear_report()
+                self._error("outage_revision_conflict", newer=True)
+                return
             self._state.update(
                 report=data,
                 report_text="\n".join(lines),
@@ -627,6 +635,9 @@ class OutagesController(QObject):
         def failed(code: str) -> None:
             if generation == self._generation and report_generation == self._report_generation:
                 self._state.update(busy=False, error=code, notice="")
+                if code in OUTAGE_CONFLICTS:
+                    self._state["newer_revision"] = True
+                    self._clear_report()
                 self.stateChanged.emit()
 
         def loaded(data: dict[str, Any]) -> None:
@@ -751,7 +762,7 @@ class OutagesController(QObject):
     def _time(self, name: str, original: str | None = None) -> str:
         try:
             return parse_event_time(self._state["forms"][name], original=original)
-        except (ValueError, TypeError, KeyError, OverflowError):
+        except ValueError, TypeError, KeyError, OverflowError:
             raise ValueError("outage_validation") from None
 
     def _outage_payload(self) -> tuple[str, str, dict[str, Any]] | None:
@@ -840,7 +851,8 @@ class OutagesController(QObject):
             return False
         if paper_id == 0:
             self._state.update(
-                paper_forms=_empty_paper_form(), selected_paper_id=0,
+                paper_forms=_empty_paper_form(),
+                selected_paper_id=0,
                 paper_editable=self._can_register_any_paper(),
             )
             self._paper_form_base = _empty_paper_form()
@@ -887,9 +899,7 @@ class OutagesController(QObject):
             or name not in form
         ):
             return
-        if self._state["selected_paper_id"] and name in (
-            "paper_reference", "workflow", "action"
-        ):
+        if self._state["selected_paper_id"] and name in ("paper_reference", "workflow", "action"):
             return
         if name == "workflow" and value in PAPER_WORKFLOWS:
             form[name] = value
@@ -998,7 +1008,7 @@ class OutagesController(QObject):
     def _time_for_form(self, name: str, original: str | None = None) -> str:
         try:
             return parse_event_time(self._state["paper_forms"][name], original=original)
-        except (ValueError, TypeError, KeyError, OverflowError):
+        except ValueError, TypeError, KeyError, OverflowError:
             raise ValueError("outage_paper_time_invalid") from None
 
     def _dirty_outage(self) -> bool:
@@ -1053,12 +1063,13 @@ class OutagesController(QObject):
             self._error("supervisor_required")
             return
         retrying_approval = bool(
-            self._state["uncertain_save"] and self._pending
-            and self._pending["kind"] == "approve"
+            self._state["uncertain_save"] and self._pending and self._pending["kind"] == "approve"
         )
         if (
-            not selected or self._state["newer_revision"]
-            or self._state["dirty"] and not retrying_approval
+            not selected
+            or self._state["newer_revision"]
+            or self._state["dirty"]
+            and not retrying_approval
         ):
             self._error("outage_review_required")
             return
@@ -1136,4 +1147,3 @@ class OutagesController(QObject):
                 self._finish_command(self._state["notice"])
 
         self._send(f"{self._path()}/{outage_id}", "GET", None, loaded)
-

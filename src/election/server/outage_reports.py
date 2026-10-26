@@ -6,9 +6,10 @@ from datetime import datetime
 from io import StringIO
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
+from election.outage_snapshots import outage_snapshot_digest
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
 from election.server.outage_report_labels import OUTAGE_REPORT_LABELS
@@ -177,7 +178,7 @@ def _receipt_rows(
         [labels["reentry_server_entered_at"], _time(reentry.get("entered_at"), labels)],
         [labels["receipt_record_id"], _display(record.get("id"), labels)],
         [labels["receipt_revision"], _display(record.get("revision"), labels)],
-        [labels["receipt_status"], labels.get(record.get("status"), labels["none"])],
+        [labels["receipt_status"], labels.get(str(record.get("status") or ""), labels["none"])],
     ]
     if paper["workflow"] == "allocation":
         counter = record.get("counter")
@@ -493,6 +494,7 @@ def _projection(
         if section["empty_message"]:
             preview.append(section["empty_message"])
     return {
+        "basis_digest": outage_snapshot_digest(snapshot),
         "title": labels["title"],
         "locale": locale,
         "station_id": record["station_id"],
@@ -586,8 +588,11 @@ def outage_report_router(
         db: Session,
         actor: Account,
         locale: ReportLocale,
+        expected_basis: str | None,
     ) -> dict[str, Any]:
         snapshot = read_outage_snapshot(db, actor, station_id, outage_id)
+        if expected_basis is not None and expected_basis != outage_snapshot_digest(snapshot):
+            raise HTTPException(409, detail={"code": "outage_revision_conflict"})
         scope = stock_scope(db, actor, station_id)
         return _projection(snapshot, scope, timestamp(), locale)
 
@@ -598,8 +603,11 @@ def outage_report_router(
         db: Database,
         actor: Ready,
         locale: ReportLocale = "tc",
+        expected_basis: Annotated[
+            str | None, Query(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+        ] = None,
     ) -> dict[str, Any]:
-        return projection(station_id, outage_id, db, actor, locale)
+        return projection(station_id, outage_id, db, actor, locale, expected_basis)
 
     @router.get("/statement.csv")
     def statement_csv(
@@ -608,8 +616,11 @@ def outage_report_router(
         db: Database,
         actor: Ready,
         locale: ReportLocale = "tc",
+        expected_basis: Annotated[
+            str | None, Query(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+        ] = None,
     ) -> Response:
-        report = projection(station_id, outage_id, db, actor, locale)
+        report = projection(station_id, outage_id, db, actor, locale, expected_basis)
         filename = f"outage-{outage_id}-r{report['revision']}-{locale}.csv"
         return Response(
             _csv_report(report),
@@ -624,8 +635,11 @@ def outage_report_router(
         db: Database,
         actor: Ready,
         locale: ReportLocale = "tc",
+        expected_basis: Annotated[
+            str | None, Query(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+        ] = None,
     ) -> Response:
-        report = projection(station_id, outage_id, db, actor, locale)
+        report = projection(station_id, outage_id, db, actor, locale, expected_basis)
         filename = f"outage-{outage_id}-r{report['revision']}-{locale}.pdf"
         return Response(
             _pdf_report(report),
