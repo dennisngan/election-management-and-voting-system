@@ -385,6 +385,7 @@ def test_turnout_submitted_after_paper_registration_cannot_be_linked_as_an_exist
                 supplied_hourly=7,
                 supplied_cumulative=7,
                 event_at="2026-11-15T09:30:00+08:00",
+                source_context="Signed turnout worksheet recorded before paper registration.",
             ),
         )
         assert saved.status_code == 200, saved.text
