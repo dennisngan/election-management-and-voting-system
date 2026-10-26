@@ -1,6 +1,7 @@
 """Editable, revision-bound application outage and paper reconciliation state."""
 
 import json
+import re
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, TypeGuard
@@ -86,6 +87,10 @@ def _empty_paper_form() -> dict[str, str]:
         "notes": "",
         "amendment_reason": "",
     }
+
+
+def _empty_existing_receipt() -> dict[str, Any]:
+    return {"request_id": "", "reason": "", "checked": {}, "basis": {}}
 
 
 def _paper_record(row: Any, station_id: int) -> TypeGuard[dict[str, Any]]:
@@ -214,6 +219,7 @@ class OutagesController(QObject):
         self._pending: dict[str, Any] | None = None
         self._outage_form_base = _empty_outage_form()
         self._paper_form_base = _empty_paper_form()
+        self._existing_receipt_base = _empty_existing_receipt()
         self._state: dict[str, Any] = {}
         self.reset()
 
@@ -229,6 +235,7 @@ class OutagesController(QObject):
         self._pending = None
         self._outage_form_base = _empty_outage_form()
         self._paper_form_base = _empty_paper_form()
+        self._existing_receipt_base = _empty_existing_receipt()
         self._state = {
             "station_id": 0,
             "role": "",
@@ -240,11 +247,13 @@ class OutagesController(QObject):
             "paper_forms": _empty_paper_form(),
             "selected_paper_id": 0,
             "paper_editable": False,
+            "existing_receipt": _empty_existing_receipt(),
             "dirty": False,
             "busy": False,
             "refreshing": False,
             "uncertain_save": False,
             "pending_request_id": "",
+            "pending_kind": "",
             "newer_revision": False,
             "error": "",
             "notice": "",
@@ -288,7 +297,58 @@ class OutagesController(QObject):
         return bool(
             self._state["forms"] != self._outage_form_base
             or self._state["paper_forms"] != self._paper_form_base
+            or self._state["existing_receipt"] != self._existing_receipt_base
         )
+
+    def _existing_receipt_dirty(self) -> bool:
+        return bool(self._state["existing_receipt"] != self._existing_receipt_base)
+
+    def _reset_existing_receipt(self) -> None:
+        self._state["existing_receipt"] = _empty_existing_receipt()
+        self._existing_receipt_base = deepcopy(self._state["existing_receipt"])
+
+    def _selected_existing_paper(self) -> dict[str, Any] | None:
+        paper_id = self._state["selected_paper_id"]
+        if not _positive(paper_id):
+            return None
+        selected = self._state["selected"]
+        if not isinstance(selected, dict):
+            return None
+        return next(
+            (paper for paper in selected.get("paper_records", []) if paper.get("id") == paper_id),
+            None,
+        )
+
+    def _existing_receipt_basis(self) -> dict[str, Any] | None:
+        receipt = self._state["existing_receipt"]
+        try:
+            original_request_id = str(UUID(receipt["request_id"].strip()))
+        except (ValueError, TypeError, AttributeError):
+            return None
+        selected = self._state["selected"]
+        paper = self._selected_existing_paper()
+        if not (
+            isinstance(selected, dict)
+            and paper is not None
+            and paper["status"] == "pending"
+            and paper["station_id"] == self._state["station_id"]
+            and self._workflow_role(paper["workflow"])
+            and _positive(selected.get("id"))
+            and _positive(selected.get("revision"))
+            and _positive(paper.get("id"))
+            and _positive(paper.get("revision_id"))
+            and _positive(paper.get("revision"))
+        ):
+            return None
+        return {
+            "station_id": self._state["station_id"],
+            "outage_id": selected["id"],
+            "outage_revision": selected["revision"],
+            "paper_id": paper["id"],
+            "paper_revision_id": paper["revision_id"],
+            "paper_revision": paper["revision"],
+            "original_request_id": original_request_id,
+        }
 
     def _set_dirty(self) -> None:
         self._clear_report()
@@ -393,6 +453,7 @@ class OutagesController(QObject):
             paper_editable=False,
             newer_revision=False,
         )
+        self._reset_existing_receipt()
         self._clear_report()
         self._outage_form_base = deepcopy(self._state["forms"])
         self._paper_form_base = deepcopy(self._state["paper_forms"])
@@ -446,10 +507,18 @@ class OutagesController(QObject):
                 self._state.update(uncertain_save=True, dirty=True)
             elif code in OUTAGE_CONFLICTS:
                 self._pending = None
-                self._state.update(uncertain_save=False, dirty=True, newer_revision=True)
+                self._state.update(
+                    uncertain_save=False,
+                    pending_kind="",
+                    dirty=True,
+                    newer_revision=True,
+                )
             elif uncertain:
                 self._pending = None
-                self._state["uncertain_save"] = False
+                self._state.update(
+                    uncertain_save=False,
+                    pending_kind="",
+                )
             self._error(code, newer=code in OUTAGE_CONFLICTS)
 
         self._request(path, method, payload, done, failed)
@@ -474,6 +543,7 @@ class OutagesController(QObject):
             if self._pending is None or self._pending["signature"] != signature:
                 self._error("outage_uncertain_save_pending")
                 return None
+            self._state["pending_kind"] = self._pending["kind"]
             return self._pending["request_id"], deepcopy(self._pending["payload"])
         request_id = str(uuid4())
         command = {**deepcopy(payload), "request_id": request_id}
@@ -486,6 +556,7 @@ class OutagesController(QObject):
             "kind": kind,
         }
         self._state["pending_request_id"] = request_id
+        self._state["pending_kind"] = kind
         return request_id, command
 
     def _finish_command(self, notice: str) -> None:
@@ -493,12 +564,14 @@ class OutagesController(QObject):
         self._pending = None
         self._state.update(
             pending_request_id="",
+            pending_kind="",
             uncertain_save=False,
             dirty=False,
             error="",
             notice=notice,
             newer_revision=False,
         )
+        self._reset_existing_receipt()
 
     def _outage_role_allowed(self) -> bool:
         return self._state["writable"] and self._state["role"] in OPERATIONAL_ROLES
@@ -661,6 +734,9 @@ class OutagesController(QObject):
         if not self._context_ready() or self._state["busy"]:
             self._error("outage_context_unavailable")
             return False
+        if self._existing_receipt_dirty():
+            self._error("outage_existing_link_clear_first")
+            return False
         if self._state["dirty"] or self._state["uncertain_save"]:
             self._error("unsaved_outage_changes")
             return False
@@ -678,6 +754,9 @@ class OutagesController(QObject):
     def loadOutage(self, outage_id: int, discard: bool = False) -> bool:
         if not self._context_ready() or self._state["busy"]:
             self._error("outage_context_unavailable")
+            return False
+        if self._existing_receipt_dirty() and not discard:
+            self._error("outage_existing_link_clear_first")
             return False
         if outage_id == 0:
             if (self._state["dirty"] or self._state["uncertain_save"]) and not discard:
@@ -702,6 +781,7 @@ class OutagesController(QObject):
             )
             self._outage_form_base = _empty_outage_form()
             self._paper_form_base = _empty_paper_form()
+            self._reset_existing_receipt()
             self.stateChanged.emit()
             return True
         if not _positive(outage_id):
@@ -741,6 +821,8 @@ class OutagesController(QObject):
         )
         self._outage_form_base = _empty_outage_form()
         self._paper_form_base = _empty_paper_form()
+        self._reset_existing_receipt()
+        self._state["dirty"] = self._dirty()
         self.stateChanged.emit()
         return self.reload()
 
@@ -752,6 +834,9 @@ class OutagesController(QObject):
             or self._state["uncertain_save"]
             or name not in self._state["forms"]
         ):
+            return
+        if self._existing_receipt_dirty():
+            self._error("outage_existing_link_clear_first")
             return
         if name == "kind" and value not in OUTAGE_KINDS:
             self._error("outage_validation")
@@ -807,6 +892,9 @@ class OutagesController(QObject):
             if not self._state["busy"]:
                 self._error("election_read_only")
             return
+        if self._existing_receipt_dirty():
+            self._error("outage_existing_link_clear_first")
+            return
         if self._dirty_paper():
             self._error("unsaved_outage_paper_changes")
             return
@@ -842,6 +930,9 @@ class OutagesController(QObject):
     def beginPaper(self, paper_id: int) -> bool:
         if not self._state["selected"] or self._state["busy"]:
             self._error("outage_not_selected")
+            return False
+        if self._existing_receipt_dirty():
+            self._error("outage_existing_link_clear_first")
             return False
         if self._state["uncertain_save"] or self._dirty_outage():
             self._error("unsaved_outage_changes")
@@ -889,6 +980,203 @@ class OutagesController(QObject):
             workflow in ("turnout", "allocation") and self._state["role"] == "polling_officer"
         )
 
+    def _existing_receipt_paper(self, *, allow_newer: bool = False) -> dict[str, Any] | None:
+        if not self._context_ready() or not self._state["writable"]:
+            self._error("election_read_only")
+            return None
+        if self._state["newer_revision"] and not allow_newer:
+            self._error("outage_review_required")
+            return None
+        paper = self._selected_existing_paper()
+        if paper is None or paper["status"] != "pending":
+            self._error("outage_paper_not_editable")
+            return None
+        if not self._workflow_role(paper["workflow"]):
+            self._error("outage_paper_role_required")
+            return None
+        return paper
+
+    @Slot(str, str)
+    def setExistingReceiptField(self, name: str, value: str) -> None:
+        if name not in ("request_id", "reason"):
+            return
+        if self._state["busy"] or self._state["refreshing"] or self._state["uncertain_save"]:
+            return
+        paper = self._existing_receipt_paper()
+        if paper is None:
+            return
+        if self._dirty_outage() or self._dirty_paper():
+            self._error("outage_existing_link_clear_first")
+            return
+        receipt = self._state["existing_receipt"]
+        if receipt[name] == value:
+            return
+        receipt[name] = value
+        if name == "request_id":
+            receipt.update(checked={}, basis={})
+        self._set_dirty()
+
+    @Slot(result=bool)
+    def checkExistingReceipt(self) -> bool:
+        if self._state["busy"] or self._state["refreshing"]:
+            return False
+        if self._state["uncertain_save"]:
+            self._error("outage_uncertain_save_pending")
+            return False
+        if self._dirty_outage() or self._dirty_paper():
+            self._error("outage_existing_link_clear_first")
+            return False
+        paper = self._existing_receipt_paper()
+        if paper is None:
+            return False
+        basis = self._existing_receipt_basis()
+        if basis is None:
+            self._error("outage_existing_request_invalid")
+            return False
+
+        receipt = self._state["existing_receipt"]
+        receipt.update(checked={}, basis=deepcopy(basis))
+        self._clear_report()
+        self._state.update(dirty=self._dirty(), error="", notice="")
+        self._generation += 1
+        self.stateChanged.emit()
+        path = (
+            f"{self._path()}/{basis['outage_id']}/paper-records/{basis['paper_id']}"
+            f"/receipt?request_id={basis['original_request_id']}"
+        )
+
+        def checked(data: dict[str, Any]) -> None:
+            current_basis = self._existing_receipt_basis()
+            digest = data.get("receipt_digest")
+            if (
+                self._state["newer_revision"]
+                or current_basis != basis
+                or self._state["existing_receipt"].get("basis") != basis
+                or data.get("request_id") != basis["original_request_id"]
+                or data.get("workflow") != paper["workflow"]
+                or data.get("status") != "committed"
+                or not isinstance(data.get("record"), dict)
+                or not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            ):
+                self._error("outage_response_invalid")
+                return
+            self._state["existing_receipt"]["checked"] = deepcopy(data)
+            self._clear_report()
+            self._state.update(dirty=self._dirty(), error="", notice="")
+
+        self._send(path, "GET", None, checked)
+        return True
+
+    @Slot(result=bool)
+    def clearExistingReceipt(self) -> bool:
+        if self._state["busy"] or self._state["refreshing"]:
+            return False
+        if self._state["uncertain_save"]:
+            self._error("outage_uncertain_save_pending")
+            return False
+        self._reset_existing_receipt()
+        self._clear_report()
+        self._state.update(dirty=self._dirty(), error="", notice="")
+        self.stateChanged.emit()
+        return True
+
+    @Slot(result=bool)
+    def linkExistingReceipt(self) -> bool:
+        if self._state["busy"] or self._state["refreshing"]:
+            return False
+        retrying = bool(
+            self._state["uncertain_save"]
+            and self._pending is not None
+            and self._pending["kind"] == "existing_receipt_link"
+        )
+        if self._state["uncertain_save"] and not retrying:
+            self._error("outage_uncertain_save_pending")
+            return False
+        if self._dirty_outage() or self._dirty_paper():
+            self._error("outage_existing_link_clear_first")
+            return False
+        paper = self._existing_receipt_paper(allow_newer=retrying)
+        if paper is None:
+            return False
+        basis = self._existing_receipt_basis()
+        receipt = self._state["existing_receipt"]
+        checked = receipt.get("checked")
+        if (
+            basis is None
+            or receipt.get("basis") != basis
+            or not isinstance(checked, dict)
+            or checked.get("request_id") != basis.get("original_request_id")
+            or checked.get("workflow") != paper["workflow"]
+            or checked.get("status") != "committed"
+            or not isinstance(checked.get("record"), dict)
+            or not isinstance(checked.get("receipt_digest"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", checked["receipt_digest"]) is None
+        ):
+            self._error("outage_existing_receipt_check_required")
+            return False
+        reason = receipt.get("reason", "").strip()
+        if not reason or len(reason) > 2000:
+            self._error("outage_existing_link_reason_required")
+            return False
+        payload = {
+            "expected_outage_revision": basis["outage_revision"],
+            "expected_paper_revision": basis["paper_revision"],
+            "original_request_id": basis["original_request_id"],
+            "expected_receipt_digest": checked["receipt_digest"],
+            "reason": reason,
+        }
+        path = (
+            f"{self._path()}/{basis['outage_id']}/paper-records/{basis['paper_id']}"
+            "/link-receipt"
+        )
+        pending = self._pending_command("existing_receipt_link", "POST", path, payload)
+        if pending is None:
+            return False
+        _, body = pending
+        if self._pending is not None:
+            body = deepcopy(self._pending["payload"])
+        original_request_id = basis["original_request_id"]
+        metadata_request_id = body["request_id"]
+        expected_record = checked["record"]
+        expected_digest = checked["receipt_digest"]
+        self._generation += 1
+        self._state.update(error="", notice="")
+
+        def linked(data: dict[str, Any]) -> None:
+            reentry = data.get("reentry") if isinstance(data, dict) else None
+            link = reentry.get("link") if isinstance(reentry, dict) else None
+            if not (
+                _paper_record(data, self._state["station_id"])
+                and data["id"] == basis["paper_id"]
+                and data["outage_id"] == basis["outage_id"]
+                and data["revision"] == basis["paper_revision"]
+                and data["workflow"] == paper["workflow"]
+                and data["status"] == "entered"
+                and data["original_event_at"] == paper["original_event_at"]
+                and isinstance(reentry, dict)
+                and reentry.get("workflow") == paper["workflow"]
+                and reentry.get("request_id") == original_request_id
+                and reentry.get("record") == expected_record
+                and reentry.get("paper_revision_id") == basis["paper_revision_id"]
+                and isinstance(link, dict)
+                and link.get("request_id") == metadata_request_id
+                and link.get("reason") == body["reason"]
+                and link.get("receipt_digest") == expected_digest
+                and link.get("actor_id") == reentry.get("actor_id")
+                and _aware(link.get("linked_at"))
+                and link.get("linked_at") == reentry.get("entered_at")
+            ):
+                self._state.update(uncertain_save=True, dirty=True)
+                self._error("outage_response_invalid")
+                return
+            outage_id = basis["outage_id"]
+            self._finish_command("outage_existing_receipt_linked")
+            self._load_detail(outage_id)
+
+        self._send(path, "POST", body, linked, uncertain=True)
+        return True
+
     @Slot(str, str)
     def setPaperField(self, name: str, value: str) -> None:
         form = self._state["paper_forms"]
@@ -898,6 +1186,9 @@ class OutagesController(QObject):
             or self._state["uncertain_save"]
             or name not in form
         ):
+            return
+        if self._existing_receipt_dirty():
+            self._error("outage_existing_link_clear_first")
             return
         if self._state["selected_paper_id"] and name in ("paper_reference", "workflow", "action"):
             return
@@ -943,6 +1234,9 @@ class OutagesController(QObject):
             return None
         if not self._state["writable"]:
             self._error("election_read_only")
+            return None
+        if self._existing_receipt_dirty():
+            self._error("outage_existing_link_clear_first")
             return None
         if self._dirty_outage():
             self._error("unsaved_outage_changes")
@@ -1019,6 +1313,9 @@ class OutagesController(QObject):
         if self._state["busy"] or not self._state["paper_editable"]:
             if not self._state["busy"]:
                 self._error("outage_paper_not_editable")
+            return
+        if self._existing_receipt_dirty():
+            self._error("outage_existing_link_clear_first")
             return
         command = self._paper_payload()
         if command is None:
