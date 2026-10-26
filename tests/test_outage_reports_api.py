@@ -19,21 +19,21 @@ from tests.turnout_support import TurnoutClock, turnout_scope, turnout_staff
 
 
 def test_missing_outage_statement_returns_the_assigned_api_not_found_dto(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     scope = turnout_scope(admin)
     station_id = scope["stations"][0]["id"]
     with turnout_staff(admin, database_url, TurnoutClock(), [station_id]) as (officer, _):
-        response = officer.get(
-            f"/api/workspace/stations/{station_id}/outages/2147483647/statement"
-        )
+        response = officer.get(f"/api/workspace/stations/{station_id}/outages/2147483647/statement")
 
     assert response.status_code == 404, response.text
     assert response.json()["detail"]["code"] == "outage_not_found"
 
 
 def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliation(
-    admin: TestClient, database_url: str,
+    admin: TestClient,
+    database_url: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         officer = setup["counter"]
@@ -128,6 +128,21 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
         )
         assert pending.status_code == 201, pending.text
 
+        # A new paper invalidates the newest decision; it does not create a successor.
+        current_response = officer.get(outage_record_path)
+        assert current_response.status_code == 200, current_response.text
+        current = current_response.json()["record"]
+        assert current["reconciled"] is False
+        assert len(current["reconciliation_history"]) == 1
+        decision = current["reconciliation_history"][0]
+        assert decision["revision"] == old_decision_revision
+        assert decision["is_current"] is True
+        assert decision["valid"] is False
+        assert [entry["paper_id"] for entry in decision["basis"]["paper_entries"]] == [paper_id]
+        assert [entry["request_id"] for entry in decision["basis"]["paper_entries"]] == [
+            submission_request_id
+        ]
+
         statement_path = outage_record_path + "/statement"
         localized_titles = {
             "tc": "應用程式連線中斷及紙本核對報表",
@@ -207,21 +222,16 @@ def test_outage_reports_preserve_localized_receipts_and_invalidated_reconciliati
         paper_rows = en_sections["Paper references and re-entry status"]
         assert any(row[1] == paper_reference and row[7] == "Re-entered" for row in paper_rows[1:])
         assert any(
-            row[1] == pending_reference and row[7] == "Pending re-entry"
-            for row in paper_rows[1:]
+            row[1] == pending_reference and row[7] == "Pending re-entry" for row in paper_rows[1:]
         )
         assert any(row[-1] == submission_request_id for row in paper_rows[1:])
         reconciliation_rows = en_sections["Reconciliation decision history"]
         assert any(
-            row[0] == str(old_decision_revision)
-            and row[1] == "No"
-            and row[2] == "Needs review"
+            row[0] == str(old_decision_revision) and row[1] == "Yes" and row[2] == "Needs review"
             for row in reconciliation_rows[1:]
         )
 
-        csv_response = officer.get(
-            statement_path + ".csv", params={"locale": "en"}
-        )
+        csv_response = officer.get(statement_path + ".csv", params={"locale": "en"})
         assert csv_response.status_code == 200, csv_response.text
         assert csv_response.headers["content-type"].startswith("text/csv")
         csv_rows = list(csv.reader(StringIO(csv_response.content.decode("utf-8-sig"))))
