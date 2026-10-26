@@ -149,6 +149,7 @@ class DesktopController(QObject):
                 or self._stock.property("state")["busy"]
                 or self._allocations.property("state")["dirty"]
                 or self._allocations.property("state")["busy"]
+                or self._allocations.property("state").get("paper_uncertain", False)
                 or self._stock_snapshots.property("state")["dirty"]
                 or self._stock_snapshots.property("state")["busy"]
                 or self._special_papers.property("state")["dirty"]
@@ -163,10 +164,13 @@ class DesktopController(QObject):
                 or self._counting_scopes.property("state")["busy"]
                 or self._counting_rounds.property("state")["dirty"]
                 or self._counting_rounds.property("state")["busy"]
+                or self._counting_rounds.property("state").get("uncertain_save", False)
                 or self._fallback.property("state")["dirty"]
                 or self._fallback.property("state")["busy"]
                 or self._turnout.property("state")["dirty"]
                 or self._turnout.property("state")["busy"]
+                or self._turnout.property("state").get("uncertain_save", False)
+                or bool(self._turnout.property("state").get("paper_pending_request_id"))
                 or self._complaints.property("state")["dirty"]
                 or self._complaints.property("state")["busy"]
                 or self._complaint_periods.property("state")["dirty"]
