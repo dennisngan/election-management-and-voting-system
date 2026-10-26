@@ -28,6 +28,7 @@ from election.server.counting_totals import physical_approval_blockers
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
 from election.server.polling import as_utc
+from election.server.recount_state import scope_recount_state
 from election.server.security import verify_password
 from election.server.turnout_basis import turnout_scope
 
@@ -313,6 +314,9 @@ def counting_workflow_router(
         revision = prior["revision"] if prior else 0
         if data.expected_selection_revision != revision:
             raise HTTPException(409, detail={"code": "selection_revision_conflict"})
+        required = scope_recount_state(db, scope_id, prior)["latest_instruction"]
+        if required and required["new_round_id"] != round.id:
+            raise HTTPException(409, detail={"code": "local_recount_required_round"})
         now = timestamp()
         pointer = CountRoundSelection(
             scope_id=scope_id,
