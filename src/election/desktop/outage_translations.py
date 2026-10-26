@@ -3,6 +3,13 @@
 OUTAGE_TRANSLATIONS = {
     "tc": {
         "outage_title": "連線中斷及紙本紀錄",
+        "outage_report": "中斷及紙本報表",
+        "outage_report_preview": "預覽報表",
+        "outage_report_export_pdf": "匯出 PDF",
+        "outage_report_export_csv": "匯出 CSV",
+        "outage_report_ready": "中斷及紙本報表已載入。",
+        "outage_report_exported": "中斷及紙本報表已匯出。",
+        "outage_report_export_failed": "未能匯出中斷及紙本報表。",
         "outage_intro": "記錄實際中斷時段及紙本參考。原始紙本時間與伺服器記錄時間分開保留。",
         "outage_station": "投票站編號",
         "outage_list": "已記錄的連線中斷",
@@ -164,6 +171,13 @@ OUTAGE_TRANSLATIONS = {
     },
     "sc": {
         "outage_title": "连接中断及纸本记录",
+        "outage_report": "中断及纸本报表",
+        "outage_report_preview": "预览报表",
+        "outage_report_export_pdf": "导出 PDF",
+        "outage_report_export_csv": "导出 CSV",
+        "outage_report_ready": "中断及纸本报表已载入。",
+        "outage_report_exported": "中断及纸本报表已导出。",
+        "outage_report_export_failed": "未能导出中断及纸本报表。",
         "outage_intro": "记录实际中断时段及纸本参考。纸本原始时间与服务器记录时间分别保留。",
         "outage_station": "投票站编号",
         "outage_list": "已记录的连接中断",
@@ -325,6 +339,15 @@ OUTAGE_TRANSLATIONS = {
     },
     "en": {
         "outage_title": "Connectivity outages and paper records",
+        "outage_report": "Outage and paper reconciliation report",
+        "outage_report_preview": "Preview report",
+        "outage_report_export_pdf": "Export PDF",
+        "outage_report_export_csv": "Export CSV",
+        "outage_report_ready": "The outage and paper reconciliation report is loaded.",
+        "outage_report_exported": "The outage and paper reconciliation report was exported.",
+        "outage_report_export_failed": (
+            "The outage and paper reconciliation report could not be exported."
+        ),
         "outage_intro": (
             'Record the actual interruption and paper reference. Original paper '
             'time and server entry time are kept separately.'

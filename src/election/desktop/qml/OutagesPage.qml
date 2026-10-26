@@ -2,7 +2,9 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
+import QtCore
 
 ColumnLayout {
     id: page
@@ -24,6 +26,8 @@ ColumnLayout {
     property int pendingOutageId: 0
     property bool pendingNewOutage: false
     property string pendingWorkflow: ""
+    property string pendingFormat: "pdf"
+    property string pendingLocale: "tc"
     property var kindOptions: []
     property var workflowOptions: []
     property var actionOptions: []
@@ -31,6 +35,17 @@ ColumnLayout {
     spacing: 20
 
     function t(key) { return words[key] || key }
+    function exportReport(format) {
+        if (!selected.id || working || editorState.dirty || editorState.newer_revision
+                || editorState.uncertain_save) return
+        pendingFormat = format
+        pendingLocale = locale
+        exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
+        exportDialog.defaultSuffix = format
+        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/outage-"
+            + selected.id + "-revision-" + selected.revision + "-" + locale + "." + format
+        exportDialog.open()
+    }
     function exact(value) { return value === undefined || value === null ? "—" : String(value) }
     function timeHkt(value) {
         if (!value) return "—"
@@ -872,6 +887,67 @@ ColumnLayout {
                     approvalReason.textValue)
             }
         }
+    }
+
+    FormPanel {
+        objectName: "outageReportPanel"
+        visible: !!page.selected.id
+        implicitHeight: reportColumn.implicitHeight + 40
+        ColumnLayout {
+            id: reportColumn
+            anchors.fill: parent
+            anchors.margins: 20
+            spacing: 12
+            Heading { text: page.t("outage_report") }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: page.width > 800 ? 3 : 1
+                columnSpacing: 12
+                rowSpacing: 12
+                ActionButton {
+                    objectName: "outageReportPreview"
+                    text: page.t("outage_report_preview")
+                    enabled: !page.working && !page.editorState.dirty
+                        && !page.editorState.newer_revision && !page.editorState.uncertain_save
+                    onClicked: page.outages.previewReport(page.locale)
+                }
+                ActionButton {
+                    objectName: "outageReportExportPdf"
+                    text: page.t("outage_report_export_pdf")
+                    enabled: !page.working && !page.editorState.dirty
+                        && !page.editorState.newer_revision && !page.editorState.uncertain_save
+                    onClicked: page.exportReport("pdf")
+                }
+                ActionButton {
+                    objectName: "outageReportExportCsv"
+                    text: page.t("outage_report_export_csv")
+                    enabled: !page.working && !page.editorState.dirty
+                        && !page.editorState.newer_revision && !page.editorState.uncertain_save
+                    onClicked: page.exportReport("csv")
+                }
+            }
+            Label {
+                objectName: "outageReportPreviewText"
+                visible: page.editorState.report.locale === page.locale
+                text: page.editorState.report_text || ""
+                textFormat: Text.PlainText
+                wrapMode: Text.WrapAnywhere
+                Layout.fillWidth: true
+                color: "#25344b"
+            }
+            FormCaption {
+                text: page.editorState.export_path || ""
+                visible: !!text
+            }
+        }
+    }
+    FileDialog {
+        id: exportDialog
+        objectName: "outageReportExportDialog"
+        fileMode: FileDialog.SaveFile
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        onAccepted: page.outages.downloadReport(
+            page.pendingFormat, selectedFile.toString(), page.pendingLocale)
     }
 
     Dialog {

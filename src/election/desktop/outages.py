@@ -11,6 +11,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 from election.desktop.configuration import AuthorizedRequest, ResultHandler, positive_integer
 from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.exact_numbers import qt_state
+from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
 OUTAGE_KINDS = ("network", "backend", "database", "unknown")
 PAPER_WORKFLOWS = ("count", "turnout", "allocation")
@@ -193,10 +194,19 @@ class OutagesController(QObject):
     stateChanged = Signal()
     erasePassword = Signal()
 
-    def __init__(self, request: AuthorizedRequest, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        request: AuthorizedRequest,
+        parent: QObject | None = None,
+        *,
+        download: DownloadRequest | None = None,
+    ) -> None:
         super().__init__(parent)
         self._request = request
+        self._download = download
         self._generation = 0
+        self._report_generation = 0
+        self._report_snapshot = ""
         self._opened = False
         self._pending: dict[str, Any] | None = None
         self._outage_form_base = _empty_outage_form()
@@ -210,6 +220,8 @@ class OutagesController(QObject):
 
     def reset(self) -> None:
         self._generation += 1
+        self._report_generation += 1
+        self._report_snapshot = ""
         self._opened = False
         self._pending = None
         self._outage_form_base = _empty_outage_form()
@@ -233,6 +245,9 @@ class OutagesController(QObject):
             "newer_revision": False,
             "error": "",
             "notice": "",
+            "report": {},
+            "report_text": "",
+            "export_path": "",
         }
         self.erasePassword.emit()
         self.stateChanged.emit()
@@ -273,6 +288,7 @@ class OutagesController(QObject):
         )
 
     def _set_dirty(self) -> None:
+        self._clear_report()
         self._state.update(dirty=self._dirty(), error="", notice="")
         self.stateChanged.emit()
 
@@ -303,25 +319,29 @@ class OutagesController(QObject):
 
     @staticmethod
     def _same_version(left: dict[str, Any], right: dict[str, Any]) -> bool:
-        def token(row: dict[str, Any]) -> tuple[Any, ...]:
-            reconciliation = row.get("reconciliation") or {}
-            papers = tuple(
-                (
-                    paper.get("id"),
-                    paper.get("revision"),
-                    paper.get("status"),
-                    (paper.get("reentry") or {}).get("request_id"),
-                )
-                for paper in row.get("paper_records", [])
-            )
-            return (
-                row.get("revision"),
-                papers,
-                reconciliation.get("revision"),
-                reconciliation.get("valid"),
-            )
+        fields = (
+            "id",
+            "station_id",
+            "revision",
+            "reference",
+            "kind",
+            "started_at",
+            "ended_at",
+            "entered_at",
+            "actor_id",
+            "notes",
+            "amendment_reason",
+            "paper_records",
+            "reconciled",
+            "reconciliation",
+            "reconciliation_history",
+        )
+        return all(left.get(field) == right.get(field) for field in fields)
 
-        return token(left) == token(right)
+    def _clear_report(self) -> None:
+        self._report_generation += 1
+        self._report_snapshot = ""
+        self._state.update(report={}, report_text="", export_path="")
 
     def _accept_list(self, data: dict[str, Any]) -> bool:
         rows = data.get("outages")
@@ -333,8 +353,11 @@ class OutagesController(QObject):
         self._state["items"] = [self._summary(row) for row in rows]
         selected_id = self._state["selected"].get("id")
         current = next((row for row in rows if row["id"] == selected_id), None)
-        if current is not None and not self._same_version(current, self._state["selected"]):
+        if selected_id and (
+            current is None or not self._same_version(current, self._state["selected"])
+        ):
             self._state["newer_revision"] = True
+            self._clear_report()
         return True
 
     def _accept_detail(self, data: dict[str, Any], outage_id: int) -> bool:
@@ -367,6 +390,7 @@ class OutagesController(QObject):
             paper_editable=False,
             newer_revision=False,
         )
+        self._clear_report()
         self._outage_form_base = deepcopy(self._state["forms"])
         self._paper_form_base = deepcopy(self._state["paper_forms"])
         self._state["dirty"] = False
@@ -462,6 +486,7 @@ class OutagesController(QObject):
         return request_id, command
 
     def _finish_command(self, notice: str) -> None:
+        self._clear_report()
         self._pending = None
         self._state.update(
             pending_request_id="",
@@ -495,6 +520,131 @@ class OutagesController(QObject):
 
         self._send(self._path(), "GET", None, loaded, background=True)
 
+    def _report_path(self, locale: str, extension: str = "") -> str | None:
+        selected = self._state["selected"]
+        if self._state["busy"] or self._state["refreshing"]:
+            return None
+        if (
+            not self._context_ready()
+            or not _outage_record(selected, self._state["station_id"])
+            or locale not in ("tc", "sc", "en")
+        ):
+            self._error("outage_not_selected")
+            return None
+        if self._state["uncertain_save"]:
+            self._error("outage_uncertain_save_pending")
+            return None
+        if self._state["dirty"] or self._state["newer_revision"]:
+            self._error(
+                "outage_revision_conflict" if self._state["newer_revision"]
+                else "unsaved_outage_changes"
+            )
+            return None
+        return (
+            f"{self._path()}/{selected['id']}/statement{extension}?locale={locale}"
+        )
+
+    def _report_identity(self) -> str:
+        return json.dumps(
+            {"record": self._state["selected"], "history": self._state["history"]},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @Slot(str)
+    def previewReport(self, locale: str) -> None:
+        path = self._report_path(locale)
+        if path is None:
+            return
+        selected = self._state["selected"]
+        station_id, outage_id, revision = (
+            self._state["station_id"], selected["id"], selected["revision"]
+        )
+        snapshot = self._report_identity()
+        self._clear_report()
+        report_generation = self._report_generation
+        self._report_snapshot = snapshot
+        self._generation += 1
+        self._state.update(error="", notice="")
+
+        def loaded(data: dict[str, Any]) -> None:
+            lines = data.get("preview_lines")
+            sections = data.get("sections")
+            if report_generation != self._report_generation or snapshot != self._report_identity():
+                return
+            if not (
+                data.get("station_id") == station_id
+                and data.get("outage_id") == outage_id
+                and data.get("revision") == revision
+                and data.get("locale") == locale
+                and isinstance(data.get("title"), str)
+                and isinstance(lines, list)
+                and lines
+                and all(isinstance(line, str) for line in lines)
+                and isinstance(sections, list)
+                and all(
+                    isinstance(section, dict)
+                    and isinstance(section.get("title"), str)
+                    and isinstance(section.get("rows"), list)
+                    and all(
+                        isinstance(row, list) and all(isinstance(cell, str) for cell in row)
+                        for row in section["rows"]
+                    )
+                    for section in sections
+                )
+            ):
+                self._state.update(error="request_failed", notice="")
+                return
+            self._state.update(
+                report=data,
+                report_text="\n".join(lines),
+                notice="outage_report_ready",
+                error="",
+            )
+
+        self._send(path, "GET", None, loaded)
+
+    @Slot(str, str, str)
+    def downloadReport(self, format: str, filepath: str, locale: str) -> None:
+        if format not in ("pdf", "csv") or self._download is None:
+            self._state.update(error="outage_report_export_failed", notice="")
+            self.stateChanged.emit()
+            return
+        destination = report_destination(filepath)
+        path = self._report_path(locale, "." + format)
+        if path is None:
+            return
+        if destination is None:
+            self._state.update(error="outage_report_export_failed", notice="")
+            self.stateChanged.emit()
+            return
+        self._generation += 1
+        generation, report_generation = self._generation, self._report_generation
+        self._state.update(refreshing=False, busy=True, error="", notice="", export_path="")
+        self.stateChanged.emit()
+
+        def failed(code: str) -> None:
+            if generation == self._generation and report_generation == self._report_generation:
+                self._state.update(busy=False, error=code, notice="")
+                self.stateChanged.emit()
+
+        def loaded(data: dict[str, Any]) -> None:
+            if generation != self._generation or report_generation != self._report_generation:
+                return
+            if not save_report(data, destination, format):
+                failed("outage_report_export_failed")
+                return
+            self._state.update(
+                busy=False,
+                notice="outage_report_exported",
+                export_path=destination,
+                error="",
+            )
+            self.stateChanged.emit()
+
+        self._download(path, loaded, failed)
+
     @Slot(result=bool)
     def reload(self) -> bool:
         if not self._context_ready() or self._state["busy"]:
@@ -526,6 +676,7 @@ class OutagesController(QObject):
                 self._error("outage_uncertain_save_pending")
                 return False
             self._generation += 1
+            self._clear_report()
             self._state.update(
                 selected={},
                 history=[],
@@ -745,6 +896,7 @@ class OutagesController(QObject):
             form["action"] = {"count": "submit", "turnout": "save", "allocation": "create"}[value]
         else:
             form[name] = value
+        self._clear_report()
         self._state.update(dirty=self._dirty(), error="", notice="")
         self.stateChanged.emit()
 
