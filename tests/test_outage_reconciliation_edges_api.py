@@ -290,3 +290,40 @@ def test_reconciliation_requires_exact_supervisor_review_and_invalidates_on_basi
         assert after_paper_successor["reconciled"] is False
         assert after_paper_successor["reconciliation_history"][0]["revision"] == 2
         assert after_paper_successor["reconciliation_history"][0]["valid"] is False
+
+
+def test_paper_amendment_replay_stays_bound_to_its_original_outage(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        _, _, count_round = _count_draft(setup)
+        first_path, paper = _create_outage_and_paper(setup, count_round["id"])
+        other_path, _ = _create_outage_and_paper(setup, count_round["id"])
+        paper_path = first_path + f"/paper-records/{paper['id']}"
+        command = {
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "expected_revision": 1,
+            "original_event_at": "2026-11-15T23:34:00+08:00",
+            "target": {"scope_id": setup["scope"]["id"], "round_id": count_round["id"]},
+            "notes": "Corrected original paper time.",
+            "amendment_reason": "Check against the signed count return.",
+        }
+        saved = setup["counter"].put(paper_path, json=command)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["revision"] == 2
+        replay = setup["counter"].put(paper_path, json=command)
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == saved.json()
+
+        wrong_parent = setup["counter"].put(
+            other_path + f"/paper-records/{paper['id']}", json=command,
+        )
+        assert wrong_parent.status_code == 404, wrong_parent.text
+        assert wrong_parent.json() == {"detail": {"code": "outage_paper_not_found"}}
+        current = setup["counter"].get(first_path)
+        assert current.status_code == 200, current.text
+        original_paper = current.json()["record"]["paper_records"][0]
+        assert original_paper["revision"] == 2
+        assert original_paper["notes"] == saved.json()["notes"]
