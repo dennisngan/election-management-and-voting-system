@@ -259,7 +259,12 @@ def _turnout_receipt_preview(
     if save_audit is None:
         raise _receipt_mismatch()
 
-    return _receipt_preview(db, paper, outcome, turnout_record.entered_at)
+    original_effect_at = (
+        turnout_record.submitted_at if action == "submit" else turnout_record.entered_at
+    )
+    if original_effect_at is None:
+        raise _receipt_mismatch()
+    return _receipt_preview(db, paper, outcome, original_effect_at)
 
 
 def preview_existing_receipt(
