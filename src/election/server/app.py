@@ -37,6 +37,7 @@ from election.server.fallback import fallback_router
 from election.server.invalid_ballot_reasons import invalid_ballot_reasons_router
 from election.server.lifecycle import lifecycle_router
 from election.server.models import Account, AuditEvent, LoginSession
+from election.server.outage_reports import outage_report_router
 from election.server.outages import outage_router
 from election.server.polling import polling_router
 from election.server.queue import queue_router
@@ -183,6 +184,7 @@ def create_app(
     app.include_router(counting_workflow_router(database, ready_account, timestamp))
     app.include_router(request_outcomes_router(database, ready_account, timestamp))
     app.include_router(outage_router(database, ready_account, timestamp))
+    app.include_router(outage_report_router(database, ready_account, timestamp))
     app.include_router(f1_reports_router(database, ready_account, timestamp))
     app.include_router(count_reports_router(database, ready_account, timestamp))
     app.include_router(counting_scope_reports_router(database, ready_account, timestamp))
