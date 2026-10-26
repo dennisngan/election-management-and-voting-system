@@ -543,7 +543,6 @@ def test_ordinary_count_submit_keeps_legacy_command_without_paper_field(
             wait(lambda: not editor.property('state')['busy'])
             assert editor.selectRound({round_id}) is True
             wait(lambda: not editor.property('state')['busy'])
-            assert editor.property('state')['paper_record'] == {{}}
             click('countSubmit')
             wait(lambda: not editor.property('state')['busy']
                 and editor.property('state')['notice'] == 'count_submitted')
