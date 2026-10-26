@@ -46,33 +46,16 @@ def test_recovery_material_page_imports_and_shows_empty_journal(
                 "locale": "en",
             },
             """
-            from PySide6.QtQml import QQmlComponent
-            from pathlib import Path
-            from election.desktop.recovery_translations import RECOVERY_TRANSLATIONS
-
             recovery = controller.property('recovery')
             assert recovery is not None
-            words = dict(controller.texts)
-            words.update(RECOVERY_TRANSLATIONS['en'])
-            component = QQmlComponent(engine)
-            component.loadUrl(QUrl.fromLocalFile(
-                str(Path('src/election/desktop/qml/RecoveryPage.qml').resolve())
-            ))
-            wait(lambda: component.status() != QQmlComponent.Status.Loading)
-            assert component.status() == QQmlComponent.Status.Ready, component.errorString()
-            page = component.createWithInitialProperties({
-                'recovery': recovery,
-                'words': words,
-                'locale': 'en',
-            })
-            assert page is not None, component.errorString()
-            page.setParentItem(window.contentItem())
-            page.setWidth(window.width())
-            page.setHeight(window.height())
-            recovery.open()
+            click('recoveryNavigation')
             wait(lambda: not recovery.property('state')['busy'])
             assert recovery.property('state')['commands'] == []
             assert control('recoveryEmpty').property('visible') is True
+            for locale in ('en', 'tc', 'sc'):
+                controller.setLocale(locale)
+                wait(lambda: control('recoveryEmpty').property('text')
+                     == controller.texts['recovery_empty'])
             state_json = json.dumps(recovery.property('state'), ensure_ascii=False)
             assert setup['password'] not in state_json
             """,
