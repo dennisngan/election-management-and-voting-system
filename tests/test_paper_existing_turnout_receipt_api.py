@@ -3,6 +3,7 @@
 from datetime import timedelta
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.test_turnout_api import (
@@ -649,3 +650,82 @@ def test_turnout_submit_receipt_belongs_to_the_submitter_rather_than_the_draft_a
         current = submitter.get(path + "/1")
         assert current.status_code == 200, current.text
         assert current.json() == original_record
+
+
+@pytest.mark.parametrize("current_status", ["submitted", "approved"])
+def test_existing_turnout_save_receipt_remains_linkable_after_its_later_workflow_transitions(
+    admin: TestClient,
+    database_url: str,
+    current_status: str,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    path = scope["path"]
+    clock = TurnoutClock()
+    with (
+        turnout_staff(admin, database_url, clock, [station_id]) as (officer, _),
+        turnout_staff(admin, database_url, clock, [station_id], "supervisor") as (supervisor, _),
+    ):
+        save_command = turnout_draft(
+            supplied_hourly=7,
+            supplied_cumulative=7,
+            event_at="2026-11-15T09:30:00+08:00",
+            source_context="Preserve the draft-save receipt when the report progresses.",
+        )
+        saved = officer.put(path + "/1", json=save_command)
+        assert saved.status_code == 200, saved.text
+        original_record = saved.json()
+        assert original_record["status"] == "draft"
+        assert original_record["submitted_at"] is None
+        assert original_record["approved_at"] is None
+        clock.value += timedelta(minutes=5)
+        submitted = officer.post(
+            path + "/1/submit", json=turnout_command(original_record["revision"])
+        )
+        assert submitted.status_code == 200, submitted.text
+        current_record = submitted.json()
+        if current_status == "approved":
+            clock.value += timedelta(minutes=5)
+            current_record = approve_period(supervisor, path, 1, original_record["revision"])
+        assert current_record["status"] == current_status
+        assert current_record["id"] == original_record["id"]
+        assert current_record["revision"] == original_record["revision"]
+        outcome_path = (
+            f"/api/workspace/stations/{station_id}/request-outcomes/" + save_command["request_id"]
+        )
+        original_outcome = officer.get(outcome_path, params={"workflow": "turnout"})
+        assert original_outcome.status_code == 200, original_outcome.text
+        assert original_outcome.json()["record"] == original_record
+        history_before = officer.get(path + "/1/history")
+        assert history_before.status_code == 200, history_before.text
+        paper_path, paper_record = _register_later_turnout_paper(
+            officer, station_id, clock, "save", "2026-11-15T09:30:00+08:00"
+        )
+        preview = officer.get(
+            paper_path + "/receipt", params={"request_id": save_command["request_id"]}
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["record"] == original_record
+        linked = officer.post(
+            paper_path + "/link-receipt",
+            json={
+                "request_id": str(uuid4()),
+                "expected_outage_revision": 1,
+                "expected_paper_revision": paper_record["revision"],
+                "original_request_id": save_command["request_id"],
+                "expected_receipt_digest": preview.json()["receipt_digest"],
+                "reason": "Link the original save receipt without replacing its later workflow.",
+            },
+        )
+        assert linked.status_code == 200, linked.text
+        assert linked.json()["status"] == "entered"
+        assert linked.json()["reentry"]["record"] == original_record
+        after_outcome = officer.get(outcome_path, params={"workflow": "turnout"})
+        assert after_outcome.status_code == 200, after_outcome.text
+        assert after_outcome.json() == original_outcome.json()
+        current = officer.get(path + "/1")
+        assert current.status_code == 200, current.text
+        assert current.json() == current_record
+        history_after = officer.get(path + "/1/history")
+        assert history_after.status_code == 200, history_after.text
+        assert history_after.json() == history_before.json()
