@@ -208,7 +208,8 @@ def test_invalid_tie_password_feedback_survives_background_result_refresh(
             click('constituencyResultsNavigation')
             wait(lambda: not results.property('state')['busy'])
             choose('constituencyResultTieCandidate', 1)
-            enter('constituencyResultTieReason', 'Keep this reviewed reason after a denied password.')
+            enter('constituencyResultTieReason',
+                  'Keep this reviewed reason after a denied password.')
             click('constituencyResultResolveTie')
             enter('constituencyResultsPassword', 'Wrong-Tie-Review-Password-42!')
             click_confirmation(
