@@ -1,37 +1,58 @@
 """Allocation paper reentry is selectable and saved through the real Material workflow."""
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-from election.server.app import create_app
-from tests.desktop_support import ControlledClock, HttpsServer
+from tests.box_support import BoxClock, READY_PASSWORD, box_staff, box_stations
+from tests.desktop_support import HttpsServer
+from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
-from tests.stock_support import READY_PASSWORD
-from tests.test_allocation_api import allocation_setup as allocation_setup
+from tests.stock_support import stock_payload
+
+
+@pytest.fixture(scope="session")
+def database_url() -> Iterator[str]:
+    yield from lifecycle_database_url()
+
+
+@pytest.fixture(autouse=True)
+def clear_private_active_pointer(database_url: str) -> Iterator[None]:
+    with lifecycle_test_state(database_url):
+        yield
 
 
 @pytest.fixture
-def paper_registration_client(
+def allocation_paper_setup(
+    admin: TestClient,
     database_url: str,
-    allocation_setup: dict,
     https_server: HttpsServer,
-) -> Iterator[tuple[str, dict]]:
-    setup = allocation_setup
-    clock = ControlledClock(datetime(2026, 11, 15, 1, 0, tzinfo=UTC))
+) -> Iterator[dict]:
+    station = box_stations(admin)["N1"]
+    station_id = station["id"]
+    clock = BoxClock()
     https_server.clock.value = clock.value
-    with TestClient(create_app(database_url, now=clock), base_url="https://testserver") as client:
-        login = client.post(
-            "/api/auth/login",
-            json={"username": setup["account"]["username"], "password": READY_PASSWORD},
+    with box_staff(admin, database_url, clock, "polling_officer", [station_id]) as (
+        polling,
+        account,
+    ):
+        base = f"/api/workspace/stations/{station_id}"
+        options = polling.get(base + "/allocations")
+        assert options.status_code == 200, options.text
+        counter = options.json()["counters"][0]
+        series = "T25-ALLOCATION-" + uuid4().hex[:8]
+        received = polling.post(
+            base + "/stock",
+            json=stock_payload(
+                series=series,
+                event_at="2026-11-15T08:00:00+08:00",
+            ),
         )
-        assert login.status_code == 200, login.text
-        client.headers["Authorization"] = "Bearer " + login.json()["token"]
-        base = setup["base"]
-        outage = client.post(
+        assert received.status_code == 201, received.text
+
+        outage = polling.post(
             base + "/outages",
             json={
                 "request_id": str(uuid4()),
@@ -44,32 +65,39 @@ def paper_registration_client(
         )
         assert outage.status_code == 201, outage.text
         outage_path = base + f"/outages/{outage.json()['id']}"
-        event_at = "2026-11-15T08:15:00+08:00"
-        paper = client.post(
+        paper = polling.post(
             outage_path + "/paper-records",
             json={
                 "request_id": str(uuid4()),
                 "expected_outage_revision": 1,
-                "paper_reference": "T25-ALLOCATION-" + uuid4().hex[:12],
+                "paper_reference": "T25-PAPER-" + uuid4().hex[:12],
                 "workflow": "allocation",
                 "action": "create",
-                "original_event_at": event_at,
-                "target": {"counter_id": setup["counter"]["id"]},
+                "original_event_at": "2026-11-15T08:15:00+08:00",
+                "target": {"counter_id": counter["id"]},
                 "notes": "Signed paper allocation return.",
             },
         )
         assert paper.status_code == 201, paper.text
         assert paper.json()["status"] == "pending"
-        yield outage_path, paper.json()
+        yield {
+            "polling": polling,
+            "account": account,
+            "station": station,
+            "base": base,
+            "counter": counter,
+            "series": series,
+            "outage_path": outage_path,
+            "paper": paper.json(),
+        }
 
 
 def test_officer_links_pending_paper_through_visible_allocation_form(
-    allocation_setup: dict,
-    paper_registration_client: tuple[str, dict],
+    allocation_paper_setup: dict,
     https_server: HttpsServer,
 ) -> None:
-    setup = allocation_setup
-    outage_path, paper = paper_registration_client
+    setup = allocation_paper_setup
+    paper_id = setup["paper"]["id"]
     scenario = """
         click('allocationNavigation')
         editor = controller.property('allocations')
@@ -86,7 +114,7 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
         assert state['paper_record']['status'] == 'pending'
         assert control('allocationEventAt').property('text') == '2026-11-15 08:15'
         choose('allocationCounter', 0)
-        enter('allocationSeries', '普通系列 A')
+        enter('allocationSeries', 'SERIES_VALUE')
         enter('allocationSerialFrom', '000001')
         enter('allocationSerialTo', '000002')
         click('allocationSave')
@@ -94,7 +122,7 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
         state = editor.property('state')
         assert state['error'] == ''
         assert state['selected']['revision'] == 1
-    """.replace("PAPER_ID", str(paper["id"]))
+    """.replace("PAPER_ID", str(paper_id)).replace("SERIES_VALUE", setup["series"])
     run_workspace_qml(
         {
             "server": https_server.url,
@@ -105,19 +133,19 @@ def test_officer_links_pending_paper_through_visible_allocation_form(
         scenario,
     )
 
-    current = setup["officer"].get(setup["base"] + "/allocations")
+    current = setup["polling"].get(setup["base"] + "/allocations")
     assert current.status_code == 200, current.text
     items = current.json()["items"]
     assert len(items) == 1
     assert items[0]["quantity"] == 2
     assert current.json()["availability"][0]["available_quantity"] == 6
 
-    outage = setup["officer"].get(outage_path)
+    outage = setup["polling"].get(setup["outage_path"])
     assert outage.status_code == 200, outage.text
     rows = outage.json()["record"]["paper_records"]
     assert len(rows) == 1
     entered = rows[0]
-    assert entered["id"] == paper["id"]
+    assert entered["id"] == paper_id
     assert entered["status"] == "entered"
     assert entered["reentry"]["request_id"]
     assert entered["reentry"]["record"] == items[0]
