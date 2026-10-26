@@ -29,7 +29,7 @@ def test_paper_turnout_save_submit_replay_and_approval_separation(
     event_at = "2026-11-15T09:30:00+08:00"
 
     with (
-        turnout_staff(admin, database_url, clock, [station_id]) as (officer, _),
+        turnout_staff(admin, database_url, clock, [station_id]) as (officer, officer_account),
         turnout_staff(admin, database_url, clock, [station_id], "supervisor") as (supervisor, _),
     ):
         outage = officer.post(
@@ -107,7 +107,19 @@ def test_paper_turnout_save_submit_replay_and_approval_separation(
         assert entered_save["original_event_at"] == "2026-11-15T01:30:00Z"
         assert entered_save["entered_at"] != entered_save["original_event_at"]
         assert entered_save["reentry"]["request_id"] == save_command["request_id"]
+        assert entered_save["reentry"]["actor_id"] == officer_account["id"]
         assert entered_save["reentry"]["record"] == saved.json()
+
+        duplicate_effect = officer.put(
+            path + "/1",
+            json={
+                **save_command,
+                "request_id": str(uuid4()),
+                "expected_revision": saved.json()["revision"],
+            },
+        )
+        assert duplicate_effect.status_code == 409, duplicate_effect.text
+        assert len(officer.get(path + "/1/history").json()["items"]) == 1
 
         duplicate_reference = officer.post(
             outage_record_path + "/paper-records",
