@@ -128,7 +128,8 @@ ColumnLayout {
     component Picker: ComboBox {
         id: picker
         Layout.fillWidth: true
-        enabled: !page.editorState.busy && !page.editorState.refreshing
+        enabled: !page.editorState.busy
+            && (!page.editorState.refreshing || picker.popup.visible)
         implicitHeight: Math.max(48, pickerText.implicitHeight + 24)
         contentItem: Text {
             id: pickerText
