@@ -181,8 +181,9 @@ class ConstituencyResultsController(QObject):
                     self._state["newer_basis"] = True
                     self._state["notice"] = "constituency_result_newer_basis"
             else:
+                if old != body:
+                    self._clear_report()
                 self._state.update(result=deepcopy(body), newer_basis=False)
-                self._clear_report()
             self.stateChanged.emit()
 
         def failed(code: str) -> None:
