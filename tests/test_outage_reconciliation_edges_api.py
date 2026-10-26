@@ -1,5 +1,6 @@
 """Outage paper identities and late provenance linking through public APIs."""
 
+from datetime import timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -373,5 +374,70 @@ def test_count_paper_amendment_replay_requires_current_counting_role(
         counter.headers["Authorization"] = "Bearer " + login.json()["token"]
         assert counter.get("/api/auth/me").json()["role"] == "polling_officer"
         forbidden = counter.put(target, json=command)
+        assert forbidden.status_code == 403, forbidden.text
+        assert forbidden.json() == {"detail": {"code": "counting_officer_required"}}
+
+
+def test_count_receipt_link_replay_requires_current_counting_role(
+    admin: TestClient,
+    database_url: str,
+) -> None:
+    with tally_setup(admin, database_url) as setup:
+        options, round_path, count_round = _count_draft(setup)
+        counter = setup["counter"]
+        original_request_id = str(uuid4())
+        submitted = counter.post(
+            round_path + "/submit",
+            json={
+                "request_id": original_request_id,
+                "expected_revision": 2,
+                "scope_revision": options["scope"]["revision"],
+            },
+        )
+        assert submitted.status_code == 200, submitted.text
+        setup["clock"].value += timedelta(seconds=1)
+        outage_path, paper = _create_outage_and_paper(setup, count_round["id"])
+        paper_path = outage_path + f"/paper-records/{paper['id']}"
+        checked = counter.get(paper_path + "/receipt", params={"request_id": original_request_id})
+        assert checked.status_code == 200, checked.text
+        command = {
+            "request_id": str(uuid4()),
+            "expected_outage_revision": 1,
+            "expected_paper_revision": 1,
+            "original_request_id": original_request_id,
+            "expected_receipt_digest": checked.json()["receipt_digest"],
+            "reason": "Match the committed count to the signed paper return.",
+        }
+        target = paper_path + "/link-receipt"
+        linked = counter.post(target, json=command)
+        assert linked.status_code == 200, linked.text
+        replay = counter.post(target, json=command)
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == linked.json()
+
+        profile = counter.get("/api/auth/me")
+        assert profile.status_code == 200, profile.text
+        account_response = admin.get(f"/api/accounts/{profile.json()['id']}")
+        assert account_response.status_code == 200, account_response.text
+        account = account_response.json()
+        changed = admin.put(
+            f"/api/accounts/{account['id']}",
+            json={
+                "revision": account["revision"],
+                "display_name": account["display_name"],
+                "role": "polling_officer",
+                "enabled": True,
+                "station_ids": account["station_ids"],
+            },
+        )
+        assert changed.status_code == 200, changed.text
+        login = counter.post(
+            "/api/auth/login",
+            json={"username": account["username"], "password": READY_PASSWORD},
+        )
+        assert login.status_code == 200, login.text
+        counter.headers["Authorization"] = "Bearer " + login.json()["token"]
+        assert counter.get("/api/auth/me").json()["role"] == "polling_officer"
+        forbidden = counter.post(target, json=command)
         assert forbidden.status_code == 403, forbidden.text
         assert forbidden.json() == {"detail": {"code": "counting_officer_required"}}
