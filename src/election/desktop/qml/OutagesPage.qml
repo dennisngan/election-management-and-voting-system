@@ -241,6 +241,7 @@ ColumnLayout {
         property bool privateInput: false
         property int inputEchoMode: TextInput.Normal
         property alias textValue: field.text
+        function clear() { field.clear() }
         Layout.fillWidth: true
         spacing: 6
         FormCaption { text: entry.caption }
