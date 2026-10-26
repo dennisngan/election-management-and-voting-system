@@ -311,6 +311,11 @@ def test_report_preview_rejects_peer_tie_resolution_on_same_count_basis(
                 assert stale['result']['basis_digest'] == setup['result_digest']
                 assert stale['result'].get('resolved_candidate_id') is None
 
+                results.refresh()
+                wait(lambda: not results.property('state')['refreshing'])
+                assert results.property('state')['newer_basis'] is True
+                assert results.property('state')['result'].get('resolved_candidate_id') is None
+
                 results.discardAndReload()
                 wait(lambda: not results.property('state')['busy'])
                 refreshed = results.property('state')
