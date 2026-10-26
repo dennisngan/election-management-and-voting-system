@@ -110,6 +110,14 @@ def valid_operational_receipt(command: dict[str, Any], record: Any) -> bool:
                 and selection.get("actor_id") == command["actor_id"]
                 and selection.get("revision") == payload.get("expected_selection_revision", 0) + 1
             )
+        if action == "approve":
+            return bool(
+                record["revision"] == expected + 1 and record["status"] == "approved"
+                and record.get("revision_actor_id") == command["actor_id"]
+                and record.get("approved_by") == command["actor_id"]
+                and record.get("reviewed_revision") == expected
+                and _positive(record.get("reviewed_revision_id"))
+            )
         return bool(record["revision"] == expected + 1
                     and record.get("actor_id") == command["actor_id"])
     if record.get("station_id") != command["station_id"]:
