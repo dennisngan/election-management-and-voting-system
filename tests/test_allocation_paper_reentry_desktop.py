@@ -1,6 +1,9 @@
 """Allocation paper reentry is exercised through real Material controls and public APIs."""
 
+import threading
+import time
 from collections.abc import Iterator
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -11,6 +14,10 @@ from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
 from tests.stock_support import stock_payload
+from tests.test_client_recovery_contract_desktop import RecoveryFaultServer
+from tests.test_client_recovery_contract_desktop import (
+    recovery_fault_server as recovery_fault_server,
+)
 
 
 @pytest.fixture(scope="session")
@@ -443,3 +450,213 @@ def test_lost_allocation_response_keeps_paper_binding_until_recovery_confirms_co
     entered = outage.json()["record"]["paper_records"][0]
     assert entered["status"] == "entered"
     assert entered["reentry"]["record"] == items[0]
+
+
+def test_counter_change_discards_stale_inflight_paper_options(
+    allocation_paper_setup: dict,
+    https_server: HttpsServer,
+    tmp_path: Path,
+) -> None:
+    setup = allocation_paper_setup
+    marker = tmp_path / "paper-target-changed"
+    outages_path = setup["base"] + "/outages"
+    https_server.hold_staff_response_path = outages_path
+    https_server.staff_response_entered.clear()
+    https_server.release_staff_response.clear()
+    counter_one = setup["counter"]["id"]
+    counter_two = setup["second_counter"]["id"]
+    scenario = """
+        click('allocationNavigation')
+        editor = controller.property('allocations')
+        def idle():
+            return not any(editor.property('state')[key] for key in ('busy', 'refreshing'))
+        wait(idle)
+        editor.setField('counter_id', 'COUNTER_ONE')
+        wait(lambda: editor.property('state')['refreshing'])
+        editor.setField('counter_id', 'COUNTER_TWO')
+        Path('MARKER').write_text('target changed')
+        wait(idle)
+        state = editor.property('state')
+        assert state['forms']['counter_id'] == 'COUNTER_TWO'
+        assert state['paper_records'] == []
+    """.replace("COUNTER_ONE", str(counter_one)).replace("COUNTER_TWO", str(counter_two))
+    scenario = scenario.replace("MARKER", str(marker))
+    qml_errors: list[BaseException] = []
+
+    def run_qml() -> None:
+        try:
+            run_workspace_qml(
+                {
+                    "server": https_server.url,
+                    "username": setup["account"]["username"],
+                    "password": READY_PASSWORD,
+                    "station_id": setup["station"]["id"],
+                },
+                scenario,
+            )
+        except BaseException as error:
+            qml_errors.append(error)
+
+    worker = threading.Thread(target=run_qml)
+    worker.start()
+    try:
+        assert https_server.staff_response_entered.wait(10), (
+            "The assigned-station paper list request did not reach the public GET gate."
+        )
+        deadline = time.monotonic() + 10
+        while not marker.exists() and worker.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert marker.exists(), (
+            "The Material controller did not change target during the held read."
+        )
+    finally:
+        https_server.release_staff_response.set()
+        worker.join(timeout=45)
+    assert not worker.is_alive(), "The Material paper-list request did not finish after release."
+    if qml_errors:
+        raise qml_errors[0]
+
+    # The paper belongs to counter one and must never remain listed for counter two.
+    assert setup["paper"]["target"] == {"counter_id": counter_one}
+
+
+def test_same_actor_role_change_preserves_locked_paper_and_new_account_resets_it(
+    allocation_base_setup: dict,
+    recovery_fault_server: RecoveryFaultServer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    setup = allocation_base_setup
+    recovery_fault_server.clock.value = setup["clock"].value
+    path = setup["base"] + "/allocations"
+    original = setup["polling"].post(
+        path,
+        json={
+            "request_id": str(uuid4()),
+            "counter_id": setup["counter"]["id"],
+            "series": setup["series"],
+            "serial_from": "000001",
+            "serial_to": "000002",
+            "event_at": "2026-11-15T08:05:00+08:00",
+        },
+    )
+    assert original.status_code == 201, original.text
+    allocation_id = original.json()["id"]
+    outage_path, paper = _register_paper(
+        setup,
+        action="amend",
+        target={"counter_id": setup["counter"]["id"], "allocation_id": allocation_id},
+        event_at="2026-11-15T08:15:00+08:00",
+    )
+    paper_id = paper["id"]
+    recovery_fault_server.fail_after_path = path + f"/{allocation_id}"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "paper-role-journal"))
+    with box_staff(
+        setup["admin"],
+        setup["database_url"],
+        setup["clock"],
+        "polling_officer",
+        [setup["station"]["id"]],
+    ) as (_, second_account):
+        scenario = """
+            click('allocationNavigation')
+            editor = controller.property('allocations')
+            def idle():
+                return not any(editor.property('state')[key] for key in ('busy', 'refreshing'))
+            wait(idle)
+            choose('allocationPicker', 0)
+            wait(idle)
+            assert editor.property('state')['selected']['revision'] == 1
+            click('allocationPaperRefresh')
+            wait(idle)
+            choose('allocationPaperRecord', 1)
+            enter('allocationSerialTo', '000003')
+            enter('allocationReason', '核對簽署的紙本派票單')
+            click('allocationSave')
+            wait(lambda: not editor.property('state')['busy'])
+            state = editor.property('state')
+            assert state['paper_uncertain'] is True
+            assert state['paper_record']['id'] == PAPER_ID
+            recovery = controller.property('recovery')
+            recovery.open()
+            wait(lambda: not recovery.property('state')['busy'])
+            command = next(row for row in recovery.property('state')['commands']
+                if row['workflow'] == 'allocation')
+            assert command['status'] == 'uncertain'
+            request_id = command['request_id']
+
+            original_context = editor.property('state')['context']
+            assert (
+                original_context['account']['id'] == controller.property('state')['account']['id']
+            )
+            supervisor_context = dict(original_context)
+            supervisor_context['account'] = dict(original_context['account'])
+            supervisor_context['account']['role'] = 'supervisor'
+            editor.set_context(supervisor_context)
+            state = editor.property('state')
+            assert state['role'] == 'supervisor'
+            assert state['paper_uncertain'] is True
+            assert state['paper_record']['id'] == PAPER_ID
+            assert state['paper_records'] == []
+            assert control('allocationPaperRecord').property('visible') is False
+
+            editor.set_context(original_context)
+            state = editor.property('state')
+            assert state['role'] == 'polling_officer'
+            assert state['paper_uncertain'] is True
+            assert state['paper_record']['id'] == PAPER_ID
+            recovery.checkOutcome(request_id)
+            wait(lambda: not recovery.property('state')['busy']
+                and next(row for row in recovery.property('state')['commands']
+                    if row['request_id'] == request_id)['status'] == 'committed')
+            wait(idle)
+            settled = editor.property('state')
+            assert settled['paper_uncertain'] is False
+            assert settled['paper_record'] == {}
+            assert settled['selected']['revision'] == 2
+
+            controller.signOut()
+            wait(lambda: controller.property('state')['phase'] == 'signed_out')
+            controller.signIn(setup['server'], 'SECOND_USERNAME', 'SECOND_PASSWORD')
+            wait(lambda: controller.property('state')['phase'] == 'workspace')
+            workspace = controller.property('workspace')
+            workspace.open()
+            wait(lambda: not workspace.property('state')['busy']
+                and not workspace.property('state')['refreshing'])
+            workspace.selectStation(STATION_ID)
+            wait(lambda: not workspace.property('state')['busy'])
+            other_editor = controller.property('allocations')
+            other_editor.open()
+            wait(idle)
+            other_state = other_editor.property('state')
+            assert other_state['paper_record'] == {}
+            assert other_state['paper_uncertain'] is False
+            recovery = controller.property('recovery')
+            recovery.open()
+            wait(lambda: not recovery.property('state')['busy'])
+            assert not any(row['request_id'] == request_id
+                for row in recovery.property('state')['commands'])
+        """.replace("PAPER_ID", str(paper_id))
+        scenario = scenario.replace("SECOND_USERNAME", second_account["username"])
+        scenario = scenario.replace("SECOND_PASSWORD", READY_PASSWORD)
+        scenario = scenario.replace("STATION_ID", str(setup["station"]["id"]))
+        run_workspace_qml(
+            {
+                "server": recovery_fault_server.url,
+                "username": setup["account"]["username"],
+                "password": READY_PASSWORD,
+                "station_id": setup["station"]["id"],
+            },
+            scenario,
+        )
+
+    current = setup["polling"].get(path + f"/{allocation_id}")
+    assert current.status_code == 200, current.text
+    assert current.json()["revision"] == 2
+    assert current.json()["serial_to"] == "000003"
+    outage = setup["polling"].get(outage_path)
+    assert outage.status_code == 200, outage.text
+    entered = outage.json()["record"]["paper_records"][0]
+    assert entered["id"] == paper_id
+    assert entered["status"] == "entered"
+    assert entered["reentry"]["record"] == current.json()
