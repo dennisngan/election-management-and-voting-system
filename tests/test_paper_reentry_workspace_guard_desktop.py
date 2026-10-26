@@ -10,10 +10,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
-from tests.box_support import box_stations
+from tests.box_support import BoxClock, box_staff, box_stations
+from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.outcomes_support import complete_f2_command
 from tests.qml_workspace_support import run_workspace_qml
+from tests.stock_support import stock_payload
 from tests.tally_support import complete_f1_command, tally_setup
 from tests.test_client_recovery_contract_desktop import RecoveryFaultServer
 from tests.test_client_recovery_contract_desktop import (
@@ -112,6 +114,10 @@ def test_count_workspace_stays_on_source_station_until_committed_outcome_check(
         )
         submit_path = round_path + "/submit"
         recovery_fault_server.fail_after_path = submit_path
+        other_station_path = f"/api/workspace/stations/{other_station_id}"
+        before_other_station_reads = recovery_fault_server.request_count(
+            "GET", other_station_path
+        )
 
         scenario = """
             click('countingRoundsNavigation')
@@ -137,12 +143,19 @@ def test_count_workspace_stays_on_source_station_until_committed_outcome_check(
             wait(lambda: editor.property('state')['uncertain_save'])
 
             workspace = controller.workspace
-            workspace.selectStation(OTHER_STATION_ID)
+            workspace.selectStation(OTHER_STATION_ID, False)
             wait(lambda: not workspace.property('state')['busy'])
             state = workspace.property('state')
             assert state['selected']['station']['id'] == SOURCE_STATION_ID
             assert editor.property('state')['uncertain_save'] is True
             assert editor.property('state')['paper_record']['id'] == PAPER_ID
+            workspace.selectStation(OTHER_STATION_ID, True)
+            wait(lambda: not workspace.property('state')['busy'])
+            state = workspace.property('state')
+            assert state['selected']['station']['id'] == SOURCE_STATION_ID
+            assert state['error']
+            assert editor.property('state')['paper_record']['id'] == PAPER_ID
+            assert editor.property('state')['uncertain_save'] is True
 
             recovery = controller.recovery
             recovery.open()
@@ -151,6 +164,7 @@ def test_count_workspace_stays_on_source_station_until_committed_outcome_check(
                 if row['request_id'] and row['workflow'] == 'count'
                 and row['path'] == SUBMIT_PATH)
             assert command['status'] == 'uncertain'
+            assert command['payload']['paper_record_id'] == PAPER_ID
             request_id = command['request_id']
             recovery.checkOutcome(request_id)
             wait(lambda: not recovery.property('state')['busy']
@@ -161,7 +175,7 @@ def test_count_workspace_stays_on_source_station_until_committed_outcome_check(
             assert editor.property('state')['uncertain_save'] is False
             assert editor.property('state')['paper_record'] == {}
 
-            workspace.selectStation(OTHER_STATION_ID)
+            workspace.selectStation(OTHER_STATION_ID, False)
             wait(lambda: not workspace.property('state')['busy'])
             assert workspace.property('state')['selected']['station']['id'] == OTHER_STATION_ID
         """.replace("SCOPE_ID", str(setup["scope"]["id"]))
@@ -186,6 +200,9 @@ def test_count_workspace_stays_on_source_station_until_committed_outcome_check(
         assert len(entered) == 1
         assert entered[0]["status"] == "entered"
         assert entered[0]["reentry"]["record"]["status"] == "submitted"
+        assert recovery_fault_server.request_count("GET", other_station_path) == (
+            before_other_station_reads + 1
+        )
 
 
 def test_turnout_workspace_stays_locked_after_not_found_until_original_retry_commits(
@@ -211,7 +228,7 @@ def test_turnout_workspace_stays_locked_after_not_found_until_original_retry_com
             json=turnout_draft(
                 supplied_hourly=10,
                 supplied_cumulative=10,
-                event_at="2026-11-15T08:00:00+08:00",
+                event_at="2026-11-15T08:30:00+08:00",
                 source_context="Ordinary turnout draft saved before paper submission.",
             ),
         )
@@ -223,10 +240,14 @@ def test_turnout_workspace_stays_locked_after_not_found_until_original_retry_com
             workflow="turnout",
             action="submit",
             target={"period_index": 1},
-            original_event_at="2026-11-15T08:00:00+08:00",
+            original_event_at="2026-11-15T08:30:00+08:00",
         )
         submit_path = path + "/1/submit"
         recovery_fault_server.fail_before_path = submit_path
+        other_station_path = f"/api/workspace/stations/{other_station_id}"
+        before_other_station_reads = recovery_fault_server.request_count(
+            "GET", other_station_path
+        )
         not_found_marker = tmp_path / "turnout-not-found-checked"
         retry_release = tmp_path / "turnout-retry-release"
         scenario = """
@@ -249,9 +270,19 @@ def test_turnout_workspace_stays_locked_after_not_found_until_original_retry_com
             assert turnout.property('state')['paper_record']['id'] == PAPER_ID
 
             workspace = controller.workspace
-            workspace.selectStation(OTHER_STATION_ID)
+            assert workspace.property('selectionGuarded') is True, (
+                turnout.property('state')['uncertain_save'],
+                turnout.property('state')['paper_pending_request_id'],
+            )
+            workspace.selectStation(OTHER_STATION_ID, False)
             wait(lambda: not workspace.property('state')['busy'])
             assert workspace.property('state')['selected']['station']['id'] == SOURCE_STATION_ID
+            assert turnout.property('state')['paper_record']['id'] == PAPER_ID
+            assert turnout.property('state')['uncertain_save'] is True
+            workspace.selectStation(OTHER_STATION_ID, True)
+            wait(lambda: not workspace.property('state')['busy'])
+            assert workspace.property('state')['selected']['station']['id'] == SOURCE_STATION_ID
+            assert workspace.property('state')['error']
             assert turnout.property('state')['paper_record']['id'] == PAPER_ID
             assert turnout.property('state')['uncertain_save'] is True
 
@@ -261,12 +292,13 @@ def test_turnout_workspace_stays_locked_after_not_found_until_original_retry_com
             command = next(row for row in recovery.property('state')['commands']
                 if row['workflow'] == 'turnout' and row['path'] == SUBMIT_PATH)
             assert command['status'] == 'uncertain'
+            assert command['payload']['paper_record_id'] == PAPER_ID
             request_id = command['request_id']
             recovery.checkOutcome(request_id)
             wait(lambda: not recovery.property('state')['busy']
                 and next(row for row in recovery.property('state')['commands']
                     if row['request_id'] == request_id)['error'] == 'request_not_found')
-            workspace.selectStation(OTHER_STATION_ID)
+            workspace.selectStation(OTHER_STATION_ID, False)
             wait(lambda: not workspace.property('state')['busy'])
             assert workspace.property('state')['selected']['station']['id'] == SOURCE_STATION_ID
             assert turnout.property('state')['paper_record']['id'] == PAPER_ID
@@ -287,7 +319,7 @@ def test_turnout_workspace_stays_locked_after_not_found_until_original_retry_com
                 and turnout.property('state')['selected'].get('status') == 'submitted')
             assert turnout.property('state')['paper_record'] == {}
             assert turnout.property('state')['uncertain_save'] is False
-            workspace.selectStation(OTHER_STATION_ID)
+            workspace.selectStation(OTHER_STATION_ID, False)
             wait(lambda: not workspace.property('state')['busy'])
             assert workspace.property('state')['selected']['station']['id'] == OTHER_STATION_ID
         """.replace("PAPER_ID", str(paper_setup["paper"]["id"]))
@@ -342,3 +374,73 @@ def test_turnout_workspace_stays_locked_after_not_found_until_original_retry_com
         assert len(entered) == 1
         assert entered[0]["status"] == "entered"
         assert entered[0]["reentry"]["record"] == current.json()
+        assert recovery_fault_server.request_count("GET", other_station_path) == (
+            before_other_station_reads + 1
+        )
+        assert recovery_fault_server.request_count("GET", other_station_path) == (
+            before_other_station_reads + 1
+        )
+
+
+def test_confirmed_discard_remains_available_for_an_ordinary_dirty_allocation(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+) -> None:
+    stations = box_stations(admin)
+    station_id = stations["N1"]["id"]
+    other_station_id = stations["N2"]["id"]
+    clock = BoxClock()
+    https_server.clock.value = clock.value
+    with box_staff(
+        admin,
+        database_url,
+        clock,
+        "polling_officer",
+        [station_id, other_station_id],
+    ) as (polling, account):
+        base = f"/api/workspace/stations/{station_id}"
+        stock = polling.post(
+            base + "/stock",
+            json=stock_payload(
+                series="T25-WORKSPACE-DISCARD-" + uuid4().hex[:8],
+                event_at="2026-11-15T08:00:00+08:00",
+            ),
+        )
+        assert stock.status_code == 201, stock.text
+        scenario = """
+            click('allocationNavigation')
+            editor = controller.property('allocations')
+            def idle():
+                return not any(editor.property('state')[key] for key in ('busy', 'refreshing'))
+            wait(idle)
+            choose('allocationCounter', 0)
+            enter('allocationSeries', 'T25-WORKSPACE-DISCARD-SERIES')
+            enter('allocationSerialFrom', '000001')
+            enter('allocationSerialTo', '000002')
+            enter('allocationEventAt', '2026-11-15 08:05')
+            assert editor.property('state')['dirty'] is True
+            assert editor.property('state')['paper_record'] == {}
+            workspace = controller.workspace
+            assert workspace.selectionGuarded is True
+            workspace.selectStation(OTHER_STATION_ID, False)
+            wait(lambda: not workspace.property('state')['busy'])
+            assert workspace.property('state')['selected']['station']['id'] == STATION_ID
+            workspace.selectStation(OTHER_STATION_ID, True)
+            wait(lambda: not workspace.property('state')['busy'])
+            assert workspace.property('state')['selected']['station']['id'] == OTHER_STATION_ID
+            assert editor.property('state')['station_id'] == OTHER_STATION_ID
+            assert editor.property('state')['dirty'] is False
+            assert editor.property('state')['paper_record'] == {}
+        """.replace("OTHER_STATION_ID", str(other_station_id)).replace(
+            "STATION_ID", str(station_id)
+        )
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": BOX_READY_PASSWORD,
+                "station_id": station_id,
+            },
+            scenario,
+        )
