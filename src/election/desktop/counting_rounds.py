@@ -238,7 +238,7 @@ class CountingRoundsController(QObject):
         station_id = self._state["station_id"]
         generation = self._paper_generation = self._paper_generation + 1
 
-        self._state.update(paper_records=[], paper_loading=True)
+        self._state["paper_loading"] = True
         self.stateChanged.emit()
 
         def loaded(snapshot: dict[str, Any]) -> None:
@@ -291,7 +291,10 @@ class CountingRoundsController(QObject):
     def selectPaperRecord(self, paper_id: int) -> bool:
         if self._state["busy"] or self._state["refreshing"] or self._state["paper_loading"]:
             return False
-        if self._state["uncertain_save"] and self._paper_binding_is_locked():
+        if self._state["uncertain_save"]:
+            current_id = self._state["paper_record"].get("id", 0)
+            if paper_id == current_id and not self._paper_binding_is_locked():
+                return True
             self._error("paper_reentry_uncertain")
             return False
         if paper_id == 0:
@@ -775,7 +778,7 @@ class CountingRoundsController(QObject):
                     self._error("paper_reentry_uncertain")
                     return False
                 self._clear_paper_binding()
-                self._clear_paper_options()
+        self._clear_paper_options()
         self._pending = None
         self._clear_report()
         self._send(
@@ -1271,6 +1274,9 @@ class CountingRoundsController(QObject):
             return
         if action == "submit":
             paper = self._state["paper_record"]
+            if paper and self._state["paper_loading"]:
+                self._error("paper_reentry_load_failed")
+                return
             pending_paper_id = payload.get("paper_record_id")
             if pending_paper_id is not None and (
                 not paper or paper.get("id") != pending_paper_id
