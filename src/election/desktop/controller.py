@@ -29,6 +29,7 @@ from election.desktop.invalid_reasons import InvalidReasonsController
 from election.desktop.lifecycle import LifecycleController
 from election.desktop.polling import PollingController
 from election.desktop.queue import QueueController
+from election.desktop.server_backups import ServerBackupsController
 from election.desktop.special_papers import SpecialPapersController
 from election.desktop.staff import StaffController
 from election.desktop.stock import StockController
@@ -67,6 +68,7 @@ class DesktopController(QObject):
         }
         self._token = ""
         self._configuration = ConfigurationController(self._authorized_request, self)
+        self._server_backups = ServerBackupsController(self._authorized_request, self)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
         self._staff = StaffController(self._authorized_request, self)
@@ -258,6 +260,10 @@ class DesktopController(QObject):
         return self._counting_scopes
 
     @Property(QObject, constant=True)
+    def serverBackups(self) -> ServerBackupsController:
+        return self._server_backups
+
+    @Property(QObject, constant=True)
     def countingRounds(self) -> CountingRoundsController:
         return self._counting_rounds
 
@@ -387,6 +393,7 @@ class DesktopController(QObject):
             and account.get("role") == "administrator"
             and not account.get("must_change_password", True)
         )
+        self._server_backups.set_account(account if administrator else {})
         self._configuration.set_available(administrator)
         self._lifecycle.set_available(administrator)
         account_id = account.get("id", 0)

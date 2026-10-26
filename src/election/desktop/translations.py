@@ -14,6 +14,7 @@ from election.desktop.counting_scope_translations import COUNTING_SCOPE_TRANSLAT
 from election.desktop.fallback_translations import FALLBACK_TRANSLATIONS
 from election.desktop.fallback_turnout_translations import FALLBACK_TURNOUT_TRANSLATIONS
 from election.desktop.invalid_reason_translations import INVALID_REASON_TRANSLATIONS
+from election.desktop.server_backup_translations import SERVER_BACKUP_TRANSLATIONS
 from election.desktop.special_paper_translations import SPECIAL_PAPER_TRANSLATIONS
 from election.desktop.stock_snapshot_translations import STOCK_SNAPSHOT_TRANSLATIONS
 
@@ -1987,3 +1988,5 @@ for language, discrepancy_labels in COUNT_DISCREPANCY_TRANSLATIONS.items():
     TRANSLATIONS[language].update(discrepancy_labels)
 for language, result_labels in CONSTITUENCY_RESULT_TRANSLATIONS.items():
     TRANSLATIONS[language].update(result_labels)
+for language, backup_labels in SERVER_BACKUP_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(backup_labels)
