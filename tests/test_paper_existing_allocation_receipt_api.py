@@ -218,7 +218,7 @@ def test_existing_allocation_amend_receipt_can_be_linked_without_changing_ranges
     history_path = current_allocation_path + "/history"
     history_before_link = polling.get(history_path)
     assert history_before_link.status_code == 200, history_before_link.text
-    assert [row["revision"] for row in history_before_link.json()["items"]] == [2, 1]
+    assert [row["revision"] for row in history_before_link.json()["items"]] == [1, 2]
     allocations_before_link = polling.get(allocation_path)
     assert allocations_before_link.status_code == 200, allocations_before_link.text
     assert [
