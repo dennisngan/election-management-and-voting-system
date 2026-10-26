@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from election.server.lifecycle_models import ElectionSchedule
 from election.server.models import Account, AuditEvent
+from election.server.paper_reentry import finish_paper_entry, guard_paper_entry
 from election.server.polling import as_utc, station_scope
 from election.server.reporting_periods import period_bounds as configured_period_bounds
 from election.server.reporting_periods import period_count as period_count
@@ -32,11 +33,15 @@ from election.server.turnout_models import TurnoutRecord, TurnoutRequest
 MAX_TOTAL = 9223372036854775807
 
 
-class TurnoutCommand(BaseModel):
+class TurnoutBaseCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
     expected_revision: int = Field(strict=True, ge=0)
     expected_schedule_revision: int = Field(strict=True, ge=1)
+
+
+class TurnoutCommand(TurnoutBaseCommand):
+    paper_record_id: int | None = Field(default=None, strict=True, gt=0)
 
 
 class TurnoutDraft(TurnoutCommand):
@@ -92,7 +97,7 @@ class TurnoutAmendment(TurnoutDraft):
     amendment_reason: str = Field(min_length=1, max_length=2000)
 
 
-class TurnoutApproval(TurnoutCommand):
+class TurnoutApproval(TurnoutBaseCommand):
     password: str = Field(min_length=1, max_length=128, repr=False)
 
 
@@ -320,7 +325,7 @@ def turnout_router(
         station_id: int,
         index: int,
         action: str,
-        data: TurnoutCommand,
+        data: TurnoutBaseCommand,
         db: Session,
         actor: Account,
     ) -> dict[str, Any]:
@@ -336,7 +341,9 @@ def turnout_router(
             )
             if not verify_password(password_hash, data.password):
                 raise HTTPException(401, detail={"code": "invalid_credentials"})
-        command_data = data.model_dump(mode="json", exclude={"request_id", "password"})
+        command_data = data.model_dump(
+            mode="json", exclude={"request_id", "password", "paper_record_id"}
+        )
         if isinstance(data, TurnoutDraft) and data.mode == "normal":
             # Preserve identities issued by the normal-only version across this migration.
             for key in ("mode", "fallback_activation_id", "fallback_activation_revision",
@@ -367,7 +374,48 @@ def turnout_router(
         if replay:
             if replay.digest != digest:
                 raise HTTPException(409, detail={"code": "request_conflict"})
+            paper_id = getattr(data, "paper_record_id", None)
+            if paper_id is not None:
+                if action not in ("save", "submit"):
+                    raise HTTPException(422, detail={"code": "paper_target_invalid"})
+                paper_entry = guard_paper_entry(
+                    db,
+                    actor,
+                    station_id,
+                    paper_id,
+                    "turnout",
+                    action,
+                    {"period_index": index},
+                    data.request_id,
+                    event_at=(
+                        data.event_at
+                        if action == "save" and isinstance(data, TurnoutDraft)
+                        else None
+                    ),
+                )
+                finish_paper_entry(
+                    db, actor, paper_entry, data.request_id, replay.response, timestamp()
+                )
+                db.commit()
             return replay.response
+        paper_id = getattr(data, "paper_record_id", None)
+        if paper_id is not None and action not in ("save", "submit"):
+            raise HTTPException(422, detail={"code": "paper_target_invalid"})
+        paper_entry = guard_paper_entry(
+            db,
+            actor,
+            station_id,
+            paper_id,
+            "turnout",
+            action,
+            {"period_index": index},
+            data.request_id,
+            event_at=(
+                data.event_at
+                if action == "save" and isinstance(data, TurnoutDraft)
+                else None
+            ),
+        )
         schedule = locked_schedule(db, election.id)
         start, end = period_bounds(schedule, index)
         if data.expected_schedule_revision != schedule.revision:
@@ -535,6 +583,7 @@ def turnout_router(
                 },
             )
         )
+        finish_paper_entry(db, actor, paper_entry, data.request_id, result, now)
         db.commit()
         return result
 
