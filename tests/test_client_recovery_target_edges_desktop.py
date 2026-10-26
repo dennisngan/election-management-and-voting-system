@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication, QEvent
 
 from election.desktop.controller import DesktopController
-from tests.box_support import READY_PASSWORD
 from tests.desktop_support import TLS_DIRECTORY, wait_for, wait_for_editor_idle
 from tests.tally_support import complete_f1_command, tally_setup
 from tests.test_client_recovery_contract_desktop import (
@@ -22,6 +21,7 @@ from tests.test_turnout_desktop import (
     turnout_editor,
 )
 from tests.test_turnout_desktop import turnout_boundary_server as turnout_boundary_server
+from tests.turnout_support import READY_PASSWORD as TURNOUT_READY_PASSWORD
 from tests.turnout_support import TurnoutClock, turnout_draft, turnout_scope, turnout_staff
 
 
@@ -32,7 +32,7 @@ def _fresh_turnout_recovery_client(
     qt_app: QCoreApplication,
 ) -> tuple[DesktopController, object]:
     client = DesktopController(server.url, str(TLS_DIRECTORY / "ca.pem"))
-    client.signIn(server.url, account["username"], READY_PASSWORD)
+    client.signIn(server.url, account["username"], TURNOUT_READY_PASSWORD)
     wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
     workspace = client.property("workspace")
     wait_for_editor_idle(qt_app, workspace)

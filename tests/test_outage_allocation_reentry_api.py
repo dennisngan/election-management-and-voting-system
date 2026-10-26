@@ -290,7 +290,7 @@ def test_create_paper_target_time_and_stock_failures_leave_it_pending_then_enter
     assert pending.status_code == 200, pending.text
     pending_paper = pending.json()["record"]["paper_records"][0]
     assert pending_paper["status"] == "pending"
-    assert "reentry" not in pending_paper
+    assert pending_paper["reentry"] is None
 
     command = _allocation_command(
         setup,
