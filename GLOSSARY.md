@@ -73,6 +73,9 @@ The tallying of physical ballots to determine voting totals and results.
 **Recount (重新點票)**:
 A subsequent tally of ballots that have already been counted.
 
+**Constituency-wide recount instruction**:
+A Supervisor's instruction to recount all required counting scopes of one constituency, with its original scope membership, reason and time. Its completion history remains available as later counts and instructions progress.
+
 **Count round**:
 One tally attempt for a counting scope. A recount creates a subsequent round while preserving the earlier tally.
 
