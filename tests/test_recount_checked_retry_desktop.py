@@ -283,7 +283,7 @@ def test_checked_not_found_retries_original_recount_with_fresh_password_and_sett
                 historical = counter.get(source_path + f"/revisions/{prior['revision']}")
                 assert historical.status_code == 200, historical.text
                 for field in ("candidate_votes", "invalid_papers", "f2", "scope_basis"):
-                    assert historical.json()["record"][field] == prior[field]
+                    assert historical.json()[field] == prior[field]
                 rejected = child.property("state")
                 # A definite rejection retains editable draft evidence, with no unknown lock.
                 assert rejected["uncertain_save"] is False
