@@ -13,7 +13,10 @@ from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.operational_receipts import valid_operational_receipt
 from election.desktop.recovery import RecoveryController
 
-NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
+NETWORK_ERRORS = frozenset({
+    "request_failed", "disconnected", "database_unavailable",
+    "recovery_journal_outcome_unavailable",
+})
 STALE_ERRORS = frozenset({
     "count_scope_revision_conflict", "count_scope_not_ready", "local_recount_selection_stale",
     "local_recount_source_stale", "local_recount_pending",
