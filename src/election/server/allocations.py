@@ -167,6 +167,14 @@ def allocation_router(
                     raise HTTPException(409, detail={"code": "allocation_overlap"})
         return counter, basis
 
+    def write_scope(
+        db: Session, actor: Account, station_id: int, data: AllocationInput,
+    ) -> dict[str, Any]:
+        if data.paper_record_id is not None:
+            # Paper workflows share the active-election-first writer order.
+            db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
+        return stock_scope(db, actor, station_id, write=True)
+
     def paper_entry(
         db: Session,
         actor: Account,
@@ -176,7 +184,6 @@ def allocation_router(
     ) -> PaperEntry:
         if data.paper_record_id is None:
             return None
-        db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
         target = {"counter_id": data.counter_id}
         action = "create"
         if allocation_id is not None:
@@ -291,7 +298,7 @@ def allocation_router(
         station_id: int, data: AllocationInput, response: Response, db: Database, actor: Ready
     ) -> dict[str, Any]:
         def write() -> dict[str, Any]:
-            scope = stock_scope(db, actor, station_id, write=True)
+            scope = write_scope(db, actor, station_id, data)
             paper = paper_entry(db, actor, station_id, None, data)
             digest = allocation_digest(data, station_id)
             saved = db.scalar(
@@ -349,7 +356,7 @@ def allocation_router(
         actor: Ready,
     ) -> dict[str, Any]:
         def write() -> dict[str, Any]:
-            scope = stock_scope(db, actor, station_id, write=True)
+            scope = write_scope(db, actor, station_id, data)
             paper = paper_entry(db, actor, station_id, allocation_id, data)
             head = db.scalar(
                 select(StockAllocation)
