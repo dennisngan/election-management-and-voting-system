@@ -3,6 +3,12 @@
 from copy import deepcopy
 from typing import Any
 
+# These canonical turnout quantities have no _quantity suffix.
+TURNOUT_QUANTITIES = frozenset({
+    "supplied_hourly", "supplied_cumulative", "derived_hourly",
+    "derived_cumulative_start", "derived_cumulative_end",
+})
+
 
 def quantity_display(value: Any) -> Any:
     """Copy nested JSON and add exact text beside integer quantity fields."""
@@ -12,6 +18,7 @@ def quantity_display(value: Any) -> Any:
             if type(item) is int and (
                 key == "quantity" or key.endswith("_quantity")
                 or key in ("difference", "reconciliation_difference")
+                or key in TURNOUT_QUANTITIES
             ):
                 result[key + "_display"] = str(item)
         return result

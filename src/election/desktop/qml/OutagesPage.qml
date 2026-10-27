@@ -59,6 +59,10 @@ ColumnLayout {
         exportDialog.open()
     }
     function exact(value) { return value === undefined || value === null ? "—" : String(value) }
+    function quantity(row, key) {
+        var display = row[key + "_display"]
+        return display === undefined ? page.exact(row[key]) : String(display)
+    }
     function timeHkt(value) {
         if (!value) return "—"
         var match = /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?(Z|[+-]\d\d:\d\d)$/.exec(value)
@@ -161,12 +165,12 @@ ColumnLayout {
                 facts.push(page.t("outage_target_round") + " " + page.exact(record.round_number))
         } else if (paper.workflow === "turnout") {
             facts.push(page.t("outage_target_period") + " " + page.exact(record.period_index))
-            facts.push(page.t("outage_receipt_hourly") + " " + page.exact(record.supplied_hourly))
-            facts.push(page.t("outage_receipt_cumulative") + " " + page.exact(record.supplied_cumulative))
+            facts.push(page.t("outage_receipt_hourly") + " " + page.quantity(record, "supplied_hourly"))
+            facts.push(page.t("outage_receipt_cumulative") + " " + page.quantity(record, "supplied_cumulative"))
         } else if (paper.workflow === "allocation") {
             var counter = record.counter || ({})
             facts.push(page.t("outage_target_counter") + " " + page.exact(counter.code || counter.id))
-            facts.push(page.t("allocation_quantity") + " " + page.exact(record.quantity))
+            facts.push(page.t("allocation_quantity") + " " + page.quantity(record, "quantity"))
             facts.push(page.t("outage_receipt_event") + " " + page.timeHkt(record.event_at))
         }
         return facts.join(" · ")
@@ -177,28 +181,28 @@ ColumnLayout {
         if (paper.workflow === "count") {
             ;(record.candidate_votes || []).forEach(function(row) {
                 lines.push({caption: page.t("outage_receipt_candidate") + " " + row.name,
-                    value: page.exact(row.quantity)})
+                    value: page.quantity(row, "quantity")})
             })
             ;(record.invalid_papers || []).forEach(function(row) {
                 var label = row["label_" + page.locale] || row.name || row.reason_id
                 lines.push({caption: page.t("outage_receipt_invalid") + " " + label,
-                    value: page.exact(row.quantity)})
+                    value: page.quantity(row, "quantity")})
             })
             for (var key of ["questionable_quantity", "actual_counted_quantity",
                     "initial_valid_quantity", "clearly_invalid_quantity",
                     "initial_accounted_quantity"]) {
                 if (record[key] !== undefined)
                     lines.push({caption: page.t("outage_receipt_" + key),
-                        value: page.exact(record[key])})
+                        value: page.quantity(record, key)})
             }
         } else if (paper.workflow === "turnout") {
             for (var turnoutKey of ["supplied_hourly", "supplied_cumulative",
                     "derived_hourly", "derived_cumulative_start", "derived_cumulative_end"]) {
                 lines.push({caption: page.t("outage_receipt_" + turnoutKey),
-                    value: page.exact(record[turnoutKey])})
+                    value: page.quantity(record, turnoutKey)})
             }
         } else if (paper.workflow === "allocation") {
-            lines.push({caption: page.t("allocation_quantity"), value: page.exact(record.quantity)})
+            lines.push({caption: page.t("allocation_quantity"), value: page.quantity(record, "quantity")})
             lines.push({caption: page.t("outage_receipt_serials"),
                 value: page.exact(record.serial_from) + " – " + page.exact(record.serial_to)})
         }

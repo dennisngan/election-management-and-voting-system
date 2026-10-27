@@ -11,7 +11,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler, positive_integer
 from election.desktop.event_times import format_event_time, parse_event_time
-from election.desktop.exact_numbers import qt_state
+from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 from election.outage_snapshots import outage_snapshot_digest
 
@@ -225,7 +225,7 @@ class OutagesController(QObject):
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return qt_state(self._state)
+        return qt_state(quantity_display(self._state))
 
     def reset(self) -> None:
         self._generation += 1
