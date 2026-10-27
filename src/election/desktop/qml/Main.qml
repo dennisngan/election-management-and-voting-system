@@ -56,6 +56,17 @@ ApplicationWindow {
     function revealField(control) { revealIn(scroll, control) }
 
     Connections {
+        target: scroll.contentItem
+        function onContentHeightChanged() {
+            Qt.callLater(function() {
+                var control = window.activeFocusItem
+                if (control && control.cursorPosition !== undefined && control.readOnly !== true)
+                    window.revealField(control)
+            })
+        }
+    }
+
+    Connections {
         target: controller
         function onEraseSecrets() {
             passwordField.clear()
