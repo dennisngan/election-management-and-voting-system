@@ -1,7 +1,7 @@
 """Explicit inspection and retry of journaled operational requests."""
 
-from copy import deepcopy
 import re
+from copy import deepcopy
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 from uuid import UUID
