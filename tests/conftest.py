@@ -32,6 +32,12 @@ from tests.desktop_support import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_client_command_journal(tmp_path, monkeypatch):
+    """Keep each public desktop test's recovery files out of normal user state."""
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "desktop-commands"))
+
+
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(
     item: pytest.Item, call: pytest.CallInfo[object]
@@ -51,10 +57,7 @@ def pytest_runtest_makereport(
         diagnostic = {
             "observed_at": time.monotonic(),
             "staff": {
-                **{
-                    key: staff.get(key)
-                    for key in ("busy", "refreshing", "error", "notice")
-                },
+                **{key: staff.get(key) for key in ("busy", "refreshing", "error", "notice")},
                 "selected_id": selected.get("id"),
                 "account_count": len(staff.get("accounts", [])),
                 "station_count": len(staff.get("station_options", [])),
@@ -67,7 +70,12 @@ def pytest_runtest_makereport(
                 {
                     key: row.get(key)
                     for key in (
-                        "method", "path", "arrived_at", "headers_ready_at", "elapsed", "status"
+                        "method",
+                        "path",
+                        "arrived_at",
+                        "headers_ready_at",
+                        "elapsed",
+                        "status",
                     )
                 }
                 for row in endpoint.request_timings[-20:]
@@ -152,7 +160,8 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
             endpoint.hold_allocation_list = False
             endpoint.allocation_list_entered.set()
         held_staff_response = bool(
-            request.method == "GET" and endpoint.hold_staff_response_path
+            request.method == "GET"
+            and endpoint.hold_staff_response_path
             and request.url.path == endpoint.hold_staff_response_path
         )
         if held_staff_response:
@@ -173,7 +182,8 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
                 }
             )
         if (
-            request.method == "GET" and request.url.path == endpoint.fail_staff_response_path
+            request.method == "GET"
+            and request.url.path == endpoint.fail_staff_response_path
             and response.status_code == 200
         ):
             endpoint.fail_staff_response_path = ""
@@ -181,7 +191,8 @@ def https_server(database_url: str, qt_app: QCoreApplication) -> Iterator[HttpsS
             # The authenticated read ran against MySQL. Substitute only its
             # public HTTP response with a complete failure for the batch guard.
             return Response(
-                content='{"detail":{"code":"request_failed"}}', status_code=503,
+                content='{"detail":{"code":"request_failed"}}',
+                status_code=503,
                 media_type="application/json",
             )
         if held_staff_response:

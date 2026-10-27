@@ -15,6 +15,9 @@ from election.desktop.fallback_translations import FALLBACK_TRANSLATIONS
 from election.desktop.fallback_turnout_translations import FALLBACK_TURNOUT_TRANSLATIONS
 from election.desktop.invalid_reason_translations import INVALID_REASON_TRANSLATIONS
 from election.desktop.local_recount_translations import LOCAL_RECOUNT_TRANSLATIONS
+from election.desktop.outage_translations import OUTAGE_TRANSLATIONS
+from election.desktop.paper_reentry_translations import PAPER_REENTRY_TRANSLATIONS
+from election.desktop.recovery_translations import RECOVERY_TRANSLATIONS
 from election.desktop.server_backup_translations import SERVER_BACKUP_TRANSLATIONS
 from election.desktop.special_paper_translations import SPECIAL_PAPER_TRANSLATIONS
 from election.desktop.stock_snapshot_translations import STOCK_SNAPSHOT_TRANSLATIONS
@@ -1990,6 +1993,14 @@ for language, outcome_labels in COUNT_OUTCOME_TRANSLATIONS.items():
 for language, event_labels in BOX_EVENT_WORDS.items():
     TRANSLATIONS[language].update(event_labels)
 
+for language, labels in RECOVERY_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)
+
+for language, labels in OUTAGE_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)
+
+for language, labels in PAPER_REENTRY_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)
 for language, discrepancy_labels in COUNT_DISCREPANCY_TRANSLATIONS.items():
     TRANSLATIONS[language].update(discrepancy_labels)
 for language, result_labels in CONSTITUENCY_RESULT_TRANSLATIONS.items():

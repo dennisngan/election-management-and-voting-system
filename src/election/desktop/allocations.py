@@ -11,6 +11,8 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest, ResultHandler, positive_integer
 from election.desktop.lifecycle import HKT
+from election.desktop.paper_reentry import paper_options, paper_record_fields
+from election.desktop.recovery import RecoveryController
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 from election.desktop.stock import serial
 
@@ -45,10 +47,16 @@ class AllocationController(QObject):
         super().__init__(parent)
         self._request = request
         self._download = download
+        self._recovery = parent.property("recovery")
+        if isinstance(self._recovery, RecoveryController):
+            self._recovery.stateChanged.connect(self._recovery_changed)
         self._generation = 0
+        self._paper_generation = 0
+        self._account_id = 0
         self._opened = False
         self._report_active = False
         self._pending: tuple[str, str] | None = None
+        self._paper_uncertain = False
         self._state: dict[str, Any] = {}
         self.reset()
 
@@ -58,9 +66,12 @@ class AllocationController(QObject):
 
     def reset(self) -> None:
         self._generation += 1
+        self._paper_generation += 1
+        self._account_id = 0
         self._opened = False
         self._report_active = False
         self._pending = None
+        self._paper_uncertain = False
         self._state = {
             "station_id": 0,
             "role": "",
@@ -69,6 +80,9 @@ class AllocationController(QObject):
             "counters": [],
             "availability": [],
             "selected": {},
+            "paper_records": [],
+            "paper_record": {},
+            "paper_uncertain": False,
             "forms": empty_forms(),
             "quantity_display": "—",
             "history": [],
@@ -89,16 +103,22 @@ class AllocationController(QObject):
 
     def set_context(self, context: dict[str, Any]) -> None:
         station_id = context.get("station", {}).get("id", 0)
-        changed = station_id != self._state["station_id"]
+        account_id = context.get("account", {}).get("id", 0)
+        changed = (
+            station_id != self._state["station_id"] or account_id != self._account_id
+        )
         if changed:
             opened = self._opened
             self.reset()
             self._opened = opened
+        self._account_id = account_id
         self._state.update(
             station_id=station_id,
             context=deepcopy(context),
             role=context.get("account", {}).get("role", ""),
         )
+        if self._state["role"] != "polling_officer":
+            self._clear_paper_options()
         self.stateChanged.emit()
         if changed and station_id and self._opened:
             self.refresh()
@@ -114,6 +134,229 @@ class AllocationController(QObject):
     def _path(self) -> str:
         return f"/api/workspace/stations/{self._state['station_id']}/allocations"
 
+    def _paper_target(self) -> tuple[str, dict[str, int]] | None:
+        counter_id = positive_integer(self._state["forms"].get("counter_id", ""))
+        if counter_id is None:
+            return None
+        target = {"counter_id": counter_id}
+        selected = self._state["selected"]
+        if selected:
+            target["allocation_id"] = selected["id"]
+            return "amend", target
+        return "create", target
+
+    def _clear_paper_record(self) -> None:
+        self._state["paper_record"] = {}
+
+    def _clear_paper_options(self) -> None:
+        self._paper_generation += 1
+        self._state["paper_records"] = []
+
+    @Slot()
+    def refreshPaperRecords(self) -> None:
+        if (
+            not self._opened
+            or not self._state["station_id"]
+            or self._state["busy"]
+            or self._state["refreshing"]
+        ):
+            return
+        if not self._writable():
+            self._clear_paper_options()
+            self.stateChanged.emit()
+            return
+        operation = self._paper_target()
+        if operation is None:
+            self._clear_paper_options()
+            self._clear_paper_record()
+            self.stateChanged.emit()
+            return
+        action, target = operation
+        station_id = self._state["station_id"]
+        generation = self._paper_generation = self._paper_generation + 1
+
+        def loaded(snapshot: dict[str, Any]) -> None:
+            if generation != self._paper_generation:
+                if self._opened and self._state["station_id"] and not (
+                    self._state["busy"] or self._state["refreshing"]
+                ):
+                    self.refreshPaperRecords()
+                return
+            operation = self._paper_target()
+            if (
+                station_id != self._state["station_id"]
+                or operation is None
+                or operation != (action, target)
+            ):
+                self._clear_paper_options()
+                self.stateChanged.emit()
+                return
+            try:
+                rows = paper_options(
+                    snapshot,
+                    station_id=station_id,
+                    workflow="allocation",
+                    target=target,
+                    actions=(action,),
+                )
+            except (KeyError, TypeError, ValueError):
+                self._error("paper_reentry_load_failed")
+                return
+            selected_id = self._state["paper_record"].get("id")
+            if selected_id and not any(row["id"] == selected_id for row in rows):
+                if not self._paper_uncertain:
+                    self._clear_paper_record()
+            self._state["paper_records"] = rows
+            if self._paper_uncertain and self._pending:
+                self._settle_entered_paper(snapshot)
+
+        self._send(
+            f"/api/workspace/stations/{station_id}/outages",
+            "GET",
+            None,
+            loaded,
+            background=True,
+        )
+
+    @Slot(int, result=bool)
+    def selectPaperRecord(self, paper_id: int) -> bool:
+        if self._paper_uncertain:
+            self._error("paper_reentry_uncertain")
+            return False
+        if self._state["busy"] or self._state["refreshing"]:
+            return False
+        if not self._writable():
+            self._error("allocation_read_only")
+            return False
+        if type(paper_id) is not int or paper_id < 0:
+            self._error("paper_reentry_invalid")
+            return False
+        if paper_id == 0:
+            if not self._state["paper_record"]:
+                return True
+            self._clear_paper_record()
+            self._state.update(dirty=True, error="", notice="")
+            self._clear_report()
+            self.stateChanged.emit()
+            return True
+        paper = next(
+            (row for row in self._state["paper_records"] if row.get("id") == paper_id),
+            None,
+        )
+        operation = self._paper_target()
+        if paper is None or operation is None:
+            self._error("paper_reentry_invalid")
+            return False
+        action, target = operation
+        try:
+            paper_record_fields(
+                paper,
+                station_id=self._state["station_id"],
+                workflow="allocation",
+                action=action,
+                target=target,
+            )
+        except ValueError:
+            self._error("paper_reentry_invalid")
+            return False
+        event_at = self.formatTime(paper["original_event_at"]).removesuffix(" HKT")
+        if event_at == "—":
+            self._error("paper_reentry_invalid")
+            return False
+        self._state["paper_record"] = deepcopy(paper)
+        self._state["forms"]["event_at"] = event_at
+        self._state.update(dirty=True, error="", notice="")
+        self._clear_report()
+        self.stateChanged.emit()
+        return True
+
+    def _settle_entered_paper(self, snapshot: dict[str, Any]) -> None:
+        if not self._pending:
+            return
+        request_id = self._pending[1]
+        paper_id = self._state["paper_record"].get("id")
+        for outage in snapshot.get("outages", []):
+            if not isinstance(outage, dict):
+                continue
+            for paper in outage.get("paper_records", []):
+                if (
+                    not isinstance(paper, dict)
+                    or paper.get("id") != paper_id
+                    or paper.get("status") != "entered"
+                ):
+                    continue
+                reentry = paper.get("reentry")
+                record = reentry.get("record") if isinstance(reentry, dict) else None
+                if (
+                    not isinstance(reentry, dict)
+                    or reentry.get("request_id") != request_id
+                    or not isinstance(record, dict)
+                    or not self._allocation(record)
+                ):
+                    return
+                self._settle_paper_receipt(record, paper_id)
+                return
+
+    def _settle_paper_receipt(self, record: dict[str, Any], paper_id: int) -> None:
+        self._paper_uncertain = False
+        self._pending = None
+        self._state.update(
+            paper_uncertain=False,
+            error="",
+            paper_record={},
+            paper_records=[
+                row for row in self._state["paper_records"] if row.get("id") != paper_id
+            ],
+        )
+        self._accept(record)
+        rows = {row["id"]: row for row in self._state["items"]}
+        rows[record["id"]] = allocation_display(record)
+        self._state.update(items=[rows[key] for key in sorted(rows)], notice="allocation_saved")
+        self._history(refresh_after=True)
+
+    def _recovery_changed(self) -> None:
+        if (
+            not self._paper_uncertain
+            or not self._pending
+            or not isinstance(self._recovery, RecoveryController)
+        ):
+            return
+        state = self._recovery.property("state")
+        commands = state.get("commands", []) if isinstance(state, dict) else []
+        request_id = self._pending[1]
+        command = next(
+            (row for row in commands if row.get("request_id") == request_id), None
+        )
+        if (
+            not isinstance(command, dict)
+            or command.get("workflow") != "allocation"
+            or command.get("station_id") != self._state["station_id"]
+            or command.get("actor_id") != self._account_id
+        ):
+            return
+        if command.get("status") == "committed":
+            receipt = command.get("receipt")
+            record = receipt.get("record") if isinstance(receipt, dict) else None
+            paper_id = self._state["paper_record"].get("id")
+            if (
+                paper_id
+                and isinstance(record, dict)
+                and self._allocation(record)
+                and record["counter"]["id"] == positive_integer(
+                    self._state["forms"].get("counter_id", "")
+                )
+            ):
+                self._settle_paper_receipt(record, paper_id)
+        elif command.get("status") == "rejected":
+            self._paper_uncertain = False
+            self._pending = None
+            self._state.update(
+                paper_uncertain=False,
+                error=command.get("error", ""),
+                notice="",
+            )
+            self.stateChanged.emit()
+
     def _error(self, code: str) -> None:
         self._state.update(
             error="allocation_validation" if code == "validation_error" else code, notice=""
@@ -128,6 +371,7 @@ class AllocationController(QObject):
         success: ResultHandler,
         *,
         background: bool = False,
+        mutation: bool = False,
     ) -> None:
         generation = self._generation
         activity = "refreshing" if background else "busy"
@@ -139,6 +383,9 @@ class AllocationController(QObject):
                 return
             self._state[activity] = False
             self._report_active = False
+            if mutation:
+                self._paper_uncertain = False
+                self._state["paper_uncertain"] = False
             success(data)
             self.stateChanged.emit()
 
@@ -146,6 +393,18 @@ class AllocationController(QObject):
             if generation == self._generation:
                 self._state[activity] = False
                 self._report_active = False
+                if mutation and self._state["paper_record"]:
+                    self._paper_uncertain = code in {
+                        "disconnected",
+                        "request_failed",
+                        "invalid_response",
+                        "certificate_error",
+                        "database_unavailable",
+                        "session_expired",
+                        "access_changed",
+                        "recovery_journal_outcome_unavailable",
+                    }
+                    self._state["paper_uncertain"] = self._paper_uncertain
                 self._error(code)
 
         self._request(path, method, payload, done, failed)
@@ -239,6 +498,9 @@ class AllocationController(QObject):
     def _can_load(self, discard: bool) -> bool:
         if not self._state["station_id"] or self._state["busy"]:
             return False
+        if self._paper_uncertain:
+            self._error("paper_reentry_uncertain")
+            return False
         if self._state["dirty"] and not discard:
             self._error("unsaved_allocation_changes")
             return False
@@ -281,6 +543,8 @@ class AllocationController(QObject):
         if allocation_id < 0 or not self._can_load(discard):
             return False
         if allocation_id == 0:
+            self._clear_paper_options()
+            self._clear_paper_record()
             self._state.update(
                 selected={},
                 forms=empty_forms(),
@@ -328,17 +592,26 @@ class AllocationController(QObject):
 
     @Slot(str, str)
     def setField(self, name: str, value: str) -> None:
+        if self._paper_uncertain:
+            self._error("paper_reentry_uncertain")
+            return
         if (
             self._writable()
             and not self._state["busy"]
             and name in self._state["forms"]
             and self._state["forms"][name] != value
         ):
+            target_changed = name == "counter_id"
             self._state["forms"][name] = value
+            if target_changed:
+                self._clear_paper_options()
+                self._clear_paper_record()
             self._state.update(dirty=True, error="", notice="")
             self._clear_report()
             self._calculate()
             self.stateChanged.emit()
+            if target_changed:
+                self.refreshPaperRecords()
 
     def _calculate(self) -> None:
         form = self._state["forms"]
@@ -380,14 +653,40 @@ class AllocationController(QObject):
                 if not form["reason"].strip() or len(form["reason"]) > 1000:
                     raise ValueError("A correction reason is required")
                 payload.update(revision=self._state["selected"]["revision"], reason=form["reason"])
+            operation = self._paper_target()
+            if operation is None:
+                raise ValueError("Paper target is unavailable")
+            action, target = operation
+            try:
+                payload.update(
+                    paper_record_fields(
+                        self._state["paper_record"],
+                        station_id=self._state["station_id"],
+                        workflow="allocation",
+                        action=action,
+                        target=target,
+                    )
+                )
+            except ValueError:
+                self._error("paper_reentry_invalid")
+                return None
             return payload
-        except ValueError:
-            self._error("allocation_validation")
+        except ValueError as error:
+            self._error(
+                "paper_reentry_invalid"
+                if str(error) == "paper_target_conflict"
+                else "allocation_validation"
+            )
             return None
 
     def _accept(self, data: dict[str, Any]) -> None:
+        self._paper_uncertain = False
+        self._clear_paper_options()
         self._state.update(
             selected=allocation_display(data),
+            paper_records=[],
+            paper_record={},
+            paper_uncertain=False,
             forms={
                 "counter_id": str(data["counter"]["id"]),
                 "series": data["series"],
@@ -408,6 +707,9 @@ class AllocationController(QObject):
     def save(self) -> None:
         if self._state["busy"]:
             return
+        if self._paper_uncertain:
+            self._error("paper_reentry_uncertain")
+            return
         if not self._writable():
             self._error("election_read_only")
             return
@@ -415,6 +717,7 @@ class AllocationController(QObject):
         if payload is None:
             return
         allocation_id = self._state["selected"].get("id", 0)
+        paper_id = self._state["paper_record"].get("id")
         signature = json.dumps(
             {"station": self._state["station_id"], "allocation": allocation_id, "data": payload},
             sort_keys=True,
@@ -435,10 +738,17 @@ class AllocationController(QObject):
                 or datetime.fromisoformat(data["event_at"])
                 != datetime.fromisoformat(payload["event_at"])
             ):
+                if paper_id:
+                    self._paper_uncertain = True
+                    self._state["paper_uncertain"] = True
                 self._error("request_failed")
                 return
             self._pending = None
             self._accept(data)
+            if paper_id:
+                self._state["paper_records"] = [
+                    row for row in self._state["paper_records"] if row.get("id") != paper_id
+                ]
             rows = {row["id"]: row for row in self._state["items"]}
             rows[data["id"]] = allocation_display(data)
             self._state["items"] = [rows[key] for key in sorted(rows)]
@@ -450,6 +760,7 @@ class AllocationController(QObject):
             "PUT" if allocation_id else "POST",
             payload,
             saved,
+            mutation=True,
         )
 
     @Slot(str, result=str)

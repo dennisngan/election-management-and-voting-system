@@ -34,10 +34,13 @@ ColumnLayout {
     property var scopeOptions: []
     property var roundOptions: []
     property var historyOptions: []
+    property var paperOptions: []
     property var reportOptions: []
     property string selectorKey: ""
+    property string paperKey: ""
     property string pendingFormat: "pdf"
     property string pendingLocale: "tc"
+    readonly property var selectedPaper: editorState.paper_record || ({})
     signal reveal(var control)
     spacing: 20
 
@@ -101,6 +104,13 @@ ColumnLayout {
         if (sk !== selectorKey) {
             selectorKey = sk; scopeOptions = scopes; roundOptions = rounds; historyOptions = history
         }
+        var papers = [{id: 0, label: t("paper_reentry_none")}].concat(
+            (editorState.paper_records || []).map(function(row) {
+                return {id: row.id, label: row.paper_reference + " · "
+                    + page.time(row.original_event_at)}
+            }))
+        var pk = JSON.stringify(papers)
+        if (pk !== paperKey) { paperKey = pk; paperOptions = papers }
     }
     function exportReport(format) {
         pendingFormat = format; pendingLocale = locale
@@ -291,6 +301,68 @@ ColumnLayout {
         recounts: page.countingRounds.recounts
         words: page.words
         onReveal: control => page.reveal(control)
+    }
+    FormPanel {
+        objectName: "countPaperReentryPanel"
+        visible: !!page.selected.id && page.selected.status === "draft"
+            && page.writer && !page.editorState.historical
+        implicitHeight: paperColumn.implicitHeight + 40
+        ColumnLayout {
+            id: paperColumn
+            anchors.fill: parent; anchors.margins: 20; spacing: 12
+            Heading { text: page.t("paper_reentry_title") }
+            FormCaption { text: page.t("paper_reentry_hint") }
+            Picker {
+                objectName: "countRoundPaperRecord"
+                model: page.paperOptions
+                currentIndex: page.indexFor(page.paperOptions, "id", page.selectedPaper.id || 0)
+                enabled: !page.working && !page.editorState.refreshing
+                    && !page.editorState.paper_loading
+                    && !page.editorState.uncertain_save && !page.editorState.paper_binding_locked
+                Accessible.name: page.t("paper_reentry_reference")
+                onActivated: index => {
+                    if (model[index]) page.countingRounds.selectPaperRecord(model[index].id)
+                }
+            }
+            FormCaption {
+                objectName: "countRoundPaperReference"
+                visible: !!page.selectedPaper.id
+                text: page.t("paper_reentry_reference") + " · "
+                    + (page.selectedPaper.paper_reference || "")
+            }
+            FormCaption {
+                objectName: "countRoundPaperOriginalTime"
+                visible: !!page.selectedPaper.id
+                text: page.t("paper_reentry_original_at") + " · "
+                    + page.time(page.selectedPaper.original_event_at)
+            }
+            FormCaption {
+                visible: page.editorState.error_origin === "read" && !!page.editorState.error
+                text: page.t("paper_reentry_load_failed")
+                color: "#8a5c16"
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Action {
+                    objectName: "countRoundPaperRefresh"
+                    text: page.t("paper_reentry_refresh")
+                    highlighted: false
+                    enabled: !page.working && !page.editorState.refreshing
+                    && !page.editorState.paper_loading
+                    onClicked: page.countingRounds.refreshPaperRecords()
+                }
+                Action {
+                    objectName: "countRoundPaperClear"
+                    text: page.t("paper_reentry_clear")
+                    highlighted: false
+                    enabled: !!page.selectedPaper.id && !page.working
+                        && !page.editorState.paper_loading
+                        && !page.editorState.uncertain_save
+                        && !page.editorState.paper_binding_locked
+                    onClicked: page.countingRounds.selectPaperRecord(0)
+                }
+            }
+        }
     }
     FormPanel {
         visible: page.writer && !!page.selected.id && !page.editorState.historical

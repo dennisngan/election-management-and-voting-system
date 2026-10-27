@@ -13,7 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from election.server.allocation_models import StockAllocation, StockAllocationRevision
+from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
+from election.server.paper_reentry import PaperEntry, finish_paper_entry, guard_paper_entry
 from election.server.station_models import IssuanceCounter
 from election.server.stock import stock_scope, stock_write
 from election.server.stock_inventory import (
@@ -38,6 +40,7 @@ class AllocationInput(BaseModel):
     serial_from: str = Field(min_length=1, max_length=18)
     serial_to: str = Field(min_length=1, max_length=18)
     event_at: AwareDatetime
+    paper_record_id: int | None = Field(default=None, strict=True, gt=0)
 
     @field_validator("series")
     @classmethod
@@ -93,7 +96,7 @@ def allocation_view(row: StockAllocationRevision, scope: dict[str, Any]) -> dict
 def allocation_digest(
     data: AllocationInput, station_id: int, allocation_id: int | None = None
 ) -> str:
-    values = data.model_dump(mode="json", exclude={"request_id"})
+    values = data.model_dump(mode="json", exclude={"request_id", "paper_record_id"})
     values["event_at"] = data.event_at.astimezone(UTC).isoformat()
     return hashlib.sha256(
         json.dumps(
@@ -164,6 +167,33 @@ def allocation_router(
                     raise HTTPException(409, detail={"code": "allocation_overlap"})
         return counter, basis
 
+    def paper_entry(
+        db: Session,
+        actor: Account,
+        station_id: int,
+        allocation_id: int | None,
+        data: AllocationInput,
+    ) -> PaperEntry:
+        if data.paper_record_id is None:
+            return None
+        db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
+        target = {"counter_id": data.counter_id}
+        action = "create"
+        if allocation_id is not None:
+            target["allocation_id"] = allocation_id
+            action = "amend"
+        return guard_paper_entry(
+            db,
+            actor,
+            station_id,
+            data.paper_record_id,
+            "allocation",
+            action,
+            target,
+            data.request_id,
+            event_at=data.event_at,
+        )
+
     def persist(
         db: Session,
         actor: Account,
@@ -174,6 +204,7 @@ def allocation_router(
         counter: IssuanceCounter,
         basis: list[dict[str, int]],
         now: datetime,
+        paper: PaperEntry,
     ) -> dict[str, Any]:
         if isinstance(data, AllocationCorrection):
             reason, action = data.reason, "stock_allocation_corrected"
@@ -225,12 +256,16 @@ def allocation_router(
                     "revision": head.revision,
                     "quantity": data.quantity,
                     # The command's revision is the previous expected head.
-                    **data.model_dump(mode="json", exclude={"request_id", "revision"}),
+                    **data.model_dump(
+                        mode="json", exclude={"request_id", "revision", "paper_record_id"}
+                    ),
                 },
             )
         )
+        result = allocation_view(row, scope)
+        finish_paper_entry(db, actor, paper, data.request_id, result, now)
         db.commit()
-        return allocation_view(row, scope)
+        return result
 
     @router.get("")
     def list_allocations(station_id: int, db: Database, actor: Ready) -> dict[str, Any]:
@@ -257,6 +292,7 @@ def allocation_router(
     ) -> dict[str, Any]:
         def write() -> dict[str, Any]:
             scope = stock_scope(db, actor, station_id, write=True)
+            paper = paper_entry(db, actor, station_id, None, data)
             digest = allocation_digest(data, station_id)
             saved = db.scalar(
                 select(StockAllocationRevision)
@@ -264,16 +300,22 @@ def allocation_router(
                 .with_for_update()
             )
             if saved is not None:
-                if saved.payload_digest != digest:
+                if saved.payload_digest != digest or (
+                    paper is not None and saved.actor_id != actor.id
+                ):
                     raise HTTPException(409, detail={"code": "request_conflict"})
                 response.status_code = 200
-                return allocation_view(saved, scope)
+                result = allocation_view(saved, scope)
+                if paper is not None:
+                    finish_paper_entry(db, actor, paper, data.request_id, result, timestamp())
+                    db.commit()
+                return result
             counter, basis = validate_stock(db, station_id, data)
             now = timestamp()
             head = StockAllocation(station_id=station_id, revision=1, created_at=now)
             db.add(head)
             db.flush()
-            return persist(db, actor, scope, data, head, digest, counter, basis, now)
+            return persist(db, actor, scope, data, head, digest, counter, basis, now, paper)
 
         return stock_write(db, write)
 
@@ -308,6 +350,7 @@ def allocation_router(
     ) -> dict[str, Any]:
         def write() -> dict[str, Any]:
             scope = stock_scope(db, actor, station_id, write=True)
+            paper = paper_entry(db, actor, station_id, allocation_id, data)
             head = db.scalar(
                 select(StockAllocation)
                 .where(
@@ -325,9 +368,15 @@ def allocation_router(
                 .with_for_update()
             )
             if saved is not None:
-                if saved.payload_digest != digest:
+                if saved.payload_digest != digest or (
+                    paper is not None and saved.actor_id != actor.id
+                ):
                     raise HTTPException(409, detail={"code": "request_conflict"})
-                return allocation_view(saved, scope)
+                result = allocation_view(saved, scope)
+                if paper is not None:
+                    finish_paper_entry(db, actor, paper, data.request_id, result, timestamp())
+                    db.commit()
+                return result
             if head.revision != data.revision:
                 raise HTTPException(409, detail={"code": "revision_conflict"})
             counter, basis = validate_stock(db, station_id, data, exclude_id=head.id)
@@ -343,7 +392,7 @@ def allocation_router(
             )
             head.revision += 1
             now = timestamp()
-            return persist(db, actor, scope, data, head, digest, counter, basis, now)
+            return persist(db, actor, scope, data, head, digest, counter, basis, now, paper)
 
         return stock_write(db, write)
 

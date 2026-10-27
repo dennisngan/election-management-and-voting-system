@@ -28,7 +28,7 @@ ApplicationWindow {
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
     readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "specialPapers", "counterReturns", "turnout", "fallback", "complaints",
-        "complaintPeriods", "queue", "boxes", "accounting", "countingScopes", "countingRounds", "constituency_results"].indexOf(currentPage) >= 0
+        "complaintPeriods", "queue", "boxes", "accounting", "countingScopes", "countingRounds", "recovery", "outages", "constituency_results"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
     onCurrentPageChanged: Qt.callLater(function() { if (scroll.contentItem) scroll.contentItem.contentY = 0 })
@@ -640,6 +640,58 @@ ApplicationWindow {
                     }
                 }
                 Button {
+                    id: recoveryNavigation
+                    objectName: "recoveryNavigation"
+                    text: window.t("recovery_title")
+                    Layout.fillWidth: true
+                    flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "recovery"
+                    Material.background: highlighted ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: recoveryNavigation.text
+                        textFormat: Text.PlainText
+                        font: recoveryNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "recovery"
+                        controller.workspace.open()
+                        controller.recovery.open()
+                    }
+                }
+                Button {
+                    id: outagesNavigation
+                    objectName: "outagesNavigation"
+                    text: window.t("outage_title")
+                    Layout.fillWidth: true
+                    flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "outages"
+                    Material.background: highlighted ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: outagesNavigation.text
+                        textFormat: Text.PlainText
+                        font: outagesNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "outages"
+                        controller.workspace.open()
+                        controller.outages.open()
+                    }
+                }
+                Button {
                     id: constituencyResultsNavigation
                     objectName: "constituencyResultsNavigation"
                     text: window.t("constituency_results_title"); Layout.fillWidth: true; flat: true
@@ -1014,6 +1066,22 @@ ApplicationWindow {
                         visible: window.currentPage === "accounting"
                         Layout.fillWidth: true
                         accounting: controller.accounting
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    RecoveryPage {
+                        visible: window.currentPage === "recovery"
+                        Layout.fillWidth: true
+                        recovery: controller.recovery
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    OutagesPage {
+                        visible: window.currentPage === "outages"
+                        Layout.fillWidth: true
+                        outages: controller.outages
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)

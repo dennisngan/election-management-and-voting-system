@@ -27,20 +27,25 @@ from election.server.counting_rounds import (
 from election.server.counting_totals import physical_approval_blockers
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
+from election.server.paper_reentry import finish_paper_entry, guard_paper_entry
 from election.server.polling import as_utc
 from election.server.recount_state import scope_recount_state
 from election.server.security import verify_password
 from election.server.turnout_basis import turnout_scope
 
 
-class CountCommand(BaseModel):
+class CountBaseCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
     expected_revision: int = Field(strict=True, ge=1)
     scope_revision: int = Field(strict=True, ge=1)
 
 
-class CountApproval(CountCommand):
+class CountCommand(CountBaseCommand):
+    paper_record_id: int | None = Field(default=None, strict=True, gt=0)
+
+
+class CountApproval(CountBaseCommand):
     password: str = Field(min_length=1, max_length=128, repr=False)
 
 
@@ -49,7 +54,12 @@ class CountSelection(CountApproval):
 
 
 def command_digest(
-    action: str, station_id: int, scope_id: int, round_id: int, actor_id: int, data: CountCommand
+    action: str,
+    station_id: int,
+    scope_id: int,
+    round_id: int,
+    actor_id: int,
+    data: CountBaseCommand,
 ) -> str:
     return hashlib.sha256(
         json.dumps(
@@ -59,7 +69,9 @@ def command_digest(
                 "scope_id": scope_id,
                 "round_id": round_id,
                 "actor_id": actor_id,
-                "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
+                "data": data.model_dump(
+                    mode="json", exclude={"request_id", "password", "paper_record_id"}
+                ),
             },
             sort_keys=True,
             ensure_ascii=False,
@@ -103,7 +115,32 @@ def counting_workflow_router(
         if receipt:
             if receipt.digest != digest:
                 raise HTTPException(409, detail={"code": "request_conflict"})
+            paper_entry = guard_paper_entry(
+                db,
+                actor,
+                station_id,
+                data.paper_record_id,
+                "count",
+                "submit",
+                {"scope_id": scope_id, "round_id": round_id},
+                data.request_id,
+            )
+            finish_paper_entry(
+                db, actor, paper_entry, data.request_id, receipt.response, timestamp()
+            )
+            if paper_entry is not None:
+                db.commit()
             return receipt.response
+        paper_entry = guard_paper_entry(
+            db,
+            actor,
+            station_id,
+            data.paper_record_id,
+            "count",
+            "submit",
+            {"scope_id": scope_id, "round_id": round_id},
+            data.request_id,
+        )
         if options["scope"]["revision"] != data.scope_revision:
             raise HTTPException(409, detail={"code": "count_scope_revision_conflict"})
         round = round_at(db, scope_id, round_id)
@@ -168,6 +205,7 @@ def counting_workflow_router(
                 },
             )
         )
+        finish_paper_entry(db, actor, paper_entry, data.request_id, result, now)
         db.commit()
         return result
 
