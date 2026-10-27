@@ -142,3 +142,61 @@ def test_one_constituency_instruction_creates_two_blank_rounds_and_retains_revie
         assert {row["scope_id"] for row in result["pending"]} == set(old_rounds)
         assert all(row["code"] == "recount_pending" for row in result["pending"])
         assert result["complete"] is False and result["provisional"] is True
+
+
+def test_original_constituency_request_can_be_checked_and_replayed_without_extra_rounds(
+    admin: TestClient, database_url: str,
+) -> None:
+    with complete_tie_setup(admin, database_url) as setup:
+        save_result_round(setup, [6, 4], approve_and_select=True)
+        supervisor = setup["clients"]["supervisor"]
+        base = f"/api/workspace/constituencies/{setup['constituency_id']}"
+        target = base + "/recounts"
+        options_response = supervisor.get(target)
+        assert options_response.status_code == 200, options_response.text
+        options = options_response.json()
+        request_id = str(uuid4())
+        outcome_path = base + f"/request-outcomes/{request_id}?workflow=constituency_recount"
+        missing = supervisor.get(outcome_path)
+        assert missing.status_code == 200, missing.text
+        assert missing.json() == {
+            "request_id": request_id, "workflow": "constituency_recount", "status": "not_found",
+        }
+        setup["clock"].value += timedelta(minutes=10)
+        command = {
+            "request_id": request_id,
+            "basis_digest": options["basis_digest"],
+            "scope_sources": options["scope_sources"],
+            "event_at": "2026-11-16T00:05:42.123456+08:00",
+            "reason": "Keep the original wide instruction receipt after a lost reply.",
+            "password": READY_PASSWORD,
+        }
+        created = supervisor.post(target, json=command)
+        assert created.status_code == 201, created.text
+        original = created.json()
+        outcome = supervisor.get(outcome_path)
+        assert outcome.status_code == 200, outcome.text
+        assert outcome.json() == {
+            "request_id": request_id, "workflow": "constituency_recount",
+            "status": "committed", "record": original,
+        }
+        replay = supervisor.post(target, json=command)
+        assert replay.status_code == 200, replay.text
+        assert replay.json() == original
+        history = supervisor.get(target)
+        assert history.status_code == 200, history.text
+        assert len(history.json()["instructions"]) == 1
+        assert history.json()["instructions"][0]["id"] == original["instruction"]["id"]
+        assert len(history.json()["instructions"][0]["members"]) == 2
+        for source, member in zip(options["scope_sources"], original["members"], strict=True):
+            path = (
+                f"/api/workspace/stations/{source['station_id']}"
+                f"/counting-scopes/{source['scope_id']}/rounds"
+            )
+            response = supervisor.get(path)
+            assert response.status_code == 200, response.text
+            assert len(response.json()["rounds"]) == 2
+            assert {row["id"] for row in response.json()["rounds"]} == {
+                source["source_round_id"], member["round"]["id"],
+            }
+            assert response.json()["selection"]["round_id"] == source["source_round_id"]
