@@ -131,6 +131,29 @@ def _recount_instruction_receipt(
     )
 
 
+def _complete_blank_rows(record: dict[str, Any]) -> bool:
+    blockers = record.get("blockers")
+    if not isinstance(blockers, list) or not all(isinstance(row, dict) for row in blockers):
+        return False
+    for field, identity, missing_code in (
+        ("candidate_votes", "candidate_id", "f1_candidate_missing"),
+        ("invalid_papers", "reason_id", "f1_invalid_reason_missing"),
+    ):
+        rows = record.get(field)
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            return False
+        identifiers = [row.get(identity) for row in rows]
+        missing = [row.get(identity) for row in blockers if row.get("code") == missing_code]
+        if (not all(_positive(value) for value in identifiers)
+                or len(set(identifiers)) != len(identifiers)
+                or identifiers != missing
+                or field == "candidate_votes" and not identifiers):
+            return False
+        if any(row.get("quantity") is not None for row in rows):
+            return False
+    return True
+
+
 def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
     target = re.fullmatch(r"/api/workspace/constituencies/([1-9][0-9]*)/recounts", command["path"])
     if (target is None or command["method"] != "POST"
@@ -200,6 +223,8 @@ def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
         ):
             return False
         instruction, round = receipt["instruction"], receipt["round"]
+        if not _complete_blank_rows(round):
+            return False
         if not (
             member.get("station_id") == source["station_id"]
             and member.get("scope_id") == source["scope_id"]
