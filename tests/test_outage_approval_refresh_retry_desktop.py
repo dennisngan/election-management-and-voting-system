@@ -4,6 +4,7 @@ import json
 import socket
 import threading
 from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -41,10 +42,18 @@ def isolate_outage_approval_retry(database_url: str) -> Iterator[None]:
         yield
 
 
+@dataclass
+class OutageApprovalResponseLoss(LostSelectionResponse):
+    arm_current_after_path: str = ""
+    current_read_path: str = ""
+    block_current_reads: bool = False
+    current_read_tagged: threading.Event = field(default_factory=threading.Event)
+
+
 @pytest.fixture
 def lost_outage_approval_response(
     database_url: str, qt_app: QCoreApplication,
-) -> Iterator[LostSelectionResponse]:
+) -> Iterator[OutageApprovalResponseLoss]:
     """Drop only a real committed POST/approve200 reply through the opaque proxy."""
     for name in ("server.pem", "server-key.pem", "ca.pem"):
         assert (TLS_DIRECTORY / name).is_file(), "Prepare local TLS with election.manage tls-dev"
@@ -57,7 +66,7 @@ def lost_outage_approval_response(
     client_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     client_listener.bind(("127.0.0.1", 0))
     client_listener.listen()
-    endpoint = LostSelectionResponse(
+    endpoint = OutageApprovalResponseLoss(
         f"https://localhost:{client_listener.getsockname()[1]}", ControlledClock()
     )
     application = create_app(database_url, now=endpoint.clock)
@@ -70,12 +79,21 @@ def lost_outage_approval_response(
             endpoint.requests.append((request.method, request.url.path))
         response = await call_next(request)
         peer = request.client
-        if (request.method == "POST" and request.url.path == endpoint.drop_path
-                and response.status_code == 200 and peer is not None):
+        if response.status_code == 200 and peer is not None:
             with endpoint.lock:
-                endpoint.drop_peer = (peer.host, peer.port)
-                endpoint.drop_path = ""
-            endpoint.response_tagged.set()
+                if request.method == "POST" and request.url.path == endpoint.arm_current_after_path:
+                    endpoint.block_current_reads = True
+                    endpoint.arm_current_after_path = ""
+                original_reply = request.method == "POST" and request.url.path == endpoint.drop_path
+                current_reply = (request.method == "GET" and endpoint.block_current_reads
+                                 and request.url.path == endpoint.current_read_path)
+                if original_reply or current_reply:
+                    endpoint.drop_peer = (peer.host, peer.port)
+                    if original_reply:
+                        endpoint.drop_path = ""
+                    if current_reply:
+                        endpoint.current_read_tagged.set()
+                    endpoint.response_tagged.set()
         return response  # Actual handler response; no substituted503 or business DTO.
 
     server = uvicorn.Server(uvicorn.Config(
@@ -262,3 +280,86 @@ def test_uncertain_outage_approval_retries_original_after_refresh_and_reads_curr
             finally:
                 endpoint.drop_path = ""
                 outages.stateChanged.disconnect(retain_public_request_identity)
+
+
+
+def test_committed_reconciliation_stays_stale_until_its_current_detail_can_be_read(
+    admin: TestClient,
+    database_url: str,
+    lost_outage_approval_response: OutageApprovalResponseLoss,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Additional acceptance: a lost current GET must not impersonate today's approval."""
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "outage-current-read"))
+    with tally_setup(admin, database_url) as setup:
+        endpoint = lost_outage_approval_response
+        endpoint.clock.value = setup["clock"].value
+        counter, supervisor = setup["counter"], setup["clients"]["supervisor"]
+        station_id, scope_id = setup["stations"]["N1"]["id"], setup["scope"]["id"]
+        options, round_path, count_round = _count_draft(setup)
+        outage_path, paper = _create_outage_and_paper(setup, count_round["id"])
+        submitted = counter.post(round_path + "/submit", json={
+            "request_id": str(uuid4()), "expected_revision": 2,
+            "scope_revision": options["scope"]["revision"], "paper_record_id": paper["id"],
+        })
+        assert submitted.status_code == 200, submitted.text
+        ready = supervisor.get(outage_path)
+        assert ready.status_code == 200, ready.text
+        outage_id = ready.json()["record"]["id"]
+        approval_path = outage_path + "/approve"
+        reason = "Check the original approval separately from a failed current read."
+        with f1_editor(
+            endpoint, qt_app, setup["accounts"]["supervisor"], station_id, scope_id
+        ) as (client, _editor):
+            outages = client.property("outages")
+            outages.open()
+            wait_for_editor_idle(qt_app, outages)
+            assert outages.loadOutage(outage_id, False) is True
+            wait_for_editor_idle(qt_app, outages)
+            endpoint.drop_path = approval_path
+            outages.approveReconciliation(READY_PASSWORD, reason)
+            wait_for_editor_idle(qt_app, outages)
+            assert endpoint.response_tagged.is_set() and endpoint.response_dropped.is_set()
+            original_id = outages.property("state")["pending_request_id"]
+            assert str(UUID(original_id)) == original_id
+            assert outages.property("state")["uncertain_save"] is True
+            current_response = supervisor.get(outage_path)
+            assert current_response.status_code == 200, current_response.text
+            current = current_response.json()
+            assert current["record"]["reconciled"] is True
+            assert len(current["record"]["reconciliation_history"]) == 1
+            endpoint.response_tagged.clear()
+            endpoint.response_dropped.clear()
+            endpoint.current_read_path = outage_path
+            endpoint.arm_current_after_path = approval_path
+            try:
+                outages.approveReconciliation(READY_PASSWORD, reason)
+                wait_for(qt_app, lambda: endpoint.current_read_tagged.is_set()
+                         and endpoint.response_dropped.is_set())
+                wait_for_editor_idle(qt_app, outages)
+                stale = outages.property("state")
+                assert endpoint.request_count("POST", approval_path) == 2
+                assert stale["uncertain_save"] is False and stale["dirty"] is False
+                assert stale["pending_request_id"] == "" and stale["pending_kind"] == ""
+                assert stale["newer_revision"] is True and stale["error"]
+                assert stale["notice"] != "outage_reconciled"
+                assert stale["selected"]["reconciled"] is False
+                report_path = outage_path + "/statement"
+                reports_before = endpoint.request_count("GET", report_path)
+                outages.previewReport("en")
+                assert outages.property("state")["newer_revision"] is True
+                assert endpoint.request_count("GET", report_path) == reports_before
+            finally:
+                with endpoint.lock:
+                    endpoint.block_current_reads = False
+                    endpoint.arm_current_after_path = ""
+                    endpoint.drop_peer = None
+            assert outages.loadOutage(outage_id, True) is True
+            wait_for_editor_idle(qt_app, outages)
+            loaded = outages.property("state")
+            assert loaded["newer_revision"] is False and loaded["error"] == ""
+            assert_public_business_fields(loaded["selected"], current["record"])
+            assert_public_business_fields(loaded["history"], current["history"])
+            assert endpoint.request_count("POST", approval_path) == 2
