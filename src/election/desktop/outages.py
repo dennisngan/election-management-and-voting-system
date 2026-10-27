@@ -1364,8 +1364,7 @@ class OutagesController(QObject):
         )
         if (
             not selected
-            or self._state["newer_revision"]
-            or self._state["dirty"]
+            or (self._state["newer_revision"] or self._state["dirty"])
             and not retrying_approval
         ):
             self._error("outage_review_required")
@@ -1417,17 +1416,17 @@ class OutagesController(QObject):
                 self._state.update(uncertain_save=True, dirty=True)
                 self._error("outage_response_invalid")
                 return
-            self._finish_command("outage_reconciled")
-            self._state.update(
-                selected=deepcopy(row),
-                history=deepcopy(history),
-                forms=_form_from_outage(row),
-                paper_forms=_empty_paper_form(),
-                selected_paper_id=0,
-                paper_editable=False,
-            )
-            self._outage_form_base = deepcopy(self._state["forms"])
-            self._paper_form_base = deepcopy(self._state["paper_forms"])
+            # The immutable ACK settles this command, not today's membership.
+            self._finish_command("")
+            self._state["newer_revision"] = True
+
+            def current_loaded(snapshot: dict[str, Any]) -> None:
+                if self._accept_detail(snapshot, selected["id"]):
+                    self._finish_command(
+                        "outage_reconciled" if self._state["selected"]["reconciled"] else ""
+                    )
+
+            self._send(f"{self._path()}/{selected['id']}", "GET", None, current_loaded)
 
         self._send(
             path,
