@@ -174,7 +174,7 @@ def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
         and sources == sorted(sources, key=lambda source: (
             source["station_id"], source["scope_id"],
         ))
-        and _positive(parent.get("id"))
+        and all(_positive(parent.get(key)) for key in ("id", "actor_id", "constituency_id"))
         and parent.get("constituency_id") == int(target[1])
         and parent.get("actor_id") == command["actor_id"]
         and parent.get("request_id") == command["request_id"] == payload.get("request_id")
@@ -192,8 +192,12 @@ def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
     ):
         return False
     context = parent.get("context")
-    if not (isinstance(context, dict) and isinstance(context.get("constituency"), dict)
-            and context["constituency"].get("id") == int(target[1])):
+    if not (
+        isinstance(context, dict)
+        and all(isinstance(context.get(key), dict) and _positive(context[key].get("id"))
+                for key in ("constituency", "election"))
+        and context["constituency"]["id"] == int(target[1])
+    ):
         return False
     try:
         if any(not isinstance(parent.get(key), str)
@@ -225,8 +229,30 @@ def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
         instruction, round = receipt["instruction"], receipt["round"]
         if not _complete_blank_rows(round):
             return False
+        frozen = member.get("source_context")
+        source_context = frozen.get("context") if isinstance(frozen, dict) else None
         if not (
-            member.get("station_id") == source["station_id"]
+            isinstance(frozen, dict) and isinstance(source_context, dict)
+            and all(isinstance(source_context.get(key), dict)
+                    and _positive(source_context[key].get("id"))
+                    for key in ("station", "constituency", "election"))
+            and source_context["station"]["id"] == source["station_id"]
+            and source_context["constituency"]["id"] == context["constituency"]["id"]
+            and source_context["election"]["id"] == context["election"]["id"]
+            and isinstance(frozen.get("scope_reference"), str)
+            and frozen["scope_reference"].strip()
+        ):
+            return False
+        if not (
+            all(_positive(member.get(key)) for key in (
+                "station_id", "scope_id", "local_instruction_id", "new_round_id",
+                "new_round_number", "round_revision", "current_required_round_id",
+            ))
+            and all(_positive(round.get(key)) for key in (
+                "id", "round_number", "scope_id", "scope_revision", "revision_id", "revision",
+                "revision_actor_id",
+            ))
+            and member.get("station_id") == source["station_id"]
             and member.get("scope_id") == source["scope_id"]
             and member.get("scope_source") == source
             and member.get("local_instruction_id") == instruction["id"]
