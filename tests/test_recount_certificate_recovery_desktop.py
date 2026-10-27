@@ -36,12 +36,14 @@ def private_active_pointer(database_url: str) -> Iterator[None]:
         yield
 
 
+@pytest.mark.parametrize("outcome_journal_failure", [False, True])
 def test_recount_certificate_error_retains_original_command_until_checked_and_retried(
     admin: TestClient,
     database_url: str,
     qt_app: QCoreApplication,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    outcome_journal_failure: bool,
 ) -> None:
     monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "recount-cert-journal"))
     for name in ("server.pem", "server-key.pem", "ca.pem"):
@@ -179,11 +181,55 @@ def test_recount_certificate_error_retains_original_command_until_checked_and_re
                 assert server.request_count("GET", outcome_path) == 1
                 assert server.request_count("POST", recount_path) == 0
 
+                # Obstruct the actual journal only after the real retry commits.
+                # Preserve its exact bytes and restore them even when the assertion fails.
+                preserved_journals: list[tuple[Path, Path]] = []
+
+                def obstruct_outcome_journal(method: str, path: str, status: int) -> None:
+                    if (method, path, status) != ("POST", recount_path, 201):
+                        return
+                    matches = [
+                        path for path in (tmp_path / "recount-cert-journal").glob("*.json")
+                        if json.loads(path.read_text(encoding="utf-8"))["request_id"] == request_id
+                    ]
+                    assert len(matches) == 1
+                    journal = matches[0]
+                    preserved = tmp_path / "preserved-retry-command.json"
+                    journal.rename(preserved)
+                    journal.mkdir(mode=0o700)
+                    preserved_journals.append((journal, preserved))
+                    server.after_response = None
+
+                if outcome_journal_failure:
+                    server.after_response = obstruct_outcome_journal
                 # Fresh transient own-password, original path/UUID/body; one explicit retry.
-                recovery.retry(request_id, READY_PASSWORD)
-                wait_for_editor_idle(qt_app, recovery)
-                wait_for_editor_idle(qt_app, recounts)
-                wait_for_editor_idle(qt_app, editor)
+                try:
+                    recovery.retry(request_id, READY_PASSWORD)
+                    wait_for_editor_idle(qt_app, recovery)
+                    wait_for_editor_idle(qt_app, recounts)
+                    wait_for_editor_idle(qt_app, editor)
+                    if outcome_journal_failure:
+                        assert len(preserved_journals) == 1
+                        assert server.request_count("POST", recount_path) == 1
+                        assert recovery.property("state")["error"] == (
+                            "recovery_journal_outcome_unavailable"
+                        )
+                        assert recovery.property("state")["notice"] == ""
+                        assert recounts.property("state")["uncertain_save"] is True
+                        assert recounts.property("state")["pending_request_id"] == request_id
+                        assert recounts.property("state")["forms"] == original_forms
+                        assert workspace.property("unresolvedRequest") is True
+                        assert instructed.count() == 0
+                finally:
+                    server.after_response = None
+                    for journal, preserved in preserved_journals:
+                        journal.rmdir()
+                        preserved.rename(journal)
+                if outcome_journal_failure:
+                    recovery.checkOutcome(request_id)
+                    wait_for_editor_idle(qt_app, recovery)
+                    wait_for_editor_idle(qt_app, recounts)
+                    wait_for_editor_idle(qt_app, editor)
                 committed = next(row for row in recovery.property("state")["commands"]
                                  if row["request_id"] == request_id)
                 assert committed["status"] == "committed" and committed["error"] == ""
@@ -233,7 +279,9 @@ def test_recount_certificate_error_retains_original_command_until_checked_and_re
                 assert editor.property("state")["selected"]["revision"] == prior["revision"]
                 assert editor.property("state")["dirty"] is False
                 assert server.request_count("POST", recount_path) == 1
-                assert server.request_count("GET", outcome_path) == 1
+                assert server.request_count("GET", outcome_path) == (
+                    2 if outcome_journal_failure else 1
+                )
                 assert READY_PASSWORD not in json.dumps(recovery.property("state"))
                 preserved_response = counter.get(source_path)
                 assert preserved_response.status_code == 200, preserved_response.text

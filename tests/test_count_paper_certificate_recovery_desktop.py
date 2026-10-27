@@ -3,7 +3,7 @@
 import ipaddress
 import socket
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -50,6 +50,7 @@ class RestartableHttpsServer:
         self.database_url, self.clock, self.qt_app = database_url, clock, qt_app
         self.port = 0
         self.requests: list[tuple[str, str]] = []
+        self.after_response: Callable[[str, str, int], None] | None = None
         self._lock = threading.Lock()
         self._listener: socket.socket | None = None
         self._server: uvicorn.Server | None = None
@@ -76,6 +77,8 @@ class RestartableHttpsServer:
             with self._lock:
                 self.requests.append((request.method, request.url.path))
             response = await call_next(request)
+            if self.after_response is not None:
+                self.after_response(request.method, request.url.path, response.status_code)
             response.headers["connection"] = "close"
             return response
 
