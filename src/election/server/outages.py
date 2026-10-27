@@ -594,7 +594,9 @@ def read_outage_snapshot(
     """Read one assigned station's immutable outage and paper history."""
     stock_scope(db, actor, station_id)
     outage = _get_outage(db, station_id, outage_id, lock=False)
-    return {"record": outage_view(db, outage), "history": _history(db, outage_id)}
+    # Match writers: acquire the revision before any paper/history locks.
+    revision = latest_outage_revision(db, outage.id, lock=True)
+    return {"record": outage_view(db, outage, revision), "history": _history(db, outage_id)}
 
 
 def outage_router(
