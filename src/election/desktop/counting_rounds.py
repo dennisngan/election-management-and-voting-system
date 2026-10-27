@@ -244,7 +244,8 @@ class CountingRoundsController(QObject):
         forms = empty_forms()
         if record:
             forms.update(
-                event_at=format_event_time(record["event_at"]).removesuffix(" HKT"),
+                event_at=(format_event_time(record["event_at"]).removesuffix(" HKT")
+                          if record["event_at"] else ""),
                 notes=record["notes"],
                 questionable_quantity=quantity_input(record["questionable_quantity"]),
                 actual_counted_quantity=quantity_input(record["actual_counted_quantity"]),
