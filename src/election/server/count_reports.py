@@ -16,6 +16,8 @@ from election.server.counting_rounds import round_at, round_context, round_view
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
 from election.server.physical_decision_reports import physical_tables
+from election.server.recount_report_labels import LABELS as RECOUNT_LABELS
+from election.server.recount_report_metadata import recount_metadata
 from election.server.stock_reports import ReportLocale
 from election.server.turnout_reports import hong_kong_time
 
@@ -109,6 +111,7 @@ def _metadata(report: dict[str, Any]) -> list[list[str]]:
             ),
             labels,
         ),
+        *recount_metadata(record, labels),
         [labels["generated_at"], hong_kong_time(report["generated_at"])],
         [labels["time_basis"], "Asia/Hong_Kong (UTC+08:00)"],
     ]
@@ -587,6 +590,8 @@ def count_reports_router(
             raise HTTPException(404, detail={"code": "count_round_not_found"})
         labels = {**LABELS[locale], "_locale": locale}
         record = round_view(db, round, row, options)
+        if record.get("required_recount") is not None:
+            labels.update(RECOUNT_LABELS[locale])
         selection = record.get("selection")
         record["selection_valid"] = selection.get("valid") if selection else None
         return {

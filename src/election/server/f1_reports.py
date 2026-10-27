@@ -16,6 +16,8 @@ from election.server.f1_labels import LABELS
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
 from election.server.physical_decision_reports import physical_tables
+from election.server.recount_report_labels import LABELS as RECOUNT_LABELS
+from election.server.recount_report_metadata import recount_metadata
 from election.server.stock_reports import ReportLocale
 from election.server.turnout_reports import hong_kong_time
 
@@ -84,6 +86,7 @@ def _metadata(report: dict[str, Any]) -> list[list[str]]:
             ),
             labels,
         ),
+        *recount_metadata(record, labels),
         [labels["generated_at"], hong_kong_time(report["generated_at"])],
         [labels["time_basis"], "Asia/Hong_Kong (UTC+08:00)"],
     ]
@@ -314,6 +317,10 @@ def f1_reports_router(
         )
         if row is None:
             raise HTTPException(404, detail={"code": "count_round_not_found"})
+        record = round_view(db, round, row, options)
+        labels = {**LABELS[locale], **_ROUND_STATUS_LABELS[locale]}
+        if record.get("required_recount") is not None:
+            labels.update(RECOUNT_LABELS[locale])
         return {
             "station_id": station_id,
             "scope_id": scope_id,
@@ -321,8 +328,8 @@ def f1_reports_router(
             "revision": revision,
             "locale": locale,
             "context": options["context"],
-            "record": round_view(db, round, row, options),
-            "labels": {**LABELS[locale], **_ROUND_STATUS_LABELS[locale]},
+            "record": record,
+            "labels": labels,
             "title": LABELS[locale]["title"],
             "generated_at": timestamp().replace(tzinfo=UTC),
             "generation_timezone": "Asia/Hong_Kong",
