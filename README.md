@@ -21,14 +21,18 @@ and retrieved-unused paper accounting with frozen revisions and three-language s
 Ticket 12 adds Supervisor-confirmed fallback/recovery, stock-derived turnout, retained source/mode
 coverage and renewed downstream review after corrections. Tickets 16–19 add P(18) accounting,
 received-box counting scopes, preserved F1/F2 observations, derived F3/F4, and explicit Supervisor
-approval and result selection. **19 of 27 tickets are complete: 01–19.**
-[Ticket 19 closure](docs/evidence/ticket-19/README.md) records the latest stable production `45bd56c`:
-**1,295 passed, 38 warnings, zero failures in 2226.82 seconds, exit 0**, with 372 unchanged
-fingerprints. The earlier [16–18 batch](docs/evidence/integrated/ticket16-18-batch/README.md)
+approval and result selection. Tickets20/21/26 add reasoned physical-discrepancy/basis review,
+constituency results and authorized ties, and protected server backup/restore.
+**22 of 27 tickets are complete:01–21 and 26.** The [verified batch](docs/evidence/integrated/batch20-21-26-full-passed-e5b4b54/README.md)
+passed **1,353 tests with 33 warnings in 3009.20 seconds,exit 0** on frozen `e5b4b54`.
+[Main integration](docs/evidence/integrated/batch20-21-26-main-integration-e5b4/README.md) preserves all 418 committed tested inputs and the user's local overlays.
+[Ticket 20](docs/evidence/ticket-20/README.md), [Ticket 21](docs/evidence/ticket-21/README.md) and [Ticket 26](docs/evidence/ticket-26/README.md) retain their acceptance and actual native/source limits.
+[Ticket19 closure](docs/evidence/ticket-19/README.md) preserves the earlier stable production `45bd56c`:
+1,295 passed,38 warnings,2226.82seconds,372 unchanged fingerprints. The earlier [16–18 batch](docs/evidence/integrated/ticket16-18-batch/README.md)
 passed 1,223 tests. Their acceptance maps retain real MySQL, Computer and report-page evidence.
 
 Current authorization continues through Ticket 27. The [implementation checkpoint](.scratch/election-management-voting-system/IMPLEMENTATION-CHECKPOINT.md)
-records isolated work, frozen runs and remaining gates for Tickets 20–27; historical Ticket 12
+records isolated work, frozen runs and remaining gates for Tickets22–25 and27; historical Ticket 12
 session stops are superseded. Ongoing draft work is not formal completion or a passing integrated
 release. Actual Windows verification remains incomplete.
 
