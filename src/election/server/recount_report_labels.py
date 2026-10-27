@@ -106,11 +106,31 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
 
 
 _PARENT_DETAILS = {
-    "id": ("全選區重新點票指示編號", "全选区重新点票指示编号", "Constituency-wide instruction ID"),
-    "request_id": ("原有全選區要求編號", "原有全选区请求编号", "Original constituency request ID"),
-    "constituency_id": ("指示所屬選區編號", "指示所属选区编号", "Instruction constituency ID"),
-    "actor_id": ("全選區指示主管帳戶編號", "全选区指示主管账户编号", "Constituency Supervisor account ID"),
-    "reason": ("全選區指示原因", "全选区指示原因", "Constituency instruction reason"),
+    "id": (
+        "全選區重新點票指示編號",
+        "全选区重新点票指示编号",
+        "Constituency-wide instruction ID",
+    ),
+    "request_id": (
+        "原有全選區要求編號",
+        "原有全选区请求编号",
+        "Original constituency request ID",
+    ),
+    "constituency_id": (
+        "指示所屬選區編號",
+        "指示所属选区编号",
+        "Instruction constituency ID",
+    ),
+    "actor_id": (
+        "全選區指示主管帳戶編號",
+        "全选区指示主管账户编号",
+        "Constituency Supervisor account ID",
+    ),
+    "reason": (
+        "全選區指示原因",
+        "全选区指示原因",
+        "Constituency instruction reason",
+    ),
     "event_at": (
         "全選區指示發生時間（香港）",
         "全选区指示发生时间（香港）",
@@ -121,8 +141,16 @@ _PARENT_DETAILS = {
         "全选区指示记录时间（香港）",
         "Constituency instruction entry time (Hong Kong)",
     ),
-    "member_count": ("原有指定範圍數目", "原有指定范围数目", "Original required scope count"),
-    "scope_ids": ("原有指定範圍編號", "原有指定范围编号", "Original required scope IDs"),
+    "member_count": (
+        "原有指定範圍數目",
+        "原有指定范围数目",
+        "Original required scope count",
+    ),
+    "scope_ids": (
+        "原有指定範圍編號",
+        "原有指定范围编号",
+        "Original required scope IDs",
+    ),
 }
 for index, locale in enumerate(_LANGUAGES):
     parent_prefixes = (
