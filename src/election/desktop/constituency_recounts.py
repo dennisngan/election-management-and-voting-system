@@ -127,7 +127,9 @@ class ConstituencyRecountsController(QObject):
             context = body.get("context")
             if not (
                 isinstance(context, dict)
-                and context.get("constituency", {}).get("id") == self._state["constituency_id"]
+                and isinstance(context.get("constituency"), dict)
+                and isinstance(context.get("election"), dict)
+                and context["constituency"].get("id") == self._state["constituency_id"]
                 and context.get("election", {}).get("id")
                 == self._state["context"].get("election", {}).get("id")
                 and isinstance(body.get("basis_digest"), str)
