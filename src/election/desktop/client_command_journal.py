@@ -121,7 +121,7 @@ class CommandJournal:
         for path in self.directory.glob("*.json"):
             if not private_file(path):
                 raise JournalError("recovery_journal_unavailable")
-            row = json.loads(path.read_text())
+            row = json.loads(path.read_text(encoding="utf-8"))
             if (row.get("server_url"), row.get("actor_id"), row.get("station_id")) != (
                 origin,
                 actor_id,
@@ -207,7 +207,7 @@ class CommandJournal:
         path = self._path(server_url, actor_id, request_id)
         if not private_file(path):
             raise JournalError("recovery_journal_unavailable")
-        row = json.loads(path.read_text())
+        row = json.loads(path.read_text(encoding="utf-8"))
         if row["status"] == "committed":
             return
         if row["status"] == "uncertain" and error == "invalid_credentials":
