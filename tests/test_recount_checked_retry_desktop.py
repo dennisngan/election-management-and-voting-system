@@ -25,6 +25,7 @@ from tests.desktop_support import (
 )
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.results_support import save_result_round
+from tests.tally_support import complete_f1_command
 from tests.test_constituency_tie_api import complete_tie_setup
 from tests.test_counting_rounds_desktop import f1_editor
 from tests.test_counting_workflow_retry_desktop import LostSelectionResponse, TransparentTlsProxy
@@ -125,6 +126,7 @@ def reconnectable_recount_server(
         assert not server_thread.is_alive(), "The owned retry HTTPS server did not stop"
 
 
+@pytest.mark.parametrize("stale_source", [False, True], ids=["committed", "stale-source-rejected"])
 def test_checked_not_found_retries_original_recount_with_fresh_password_and_settles_child(
     admin: TestClient,
     database_url: str,
@@ -132,6 +134,7 @@ def test_checked_not_found_retries_original_recount_with_fresh_password_and_sett
     qt_app: QCoreApplication,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    stale_source: bool,
 ) -> None:
     monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "checked-recount-retry"))
     with complete_tie_setup(admin, database_url) as setup:
@@ -248,10 +251,53 @@ def test_checked_not_found_retries_original_recount_with_fresh_password_and_sett
             assert rechecked["status"] == "uncertain" and rechecked["error"] == "request_not_found"
             assert rechecked["payload"] == original["payload"]
             assert endpoint.request_count("GET", outcome_path) == 2
+            if stale_source:
+                correction = complete_f1_command(
+                    saved["options"], expected_revision=prior["revision"],
+                    actual_counted_quantity=10, discard_f2=True,
+                    amendment_reason="Peer correction invalidates the original selection.",
+                )
+                for row, quantity in zip(correction["candidate_votes"], [6, 4], strict=True):
+                    row["quantity"] = quantity
+                changed_source = counter.post(source_path + "/amend-f1", json=correction)
+                assert changed_source.status_code == 200, changed_source.text
+                assert changed_source.json()["revision"] == prior["revision"] + 1
+                assert changed_source.json()["approval_valid"] is False
             recovery.retry(request_id, READY_PASSWORD)
             wait_for_editor_idle(qt_app, recovery)
             committed = next(row for row in recovery.property("state")["commands"]
                              if row["request_id"] == request_id)
+            if stale_source:
+                assert committed["status"] == "rejected"
+                assert committed["error"] == "local_recount_selection_stale"
+                assert committed["payload"] == original["payload"]
+                assert endpoint.request_count("POST", recount_path) == 2
+                absent_again = supervisor.get(outcome_path + "?workflow=count")
+                assert absent_again.status_code == 200 and absent_again.json() == absent
+                no_instruction = supervisor.get(recount_path)
+                assert no_instruction.status_code == 200
+                assert no_instruction.json()["instructions"] == []
+                rounds_after = counter.get(setup["rounds_path"])
+                assert rounds_after.status_code == 200
+                assert [row["id"] for row in rounds_after.json()["rounds"]] == [prior["id"]]
+                historical = counter.get(source_path + f"/revisions/{prior['revision']}")
+                assert historical.status_code == 200, historical.text
+                for field in ("candidate_votes", "invalid_papers", "f2", "scope_basis"):
+                    assert historical.json()["record"][field] == prior[field]
+                rejected = child.property("state")
+                # A definite rejection retains editable draft evidence, with no unknown lock.
+                assert rejected["uncertain_save"] is False
+                assert rejected["dirty"] is True and rejected["pending_request_id"] == ""
+                assert rejected["error"] == "local_recount_selection_stale"
+                assert rejected["forms"]["reason"] == reason
+                assert rejected["forms"]["event_at"] == "2026-11-16 00:05:42.123456"
+                assert rejected["newer_basis"] is True
+                child.discardAndReload()
+                wait_for_editor_idle(qt_app, child)
+                assert child.property("state")["dirty"] is False
+                assert child.property("state")["forms"] == {"event_at": "", "reason": ""}
+                assert editor.property("state")["selected"]["id"] == prior["id"]
+                return
             assert committed["status"] == "committed" and committed["error"] == ""
             assert committed["payload"] == original["payload"]
             assert endpoint.request_count("POST", recount_path) == 2
