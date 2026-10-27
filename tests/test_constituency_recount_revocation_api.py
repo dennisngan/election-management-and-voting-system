@@ -79,7 +79,7 @@ def gate_authenticated_request(gate: AuthenticatedRequestGate) -> Iterator[None]
         event.remove(Engine, "before_cursor_execute", gate.before)
 
 
-@pytest.mark.parametrize("operation", ["create", "replay", "outcome"])
+@pytest.mark.parametrize("operation", ["create", "replay", "outcome", "local"])
 @pytest.mark.parametrize("revocation", ["remove_station", "disable"])
 def test_queued_recount_request_cannot_use_authority_revoked_after_authentication(
     admin: TestClient, database_url: str, operation: str, revocation: str,
@@ -102,7 +102,23 @@ def test_queued_recount_request_cannot_use_authority_revoked_after_authenticatio
             "reason": "A queued request must not retain revoked constituency authority.",
             "password": READY_PASSWORD,
         }
-        if operation != "create":
+        queued_target = target
+        if operation == "local":
+            source = options["scope_sources"][0]
+            queued_target = (
+                f"/api/workspace/stations/{source['station_id']}"
+                f"/counting-scopes/{source['scope_id']}/recounts"
+            )
+            command = {
+                "request_id": request_id,
+                "scope_revision": source["scope_revision"],
+                "expected_selection_revision": source["expected_selection_revision"],
+                "source_round_id": source["source_round_id"],
+                "source_round_revision": source["source_round_revision"],
+                "event_at": command["event_at"], "reason": command["reason"],
+                "password": READY_PASSWORD,
+            }
+        if operation in {"replay", "outcome"}:
             committed = supervisor.post(target, json=command)
             assert committed.status_code == 201, committed.text
         settings_response = admin.get(f"/api/accounts/{account['id']}")
@@ -118,7 +134,7 @@ def test_queued_recount_request_cannot_use_authority_revoked_after_authenticatio
         ):
             initial = observer.get(target)
             assert initial.status_code == 200, initial.text
-            expected_instruction_count = 0 if operation == "create" else 1
+            expected_instruction_count = 1 if operation in {"replay", "outcome"} else 0
             assert len(initial.json()["instructions"]) == expected_instruction_count
             paths = [
                 f"/api/workspace/stations/{source['station_id']}"
@@ -139,12 +155,13 @@ def test_queued_recount_request_cannot_use_authority_revoked_after_authenticatio
                     )
                     future = pool.submit(caller.get, path)
                 else:
-                    future = pool.submit(caller.post, target, json=command)
+                    future = pool.submit(caller.post, queued_target, json=command)
                 try:
                     assert gate.ready.wait(5), "Actual authenticated request never reached its gate"
                     remaining = list(settings["station_ids"])
                     if revocation == "remove_station":
-                        remaining.remove(setup["stations"]["N2"]["id"])
+                        code = "N1" if operation == "local" else "N2"
+                        remaining.remove(setup["stations"][code]["id"])
                     changed = admin.put(f"/api/accounts/{account['id']}", json={
                         "revision": settings["revision"],
                         "display_name": settings["display_name"], "role": "supervisor",
