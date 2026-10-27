@@ -48,7 +48,8 @@ ColumnLayout {
     function wideRecountReceipt(row) {
         if (!page.wideRecountPath(row)) return ({})
         var record = page.receiptRecord(row)
-        return record.instruction && Array.isArray(record.members) ? record : ({})
+        return record.instruction && record.members
+            && typeof record.members.length === "number" ? record : ({})
     }
     function instructionPath(row) {
         return page.recountPath(row) || page.wideRecountPath(row)
@@ -122,8 +123,8 @@ ColumnLayout {
         if (wide.instruction) {
             var parts = [page.t("recovery_constituency_member_count") + " "
                 + page.exact(wide.instruction, "member_count")]
-            for (var member of wide.members)
-                parts.push(page.blankReceiptSummary(member.round || ({})))
+            for (var index = 0; index < wide.members.length; index++)
+                parts.push(page.blankReceiptSummary(wide.members[index].round || ({})))
             return parts.join("\n")
         }
         var recount = page.recountReceipt(row)
