@@ -207,6 +207,11 @@ def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
         request_id = UUID(command["request_id"])
     except (TypeError, ValueError):
         return False
+    parent_provenance = {key: parent[key] for key in (
+        "id", "request_id", "constituency_id", "actor_id", "reason", "event_at", "entered_at",
+        "member_count",
+    )}
+    parent_provenance["scope_ids"] = [source["scope_id"] for source in sources]
     round_ids, instruction_ids = set(), set()
     for source, member, receipt in zip(sources, parent["members"], receipts, strict=True):
         if not isinstance(member, dict) or not isinstance(receipt, dict):
@@ -256,6 +261,13 @@ def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
             and member.get("scope_id") == source["scope_id"]
             and member.get("scope_source") == source
             and member.get("local_instruction_id") == instruction["id"]
+            and instruction.get("constituency_recount") == parent_provenance
+            and round.get("required_recount") == instruction
+            and round.get("recount_instruction") == instruction
+            and round.get("recount_pending") is True
+            and all(round.get(key) is False for key in (
+                "contributes_to_result", "count_complete", "count_inputs_complete", "f2_complete",
+            ))
             and member.get("new_round_id") == round["id"]
             and member.get("new_round_number") == round["round_number"]
             and member.get("round_revision") == 1 and member.get("progress") == "incomplete"
