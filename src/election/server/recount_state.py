@@ -5,6 +5,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from election.server.constituency_recount_models import (
+    ConstituencyRecountInstruction,
+    ConstituencyRecountMember,
+)
 from election.server.counting_round_models import (
     CountRound,
     CountRoundRevision,
@@ -20,7 +24,10 @@ def scope_recount_state(
 ) -> dict[str, Any]:
     rows = list(
         db.execute(
-            select(LocalRecountInstruction, CountingScopeRevision, CountRoundRevision, CountRound)
+            select(
+                LocalRecountInstruction, CountingScopeRevision, CountRoundRevision, CountRound,
+                ConstituencyRecountInstruction,
+            )
             .select_from(LocalRecountInstruction)
             .join(
                 CountingScopeRevision,
@@ -31,6 +38,14 @@ def scope_recount_state(
                 CountRoundRevision.id == LocalRecountInstruction.source_round_revision_id,
             )
             .join(CountRound, CountRound.id == LocalRecountInstruction.new_round_id)
+            .outerjoin(
+                ConstituencyRecountMember,
+                ConstituencyRecountMember.local_instruction_id == LocalRecountInstruction.id,
+            )
+            .outerjoin(
+                ConstituencyRecountInstruction,
+                ConstituencyRecountInstruction.id == ConstituencyRecountMember.instruction_id,
+            )
             .where(LocalRecountInstruction.scope_id == scope_id)
             .order_by(LocalRecountInstruction.id.desc())
             .with_for_update()
@@ -54,7 +69,7 @@ def scope_recount_state(
         if approved.data.get("completed_at") is not None:
             completions.setdefault(approved.round_id, pointer)
     instructions = []
-    for index, (row, scope_revision, source, replacement) in enumerate(rows):
+    for index, (row, scope_revision, source, replacement, parent) in enumerate(rows):
         completion = completions.get(row.new_round_id)
         current = index == 0
         satisfied = bool(
@@ -90,6 +105,15 @@ def scope_recount_state(
                 ),
             }
         )
+        if parent is not None:
+            sources = parent.data["scope_sources"]
+            instructions[-1]["constituency_recount"] = {
+                "id": parent.id, "request_id": parent.request_id,
+                "constituency_id": parent.constituency_id, "actor_id": parent.actor_id,
+                "reason": parent.reason, "event_at": as_utc(parent.event_at),
+                "entered_at": as_utc(parent.entered_at), "member_count": len(sources),
+                "scope_ids": [source["scope_id"] for source in sources],
+            }
     return {
         "instructions": instructions,
         "latest_instruction": instructions[0],

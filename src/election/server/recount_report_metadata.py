@@ -35,6 +35,8 @@ def _value(field: str, value: Any, labels: dict[str, str]) -> str:
         return hong_kong_time(value)
     if field == "status":
         return labels["local_recount_state_" + value]
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
     return str(value)
 
 
@@ -66,4 +68,14 @@ def recount_metadata(record: dict[str, Any], labels: dict[str, str]) -> list[lis
             ]
             for field in _DETAIL_FIELDS
         )
+        parent = instruction.get("constituency_recount")
+        if isinstance(parent, dict):
+            rows.extend(
+                [labels[f"constituency_recount_{prefix}_{field}"],
+                 _value(field, parent[field], labels)]
+                for field in (
+                    "id", "request_id", "constituency_id", "actor_id", "reason",
+                    "event_at", "entered_at", "member_count", "scope_ids",
+                )
+            )
     return rows
