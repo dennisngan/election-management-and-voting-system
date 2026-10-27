@@ -1,6 +1,7 @@
 """Explicit inspection and retry of journaled operational requests."""
 
 from copy import deepcopy
+import re
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -114,7 +115,7 @@ class RecoveryController(QObject):
         self._server_url = origin
         self._account_id = normalized_account_id
         self.stateChanged.emit()
-        if changed and self._opened:
+        if changed and self._context_ready():
             self.reload()
 
     def _context_ready(self) -> bool:
@@ -144,6 +145,19 @@ class RecoveryController(QObject):
             and self._workflow_allowed(row.get("workflow"))
             and row.get("status") in ("pending", "uncertain", "committed", "rejected")
         ]
+
+    def recount_context_locked(self) -> bool:
+        """Retain this actor/station while a durable recount outcome is unresolved."""
+        station_id = self._state["station_id"]
+        return any(
+            row.get("status") in {"pending", "uncertain"}
+            and row.get("workflow") == "count"
+            and re.fullmatch(
+                rf"/api/workspace/stations/{station_id}/counting-scopes/[1-9][0-9]*/recounts",
+                row.get("path", ""),
+            ) is not None
+            for row in self._state["commands"]
+        )
 
     def _error(self, code: str) -> None:
         self._state.update(error=code, notice="")

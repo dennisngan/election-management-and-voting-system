@@ -183,7 +183,8 @@ class DesktopController(QObject):
                 or self._complaint_periods.property("state")["busy"]
             ),
             unresolved_guard=lambda: bool(
-                self._counting_rounds.recount_context_locked()
+                self._recovery.recount_context_locked()
+                or self._counting_rounds.recount_context_locked()
                 or self._allocations.property("state").get("paper_uncertain", False)
                 or self._counting_rounds.property("state").get("uncertain_save", False)
                 or self._turnout.property("state").get("uncertain_save", False)
