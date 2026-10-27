@@ -317,7 +317,17 @@ class LocalRecountsController(QObject):
             and isinstance(row.get("payload"), dict)
             and all(row["payload"].get(key) == value for key, value in original.items())
         )), None)
-        if command is None or command.get("status") != "committed":
+        if command is None:
+            return
+        if command.get("status") == "rejected":
+            code = str(command.get("error") or "local_recount_not_ready")
+            self._pending = None
+            self._state.update(
+                uncertain_save=False, pending_request_id="", newer_basis=code in STALE_ERRORS,
+            )
+            self._error(code)
+            return
+        if command.get("status") != "committed":
             return
         receipt = command.get("receipt")
         body = receipt.get("record") if isinstance(receipt, dict) else None
