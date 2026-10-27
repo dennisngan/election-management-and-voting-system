@@ -2,6 +2,11 @@
 
 RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "recovery_recount_instruction": "重新點票指示",
+        "recovery_recount_new_round": "新點票輪次",
+        "recovery_original_receipt": "原伺服器收據",
+        "recovery_original_receipt_hint": "此收據保留原指示及空白輪次的回覆，不代表目前點票或重新點票狀態。",
+        "recovery_recount_original_event_at": "原指示時間（香港時間）",
         "recovery_title": "要求恢復核對",
         "recovery_intro": "檢查伺服器記錄後，才決定如何處理未確認的操作。系統不會自動重送。",
         "recovery_refresh": "重新載入本機恢復記錄",
@@ -72,6 +77,11 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "PATCH": "更新",
     },
     "sc": {
+        "recovery_recount_instruction": "重新点票指示",
+        "recovery_recount_new_round": "新点票轮次",
+        "recovery_original_receipt": "原服务器收据",
+        "recovery_original_receipt_hint": "此收据保留原指示及空白轮次的回复，不代表当前点票或重新点票状态。",
+        "recovery_recount_original_event_at": "原指示时间（香港时间）",
         "recovery_title": "请求恢复核对",
         "recovery_intro": "检查服务器记录后，再决定如何处理未确认的操作。系统不会自动重送。",
         "recovery_refresh": "重新载入本机恢复记录",
@@ -142,6 +152,11 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "PATCH": "更新",
     },
     "en": {
+        "recovery_recount_instruction": "Recount instruction",
+        "recovery_recount_new_round": "New count round",
+        "recovery_original_receipt": "Original server receipt",
+        "recovery_original_receipt_hint": "This receipt preserves the original instruction and blank round; it does not show the current count or recount status.",
+        "recovery_recount_original_event_at": "Original instruction time (Hong Kong time)",
         "recovery_title": "Request recovery review",
         "recovery_intro": "Check server status; no requests are resent automatically.",
         "recovery_refresh": "Reload local recovery records",

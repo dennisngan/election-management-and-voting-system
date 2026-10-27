@@ -32,7 +32,26 @@ ColumnLayout {
         return t(row.workflow || "") + " · " + page.targetLabel(row)
             + " · " + t("recovery_" + (row.status || "pending"))
     }
+    function recountPath(row) {
+        if (row.workflow !== "count" || row.method !== "POST") return null
+        return /^\/api\/workspace\/stations\/([1-9][0-9]*)\/counting-scopes\/([1-9][0-9]*)\/recounts$/.exec(String(row.path || ""))
+    }
+    function recountReceipt(row) {
+        if (!page.recountPath(row)) return ({})
+        var record = page.receiptRecord(row)
+        return record.instruction && record.round ? record : ({})
+    }
     function targetLabel(row) {
+        var recount = page.recountPath(row)
+        if (recount) {
+            var instruction = page.recountReceipt(row).instruction || ({})
+            return page.t("recovery_recount_instruction")
+                + (instruction.id ? " #" + page.exact(instruction, "id") : "")
+                + " · " + page.t("recovery_scope") + " #" + recount[2]
+                + (instruction.new_round_id
+                    ? " · " + page.t("recovery_recount_new_round") + " #"
+                        + page.exact(instruction, "new_round_id") : "")
+        }
         var target = String(row.target || "")
         var path = target || String(row.path || "")
         var parts = path.split("/")
@@ -74,6 +93,14 @@ ColumnLayout {
     function receiptSummary(row) {
         var record = page.receiptRecord(row)
         if (!Object.keys(record).length) return page.t("recovery_no_receipt")
+        var recount = page.recountReceipt(row)
+        if (recount.round) {
+            var round = recount.round
+            return page.t("recovery_recount_new_round") + " #" + page.exact(round, "id")
+                + " · " + page.t("recovery_round") + " #" + page.exact(round, "round_number")
+                + " · " + page.t("recovery_receipt_revision") + " " + page.exact(round, "revision")
+                + " · " + page.receiptStatus(round.status)
+        }
         if (row.workflow === "count")
             return page.t("recovery_round") + " #" + (record.round_number || "—")
                 + " · " + page.t("recovery_revision") + " " + (record.revision || "—")
@@ -262,7 +289,8 @@ ColumnLayout {
                     value: page.recovery.formatTime(page.selectedCommand.created_at || "")
                 }
                 Detail {
-                    caption: page.t("recovery_event_at")
+                    caption: page.recountPath(page.selectedCommand)
+                        ? page.t("recovery_recount_original_event_at") : page.t("recovery_event_at")
                     value: page.eventTime(page.selectedCommand)
                 }
                 Detail {
@@ -282,8 +310,16 @@ ColumnLayout {
                 onReveal: control => page.reveal(control)
             }
             FormCaption {
+                objectName: "recoveryReceiptSummary"
                 visible: !!page.selectedCommand.receipt
-                text: page.t("recovery_receipt") + " · " + page.receiptSummary(page.selectedCommand)
+                text: (page.recountPath(page.selectedCommand)
+                    ? page.t("recovery_original_receipt") : page.t("recovery_receipt"))
+                    + " · " + page.receiptSummary(page.selectedCommand)
+            }
+            FormCaption {
+                objectName: "recoveryReceiptHistoryHint"
+                visible: !!page.recountReceipt(page.selectedCommand).round
+                text: page.t("recovery_original_receipt_hint")
             }
             RowLayout {
                 Layout.fillWidth: true
