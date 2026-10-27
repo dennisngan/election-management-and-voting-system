@@ -151,6 +151,9 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
                 "reason": reason,
             },
             """
+            from tests.test_physical_acceptance_recovery_desktop import (
+                assert_public_business_fields,
+            )
             click('outagesNavigation')
             outages = controller.outages
             wait(lambda: not outages.property('state')['busy']
@@ -209,7 +212,7 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
                 == 'committed')
 
             checked = outages.property('state')['existing_receipt']['checked']
-            assert checked == setup['expected_preview']
+            assert_public_business_fields(checked, setup['expected_preview'])
             summary = control('outageExistingReceiptSummary')
             assert summary.property('visible') is True
             summary_parts = []

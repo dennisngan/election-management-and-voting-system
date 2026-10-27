@@ -33,7 +33,18 @@ def assert_public_business_fields(actual: object, expected: object) -> None:
     if isinstance(expected, dict):
         assert isinstance(actual, dict)
         assert set(expected) <= set(actual)
-        assert all(key.endswith("_display") for key in set(actual) - set(expected))
+        for key in set(actual) - set(expected):
+            assert key.endswith("_display")
+            source_key = key.removesuffix("_display")
+            assert source_key in expected
+            source = expected[source_key]
+            if type(source) is int:
+                assert type(actual[key]) is str and actual[key] == str(source)
+            elif source is None:
+                assert actual[key] == "\u2014"
+            else:
+                assert isinstance(source, (dict, list))
+                assert_public_business_fields(actual[key], source)
         for key, value in expected.items():
             assert_public_business_fields(actual[key], value)
     elif isinstance(expected, list):

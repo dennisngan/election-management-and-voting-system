@@ -29,6 +29,7 @@ from tests.test_counting_workflow_retry_desktop import (
 from tests.test_counting_workflow_retry_desktop import (
     lost_selection_response as lost_selection_response,
 )
+from tests.test_physical_acceptance_recovery_desktop import assert_public_business_fields
 
 
 def test_committed_count_receipt_is_recovered_after_desktop_restart(
@@ -109,7 +110,9 @@ def test_committed_count_receipt_is_recovered_after_desktop_restart(
             )
             assert public_outcome.status_code == 200, public_outcome.text
             assert public_outcome.json()["status"] == "committed"
-            assert committed["receipt"]["record"] == public_outcome.json()["record"]
+            assert_public_business_fields(
+                committed["receipt"]["record"], public_outcome.json()["record"]
+            )
             assert endpoint.request_count("POST", round_target + "/submit") == 1
 
             count_history = counter.get(round_target)
