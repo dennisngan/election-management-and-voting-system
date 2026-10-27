@@ -153,7 +153,7 @@ class DesktopController(QObject):
                 or self._complaint_periods.property("state")["busy"]
             ),
             unresolved_guard=lambda: bool(
-                self._counting_rounds.recount_outcome_unknown()
+                self._counting_rounds.recount_context_locked()
                 or self._constituency_results.property("state")["uncertain_save"]
             ),
         )

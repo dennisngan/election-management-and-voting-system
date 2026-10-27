@@ -93,6 +93,9 @@ class LocalRecountsController(QObject):
     def outcome_unknown(self) -> bool:
         return bool(self._state["uncertain_save"])
 
+    def blocks_context_change(self) -> bool:
+        return self.outcome_unknown() or bool(self._pending is not None and self._state["busy"])
+
     def _path(self) -> str:
         return (
             f"/api/workspace/stations/{self._state['station_id']}/counting-scopes/"

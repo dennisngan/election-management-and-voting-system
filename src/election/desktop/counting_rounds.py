@@ -74,6 +74,9 @@ class CountingRoundsController(QObject):
     def recount_outcome_unknown(self) -> bool:
         return self._recounts.outcome_unknown()
 
+    def recount_context_locked(self) -> bool:
+        return self._recounts.blocks_context_change()
+
     def _block_recount_changes(self) -> bool:
         if not self.recount_changes_pending():
             return False
