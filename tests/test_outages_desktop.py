@@ -20,6 +20,7 @@ from tests.test_client_recovery_contract_desktop import (
 from tests.test_client_recovery_contract_desktop import (
     recovery_fault_server as recovery_fault_server,
 )
+from tests.test_physical_acceptance_recovery_desktop import assert_public_business_fields
 
 
 @pytest.fixture(scope="session")
@@ -182,7 +183,7 @@ def test_polling_officer_records_and_supervisor_reconciles_allocation_paper(
             state = outages.property("state")
             entered = state["selected"]["paper_records"][0]
             assert entered["status"] == "entered"
-            assert entered["reentry"]["record"] == allocation.json()
+            assert_public_business_fields(entered["reentry"]["record"], allocation.json())
             serialized_state = json.dumps(state, ensure_ascii=False)
             assert READY_PASSWORD not in serialized_state
             assert "password" not in serialized_state.lower()
