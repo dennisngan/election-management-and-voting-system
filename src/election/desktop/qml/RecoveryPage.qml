@@ -41,7 +41,26 @@ ColumnLayout {
         var record = page.receiptRecord(row)
         return record.instruction && record.round ? record : ({})
     }
+    function wideRecountPath(row) {
+        if (row.workflow !== "constituency_recount" || row.method !== "POST") return null
+        return /^\/api\/workspace\/constituencies\/([1-9][0-9]*)\/recounts$/.exec(String(row.path || ""))
+    }
+    function wideRecountReceipt(row) {
+        if (!page.wideRecountPath(row)) return ({})
+        var record = page.receiptRecord(row)
+        return record.instruction && Array.isArray(record.members) ? record : ({})
+    }
+    function instructionPath(row) {
+        return page.recountPath(row) || page.wideRecountPath(row)
+    }
     function targetLabel(row) {
+        var wide = page.wideRecountPath(row)
+        if (wide) {
+            var parent = page.wideRecountReceipt(row).instruction || ({})
+            return page.t("recovery_constituency") + " #" + wide[1]
+                + (parent.id ? " · " + page.t("recovery_constituency_instruction")
+                    + " #" + page.exact(parent, "id") : "")
+        }
         var recount = page.recountPath(row)
         if (recount) {
             var instruction = page.recountReceipt(row).instruction || ({})
@@ -90,16 +109,26 @@ ColumnLayout {
         return value === "recorded" ? page.t("recovery_recorded")
             : page.t(value || "recovery_unknown_error")
     }
+    function blankReceiptSummary(round) {
+        return page.t("recovery_recount_new_round") + " #" + page.exact(round, "id")
+            + " · " + page.t("recovery_round") + " #" + page.exact(round, "round_number")
+            + " · " + page.t("recovery_receipt_revision") + " " + page.exact(round, "revision")
+            + " · " + page.receiptStatus(round.status)
+    }
     function receiptSummary(row) {
         var record = page.receiptRecord(row)
         if (!Object.keys(record).length) return page.t("recovery_no_receipt")
+        var wide = page.wideRecountReceipt(row)
+        if (wide.instruction) {
+            var parts = [page.t("recovery_constituency_member_count") + " "
+                + page.exact(wide.instruction, "member_count")]
+            for (var member of wide.members)
+                parts.push(page.blankReceiptSummary(member.round || ({})))
+            return parts.join("\n")
+        }
         var recount = page.recountReceipt(row)
         if (recount.round) {
-            var round = recount.round
-            return page.t("recovery_recount_new_round") + " #" + page.exact(round, "id")
-                + " · " + page.t("recovery_round") + " #" + page.exact(round, "round_number")
-                + " · " + page.t("recovery_receipt_revision") + " " + page.exact(round, "revision")
-                + " · " + page.receiptStatus(round.status)
+            return page.blankReceiptSummary(recount.round)
         }
         if (row.workflow === "count")
             return page.t("recovery_round") + " #" + (record.round_number || "—")
@@ -289,7 +318,7 @@ ColumnLayout {
                     value: page.recovery.formatTime(page.selectedCommand.created_at || "")
                 }
                 Detail {
-                    caption: page.recountPath(page.selectedCommand)
+                    caption: page.instructionPath(page.selectedCommand)
                         ? page.t("recovery_recount_original_event_at") : page.t("recovery_event_at")
                     value: page.eventTime(page.selectedCommand)
                 }
@@ -312,14 +341,17 @@ ColumnLayout {
             FormCaption {
                 objectName: "recoveryReceiptSummary"
                 visible: !!page.selectedCommand.receipt
-                text: (page.recountPath(page.selectedCommand)
+                text: (page.instructionPath(page.selectedCommand)
                     ? page.t("recovery_original_receipt") : page.t("recovery_receipt"))
                     + " · " + page.receiptSummary(page.selectedCommand)
             }
             FormCaption {
                 objectName: "recoveryReceiptHistoryHint"
                 visible: !!page.recountReceipt(page.selectedCommand).round
-                text: page.t("recovery_original_receipt_hint")
+                    || !!page.wideRecountReceipt(page.selectedCommand).instruction
+                text: page.wideRecountPath(page.selectedCommand)
+                    ? page.t("recovery_constituency_receipt_hint")
+                    : page.t("recovery_original_receipt_hint")
             }
             RowLayout {
                 Layout.fillWidth: true

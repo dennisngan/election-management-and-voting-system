@@ -238,3 +238,27 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "PATCH": "Update",
     },
 }
+
+
+_CONSTITUENCY_RECEIPT_LABELS = {
+    "constituency_recount": (
+        "整個選區重新點票", "整个选区重新点票", "Constituency-wide recount",
+    ),
+    "recovery_constituency": ("選區", "选区", "Constituency"),
+    "recovery_constituency_instruction": (
+        "整個選區重新點票指示", "整个选区重新点票指示", "Constituency recount instruction",
+    ),
+    "recovery_constituency_member_count": (
+        "原有所需範圍數目", "原有所需范围数目", "Original member count",
+    ),
+    "recovery_constituency_receipt_hint": (
+        "此收據保留原有選區指示及各範圍的空白輪次；目前重新點票進度另行顯示。",
+        "此收据保留原有选区指示及各范围的空白轮次；当前重新点票进度另行显示。",
+        "This receipt preserves the original constituency instruction and blank member rounds; "
+        "current recount progress is shown separately.",
+    ),
+}
+for index, locale in enumerate(("tc", "sc", "en")):
+    RECOVERY_TRANSLATIONS[locale].update({
+        key: values[index] for key, values in _CONSTITUENCY_RECEIPT_LABELS.items()
+    })
