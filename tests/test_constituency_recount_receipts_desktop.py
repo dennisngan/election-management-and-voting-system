@@ -51,6 +51,8 @@ class AggregateReceiptBoundary(HttpsServer):
     altered_response_count: int = 0
     original_candidate_ids: list[int] = field(default_factory=list)
     delivered_candidate_ids: list[int] = field(default_factory=list)
+    null_context_next_get_path: str = ""
+    altered_read_count: int = 0
 
 
 @pytest.fixture
@@ -66,35 +68,48 @@ def aggregate_receipt_boundary(
     application = create_app(database_url, now=endpoint.clock)
 
     @application.middleware("http")
-    async def truncate_only_the_original_aggregate_response(
+    async def alter_only_the_armed_public_response(
         request: Request, call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         with endpoint.lock:
             endpoint.requests.append((request.method, request.url.path))
         response = await call_next(request)
         with endpoint.lock:
-            alter = (
+            alter_write = (
                 request.method == "POST"
                 and request.url.path == endpoint.truncate_next_post_path
                 and response.status_code == 201
             )
-            if alter:
+            alter_read = (
+                request.method == "GET"
+                and request.url.path == endpoint.null_context_next_get_path
+                and response.status_code == 200
+            )
+            if alter_write:
                 endpoint.truncate_next_post_path = ""
-        if not alter:
+            if alter_read:
+                endpoint.null_context_next_get_path = ""
+        if not (alter_write or alter_read):
             return response
-        # The genuine route has committed. Change only one response-body list;
-        # authentication, business rules, SQL and subsequent outcome GETs stay real.
+        # The real route has completed. Change only the explicitly armed response;
+        # authentication, business rules, SQL and every outcome GET stay real.
         chunks = [chunk async for chunk in response.body_iterator]
         body = b"".join(chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks)
         payload = json.loads(body)
-        votes = payload["members"][0]["round"]["candidate_votes"]
-        assert len(votes) == 2
-        original_ids = [row["candidate_id"] for row in votes]
-        votes.pop()
-        with endpoint.lock:
-            endpoint.original_candidate_ids = original_ids
-            endpoint.delivered_candidate_ids = [row["candidate_id"] for row in votes]
-            endpoint.altered_response_count += 1
+        if alter_write:
+            votes = payload["members"][0]["round"]["candidate_votes"]
+            assert len(votes) == 2
+            original_ids = [row["candidate_id"] for row in votes]
+            votes.pop()
+            with endpoint.lock:
+                endpoint.original_candidate_ids = original_ids
+                endpoint.delivered_candidate_ids = [row["candidate_id"] for row in votes]
+                endpoint.altered_response_count += 1
+        else:
+            assert isinstance(payload["context"]["constituency"], dict)
+            payload["context"]["constituency"] = None
+            with endpoint.lock:
+                endpoint.altered_read_count += 1
         preserved_headers = {
             name: value for name, value in response.headers.items()
             if name.lower() not in {"content-length", "content-type", "transfer-encoding"}
@@ -295,6 +310,81 @@ def test_truncated_blank_candidate_rows_remain_unknown_until_exact_aggregate_out
                 listed = supervisor.get(rounds_path)
                 assert listed.status_code == 200 and len(listed.json()["rounds"]) == 2
             assert READY_PASSWORD not in json.dumps(recovery.property("state"))
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
+
+
+def test_null_constituency_read_context_preserves_the_current_recount_draft(
+    admin: TestClient,
+    database_url: str,
+    aggregate_receipt_boundary: AggregateReceiptBoundary,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "recount-read-journal"))
+    with complete_tie_setup(admin, database_url) as setup:
+        save_result_round(setup, [6, 4], approve_and_select=True)
+        supervisor = setup["clients"]["supervisor"]
+        station_id = setup["stations"]["N1"]["id"]
+        target = f"/api/workspace/constituencies/{setup['constituency_id']}/recounts"
+        setup["clock"].value += timedelta(minutes=10)
+        endpoint = aggregate_receipt_boundary
+        endpoint.clock.value = setup["clock"].value
+        client = DesktopController(endpoint.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(
+                endpoint.url, setup["accounts"]["supervisor"]["username"], READY_PASSWORD,
+            )
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            workspace.selectStation(station_id)
+            wait_for_editor_idle(qt_app, workspace)
+            results = client.property("constituencyResults")
+            results.open()
+            wait_for_editor_idle(qt_app, results)
+            recounts = results.property("recounts")
+            assert isinstance(recounts, QObject)
+            wait_for_editor_idle(qt_app, recounts)
+            ready = deepcopy(recounts.property("state"))
+            assert ready["can_instruct"] is True and ready["error"] == ""
+            assert len(ready["scope_sources"]) == 2 and ready["instructions"] == []
+            assert ready["basis_digest"]
+            recounts.setField("event_at", "2026-11-16 00:05:42.123456")
+            recounts.setField("reason", "Preserve this draft when a read has invalid context.")
+            original = deepcopy(recounts.property("state"))
+            instructed = QSignalSpy(recounts.instructed)
+            assert instructed.isValid()
+            assert endpoint.altered_read_count == endpoint.altered_response_count == 0
+            assert endpoint.request_count("POST", target) == 0
+
+            with endpoint.lock:
+                endpoint.null_context_next_get_path = target
+            recounts.reload()
+            wait_for(qt_app, lambda: endpoint.altered_read_count == 1)
+            wait_for_editor_idle(qt_app, recounts)
+            rejected = recounts.property("state")
+            assert rejected["busy"] is False and rejected["refreshing"] is False
+            # Expected first RED at3e7375b: .get on the null child context raises
+            # instead of reporting the invalid read through the public Qt state.
+            assert rejected["error"] == "constituency_recount_invalid_response"
+            for key in ("basis_digest", "scope_sources", "instructions", "forms", "context"):
+                assert rejected[key] == original[key]
+            assert rejected["dirty"] is True and rejected["uncertain_save"] is False
+            assert rejected["pending_request_id"] == "" and rejected["notice"] == ""
+            assert instructed.count() == 0
+            assert endpoint.altered_read_count == 1 and endpoint.altered_response_count == 0
+            assert endpoint.request_count("POST", target) == 0
+            unchanged = supervisor.get(target)
+            assert unchanged.status_code == 200, unchanged.text
+            assert unchanged.json()["instructions"] == []
+            assert unchanged.json()["basis_digest"] == original["basis_digest"]
+            assert unchanged.json()["scope_sources"] == original["scope_sources"]
+            assert READY_PASSWORD not in json.dumps(rejected)
         finally:
             client.shutdown()
             client.deleteLater()
