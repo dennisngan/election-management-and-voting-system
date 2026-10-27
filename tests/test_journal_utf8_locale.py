@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 # ASCII-only command source survives the child's actual ASCII argument decoding.
 # At runtime the escapes become genuine Chinese strings, written by CommandJournal.
 CHILD = r"""
