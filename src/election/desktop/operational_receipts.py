@@ -119,7 +119,7 @@ def valid_operational_receipt(command: dict[str, Any], record: Any) -> bool:
                 and _positive(record.get("reviewed_revision_id"))
             )
         return bool(record["revision"] == expected + 1
-                    and record.get("actor_id") == command["actor_id"])
+                    and record.get("revision_actor_id") == command["actor_id"])
     if record.get("station_id") != command["station_id"]:
         return False
     if command["workflow"] == "allocation":
