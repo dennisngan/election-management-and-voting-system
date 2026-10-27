@@ -432,7 +432,6 @@ class CountingRoundsController(QObject):
             rounds=deepcopy(data["rounds"]),
             context={**self._state["context"], **deepcopy(data["context"])},
         )
-        self._recounts.set_context(self._state["context"], self._state["selected_scope_id"])
         if not foreground and scope_changed and not self._state["historical"]:
             self._state["newer_revision"] = True
         selected = self._state["selected"]
@@ -443,6 +442,9 @@ class CountingRoundsController(QObject):
             if row is None:
                 self._state.update(selected={}, history=[])
                 self._forms_for({})
+                self._recounts.set_context(
+                    self._state["context"], self._state["selected_scope_id"]
+                )
                 return
             self._send(
                 self._path() + f"/{row['id']}",
@@ -472,6 +474,8 @@ class CountingRoundsController(QObject):
                     lambda body: self._history_loaded(body, foreground=True),
                     background=True,
                 )
+        # Start the next parent read before a child context signal can report idle.
+        self._recounts.set_context(self._state["context"], self._state["selected_scope_id"])
 
     def _scopes_loaded(self, data: dict[str, Any], *, foreground: bool) -> None:
         if not (
