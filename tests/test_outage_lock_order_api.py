@@ -246,7 +246,9 @@ def test_flagged_allocation_and_outage_writer_finish_without_a_lock_cycle(
                    "event_at": "2026-11-15T08:15:00+08:00",
                    "paper_record_id": paper_response.json()["id"]}
         if action == "amend":
-            command.update(revision=allocation_revision, reason="Matched the original signed range.")
+            command.update(
+                revision=allocation_revision, reason="Matched the original signed range.",
+            )
         peer_body = {**outage_body, "request_id": str(uuid4()),
                      "reference": "Concurrent peer outage " + uuid4().hex[:8]}
         probe = PassiveLockProbe("allocation")
