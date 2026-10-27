@@ -196,8 +196,7 @@ class LocalRecountsController(QObject):
             if self._restored_request_id and not self._state["scope"]:
                 # This fresh read supplies display context, never the retained command body.
                 self._adopt_read(body)
-            elif (self._state["dirty"] or self._state["uncertain_save"]
-                  or self._state["newer_basis"]):
+            elif self._state["dirty"] or self._state["uncertain_save"]:
                 old = self._basis(
                     self._state["scope"], self._state["selection"], self._state["pending"]
                 )
@@ -206,6 +205,7 @@ class LocalRecountsController(QObject):
                     self._state.update(newer_basis=True, notice="local_recount_newer_basis")
             else:
                 self._adopt_read(body)
+                self._state["newer_basis"] = False
             self.stateChanged.emit()
 
         def failed(code: str) -> None:
@@ -403,23 +403,19 @@ class LocalRecountsController(QObject):
         receipt = command.get("receipt")
         body = receipt.get("record") if isinstance(receipt, dict) else None
         if isinstance(body, dict) and self._valid_ack(body):
-            self._instruction_saved(body["instruction"])
+            self._request_committed()
 
-    def _instruction_saved(self, instruction: dict[str, Any]) -> None:
+    def _request_committed(self) -> None:
+        # The immutable original receipt settles its request, not today's projection.
         self._read_allowed = False
-        self._state["instructions"] = [
-            deepcopy(instruction),
-            *(row for row in self._state["instructions"]
-              if row.get("request_id") != instruction["request_id"]),
-        ]
-        self._state["pending"] = True
-        self._state["latest_instruction"] = deepcopy(instruction)
-        self._settled()
+        self._settled(current_read_required=True)
+        self.refresh()
 
-    def _settled(self) -> None:
+    def _settled(self, *, current_read_required: bool = False) -> None:
         self._pending = None
         self._state.update(
-            busy=False, refreshing=False, dirty=False, uncertain_save=False, newer_basis=False,
+            busy=False, refreshing=False, dirty=False, uncertain_save=False,
+            newer_basis=current_read_required,
             pending_request_id="", forms={"event_at": "", "reason": ""}, error="",
             notice="local_recount_instructed",
         )
@@ -481,7 +477,7 @@ class LocalRecountsController(QObject):
                 self._state.update(busy=False, uncertain_save=True)
                 self._error("local_recount_invalid_response")
                 return
-            self._instruction_saved(body["instruction"])
+            self._request_committed()
 
         def failed(code: str) -> None:
             if generation == self._generation:
