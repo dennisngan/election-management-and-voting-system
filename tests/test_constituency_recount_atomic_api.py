@@ -76,7 +76,8 @@ class FirstLocalInsertTransportGate:
         # Retain its actual driver connection while the caller identifies it;
         # this callback never changes SQL, parameters, rows or ASGI responses.
         expected = make_url(self.database_url)
-        assert connection.engine.url == expected
+        same_endpoint = connection.engine.url == expected
+        assert same_endpoint, "The tagged request does not use the exact leased endpoint"
         assert connection.in_transaction()
         driver = connection.connection.driver_connection
         _assert_same_leased_database(driver, expected)
@@ -127,7 +128,14 @@ def _atomic_caller(
         assert response.status_code == 200, response.text
         assert response.json()["account"]["must_change_password"] is False
         client.headers["Authorization"] = "Bearer " + response.json()["token"]
-        yield client
+        try:
+            yield client
+        finally:
+            try:
+                logout = client.delete("/api/auth/session")
+                assert logout.status_code == 204, "Owned atomic caller logout was not confirmed"
+            finally:
+                client.headers.pop("Authorization", None)
 
 
 def test_connection_loss_after_first_local_insert_rolls_back_the_entire_wide_instruction(
@@ -210,7 +218,8 @@ def test_connection_loss_after_first_local_insert_rolls_back_the_entire_wide_ins
                     _assert_same_leased_database(gate.target_driver, make_url(database_url))
                     assert gate.target_driver.thread_id() == target_id
                     assert gate.target_driver is not killer_driver
-                    assert gate.target_driver.user == killer_driver.user
+                    same_user = gate.target_driver.user == killer_driver.user
+                    assert same_user, "The owned transport connections have different identities"
                     # Only this still-held, positively identified request connection
                     # is interrupted. No process-wide kill or business SQL occurs.
                     killer_driver.query(f"KILL CONNECTION {target_id:d}")
