@@ -60,6 +60,10 @@ class AggregateReceiptBoundary(HttpsServer):
     delivered_candidate_ids: list[int] = field(default_factory=list)
     null_context_next_get_path: str = ""
     altered_read_count: int = 0
+    original_post_receipt: dict = field(default_factory=dict)
+    delivered_post_receipt: dict = field(default_factory=dict)
+    contradict_next_outcome_path: str = ""
+    altered_outcome_count: int = 0
 
 
 @pytest.fixture
@@ -92,19 +96,25 @@ def aggregate_receipt_boundary(
                 and request.url.path == endpoint.null_context_next_get_path
                 and response.status_code == 200
             )
+            alter_outcome = (
+                request.method == "GET"
+                and request.url.path == endpoint.contradict_next_outcome_path
+                and response.status_code == 200
+            )
             if alter_write:
                 endpoint.alter_next_post_path = ""
                 post_fault = endpoint.post_fault
             if alter_read:
                 endpoint.null_context_next_get_path = ""
-        if not (alter_write or alter_read):
+        if not (alter_write or alter_read or alter_outcome):
             return response
         # The real route has completed. Change only the explicitly armed response;
-        # authentication, business rules, SQL and every outcome GET stay real.
+        # authentication, business rules, SQL and every unarmed response stay real.
         chunks = [chunk async for chunk in response.body_iterator]
         body = b"".join(chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks)
         payload = json.loads(body)
         if alter_write:
+            original_post_receipt = deepcopy(payload)
             first_round = payload["members"][0]["round"]
             member = payload["instruction"]["members"][0]
             votes = first_round["candidate_votes"]
@@ -131,6 +141,39 @@ def aggregate_receipt_boundary(
                 )
             elif post_fault == "float_round_id":
                 first_round["id"] = float(original_round_id)
+            elif post_fault == "missing_required_recount":
+                assert isinstance(first_round["required_recount"], dict)
+                del first_round["required_recount"]
+            elif post_fault == "cross_scope_recount_instruction":
+                local_id = payload["members"][0]["instruction"]["id"]
+                other_local_id = payload["members"][1]["instruction"]["id"]
+                assert type(other_local_id) is int and other_local_id > 0
+                assert first_round["recount_instruction"]["id"] == local_id != other_local_id
+                first_round["recount_instruction"]["id"] = other_local_id
+            elif post_fault == "wrong_nested_parent_id":
+                parent_id = payload["instruction"]["id"]
+                assert type(parent_id) is int and parent_id > 0
+                for instruction in (
+                    payload["members"][0]["instruction"], first_round["required_recount"],
+                    first_round["recount_instruction"],
+                ):
+                    assert instruction["constituency_recount"]["id"] == parent_id
+                    instruction["constituency_recount"]["id"] = parent_id + 1
+            elif post_fault == "recount_not_pending":
+                assert first_round["recount_pending"] is True
+                first_round["recount_pending"] = False
+            elif post_fault == "blank_contributes_to_result":
+                assert first_round["contributes_to_result"] is False
+                first_round["contributes_to_result"] = True
+            elif post_fault == "blank_count_complete":
+                assert first_round["count_complete"] is False
+                first_round["count_complete"] = True
+            elif post_fault == "blank_count_inputs_complete":
+                assert first_round["count_inputs_complete"] is False
+                first_round["count_inputs_complete"] = True
+            elif post_fault == "blank_f2_complete":
+                assert first_round["f2_complete"] is False
+                first_round["f2_complete"] = True
             else:
                 raise AssertionError("An explicitly supported aggregate receipt fault is required")
             with endpoint.lock:
@@ -140,12 +183,34 @@ def aggregate_receipt_boundary(
                 endpoint.delivered_source_context = deepcopy(member["source_context"])
                 endpoint.original_round_id = original_round_id
                 endpoint.delivered_round_id = first_round["id"]
+                endpoint.original_post_receipt = original_post_receipt
+                endpoint.delivered_post_receipt = deepcopy(payload)
                 endpoint.altered_response_count += 1
-        else:
+        elif alter_read:
             assert isinstance(payload["context"]["constituency"], dict)
             payload["context"]["constituency"] = None
             with endpoint.lock:
                 endpoint.altered_read_count += 1
+        else:
+            # A separate outcome-envelope test may arm this adapter. Preserve
+            # the real committed record/UUID/workflow and change only status.
+            committed = (
+                isinstance(payload, dict) and payload.get("status") == "committed"
+                and payload.get("workflow") == "constituency_recount"
+                and isinstance(payload.get("record"), dict)
+            )
+            with endpoint.lock:
+                alter_once = committed and endpoint.contradict_next_outcome_path == request.url.path
+                if alter_once:
+                    endpoint.contradict_next_outcome_path = ""
+                    endpoint.altered_outcome_count += 1
+            if not alter_once:
+                unchanged = Response(
+                    content=body, status_code=response.status_code, background=response.background,
+                )
+                unchanged.raw_headers = response.raw_headers
+                return unchanged
+            payload["status"] = "not_found"
         preserved_headers = {
             name: value for name, value in response.headers.items()
             if name.lower() not in {"content-length", "content-type", "transfer-encoding"}
@@ -178,6 +243,9 @@ def aggregate_receipt_boundary(
 @pytest.mark.parametrize("receipt_fault", [
     "truncated_candidates", "duplicate_candidate_ids", "empty_source_context",
     "foreign_source_constituency", "foreign_source_station", "float_round_id",
+    "missing_required_recount", "cross_scope_recount_instruction", "wrong_nested_parent_id",
+    "recount_not_pending", "blank_contributes_to_result", "blank_count_complete",
+    "blank_count_inputs_complete", "blank_f2_complete",
 ])
 def test_noncanonical_blank_receipt_remains_unknown_until_exact_aggregate_outcome(
     receipt_fault: str,
@@ -316,6 +384,62 @@ def test_noncanonical_blank_receipt_remains_unknown_until_exact_aggregate_outcom
             else:
                 assert type(endpoint.delivered_round_id) is int
                 assert endpoint.delivered_round_id == endpoint.original_round_id
+            # These new contradictions retain every other decoded JSON field.
+            # Their real untouched original acknowledgement belongs to this
+            # actual committed parent and to the two persisted member rounds.
+            original_receipt = endpoint.original_post_receipt
+            delivered_receipt = endpoint.delivered_post_receipt
+            assert original_receipt["instruction"] == parent
+            assert [row["round"]["id"] for row in original_receipt["members"]] == [
+                row["record"]["id"] for row in blank_views
+            ]
+            expected_receipt = deepcopy(original_receipt)
+            original_first = original_receipt["members"][0]["round"]
+            expected_first = expected_receipt["members"][0]["round"]
+            if receipt_fault == "missing_required_recount":
+                assert original_first["required_recount"]["id"] == (
+                    original_receipt["members"][0]["instruction"]["id"]
+                )
+                del expected_first["required_recount"]
+                assert "required_recount" not in delivered_receipt["members"][0]["round"]
+                assert delivered_receipt == expected_receipt
+            elif receipt_fault == "cross_scope_recount_instruction":
+                first_id = original_receipt["members"][0]["instruction"]["id"]
+                second_id = original_receipt["members"][1]["instruction"]["id"]
+                assert type(second_id) is int and second_id > 0 and second_id != first_id
+                assert original_first["recount_instruction"]["id"] == first_id
+                expected_first["recount_instruction"]["id"] = second_id
+                assert delivered_receipt == expected_receipt
+            elif receipt_fault == "wrong_nested_parent_id":
+                assert delivered_receipt["instruction"]["id"] == parent["id"]
+                for instruction in (
+                    expected_receipt["members"][0]["instruction"],
+                    expected_first["required_recount"], expected_first["recount_instruction"],
+                ):
+                    assert instruction["constituency_recount"]["id"] == parent["id"]
+                    instruction["constituency_recount"]["id"] = parent["id"] + 1
+                assert delivered_receipt == expected_receipt
+            elif receipt_fault == "recount_not_pending":
+                assert original_first["recount_pending"] is True
+                expected_first["recount_pending"] = False
+                assert delivered_receipt == expected_receipt
+            elif receipt_fault == "blank_contributes_to_result":
+                assert original_first["contributes_to_result"] is False
+                expected_first["contributes_to_result"] = True
+                assert delivered_receipt == expected_receipt
+            elif receipt_fault == "blank_count_complete":
+                assert original_first["count_complete"] is False
+                expected_first["count_complete"] = True
+                assert delivered_receipt == expected_receipt
+            elif receipt_fault == "blank_count_inputs_complete":
+                assert original_first["count_inputs_complete"] is False
+                expected_first["count_inputs_complete"] = True
+                assert delivered_receipt == expected_receipt
+            elif receipt_fault == "blank_f2_complete":
+                assert original_first["f2_complete"] is False
+                expected_first["f2_complete"] = True
+                assert delivered_receipt == expected_receipt
+            assert endpoint.altered_outcome_count == 0
             assert endpoint.request_count("POST", target) == 1
 
             recovery = client.property("recovery")
