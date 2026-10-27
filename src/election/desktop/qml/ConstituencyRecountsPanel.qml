@@ -54,11 +54,14 @@ ColumnLayout {
             panel.editorState.server_url || ""
         ])
     }
-    function closeConfirmations() {
+    function closePasswordConfirmation() {
         panel.confirmationContext = ""
-        panel.discardContext = ""
         if (passwordField) passwordField.clear()
         if (passwordDialog && passwordDialog.visible) passwordDialog.close()
+    }
+    function closeConfirmations() {
+        panel.closePasswordConfirmation()
+        panel.discardContext = ""
         if (discardDialog && discardDialog.visible) discardDialog.close()
     }
     function moveFocus(control, forward) {
@@ -428,8 +431,10 @@ ColumnLayout {
             var context = panel.contextIdentity()
             var changed = panel.observedContext !== "" && panel.observedContext !== context
             panel.observedContext = context
-            if (changed || !panel.supervisor || !panel.hasContext || panel.unknown || panel.newer)
+            if (changed || !panel.supervisor || !panel.hasContext || panel.unknown)
                 panel.closeConfirmations()
+            else if (panel.newer)
+                panel.closePasswordConfirmation()
         }
     }
     ConfirmationDialog {
