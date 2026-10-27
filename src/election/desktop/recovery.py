@@ -57,7 +57,13 @@ class RecoveryController(QObject):
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return qt_state(quantity_display(self._state))
+        # Keep original command payloads intact while adding receipt display text.
+        view = {**self._state, "commands": [
+            {**row, "receipt": quantity_display(row["receipt"])
+             if isinstance(row.get("receipt"), dict) else row.get("receipt")}
+            for row in self._state["commands"]
+        ]}
+        return qt_state(view)
 
     def reset(self) -> None:
         self._generation += 1
