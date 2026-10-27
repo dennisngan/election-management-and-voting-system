@@ -221,6 +221,8 @@ class CountingRoundsController(QObject):
             self.stateChanged.emit()
 
     def _recovery_state_changed(self) -> None:
+        if isinstance(self._recovery, RecoveryController):
+            self._recounts.sync_recovery(self._recovery.property("state")["commands"])
         command = self._matching_recovery_command()
         if command is None:
             self._sync_paper_binding_lock()

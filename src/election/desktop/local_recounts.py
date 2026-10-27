@@ -303,6 +303,38 @@ class LocalRecountsController(QObject):
                     for row in round["invalid_papers"])
         )
 
+    def sync_recovery(self, commands: list[dict[str, Any]]) -> None:
+        """Settle only this live draft from its validated actor-scoped receipt."""
+        if self._pending is None or not self._state["uncertain_save"]:
+            return
+        original = self._pending["command"]
+        command = next((row for row in commands if (
+            row.get("request_id") == original["request_id"]
+            and row.get("actor_id") == self._state["actor_id"]
+            and row.get("station_id") == self._state["station_id"]
+            and row.get("workflow") == "count" and row.get("method") == "POST"
+            and row.get("path") == self._path()
+            and isinstance(row.get("payload"), dict)
+            and all(row["payload"].get(key) == value for key, value in original.items())
+        )), None)
+        if command is None or command.get("status") != "committed":
+            return
+        receipt = command.get("receipt")
+        body = receipt.get("record") if isinstance(receipt, dict) else None
+        if isinstance(body, dict) and self._valid_ack(body):
+            self._instruction_saved(body["instruction"])
+
+    def _instruction_saved(self, instruction: dict[str, Any]) -> None:
+        self._read_allowed = False
+        self._state["instructions"] = [
+            deepcopy(instruction),
+            *(row for row in self._state["instructions"]
+              if row.get("request_id") != instruction["request_id"]),
+        ]
+        self._state["pending"] = True
+        self._state["latest_instruction"] = deepcopy(instruction)
+        self._settled()
+
     def _settled(self) -> None:
         self._pending = None
         self._state.update(
@@ -368,12 +400,7 @@ class LocalRecountsController(QObject):
                 self._state.update(busy=False, uncertain_save=True)
                 self._error("local_recount_invalid_response")
                 return
-            instruction = body["instruction"]
-            self._read_allowed = False
-            self._state["instructions"] = [deepcopy(instruction), *self._state["instructions"]]
-            self._state["pending"] = True
-            self._state["latest_instruction"] = deepcopy(instruction)
-            self._settled()
+            self._instruction_saved(body["instruction"])
 
         def failed(code: str) -> None:
             if generation == self._generation:
