@@ -1,6 +1,5 @@
 """Real Material recount cards preserve the original instruction receipt."""
 
-import json
 from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
