@@ -171,6 +171,7 @@ class DesktopController(QObject):
                 or self._counting_rounds.property("state")["dirty"]
                 or self._counting_rounds.property("state")["busy"]
                 or self._counting_rounds.recount_changes_pending()
+                or self._constituency_results.recount_changes_pending()
                 or self._constituency_results.property("state")["dirty"]
                 or self._constituency_results.property("state")["busy"]
                 or self._constituency_results.property("state")["uncertain_save"]
@@ -187,6 +188,7 @@ class DesktopController(QObject):
                 self._context_writes
                 or self._recovery.recount_context_locked()
                 or self._counting_rounds.recount_context_locked()
+                or self._constituency_results.recount_context_locked()
                 or self._allocations.property("state").get("paper_uncertain", False)
                 or self._counting_rounds.property("state").get("uncertain_save", False)
                 or self._turnout.property("state").get("uncertain_save", False)
@@ -350,6 +352,7 @@ class DesktopController(QObject):
             self._state["account"].get("role", ""),
             self._state["server_url"],
             self._state["account"].get("id", 0),
+            (context.get("constituency") or {}).get("id", 0),
         )
         self._outages.set_context(context)
         self._accounting.set_context(context)
@@ -429,7 +432,7 @@ class DesktopController(QObject):
         failure: Callable[[str], None],
     ) -> None:
         command = None
-        workflow = command_workflow(path)
+        workflow = command_workflow(path, (self._state.get("station") or {}).get("id", 0))
         account_id = self._state["account"].get("id", 0)
         origin = self._state["server_url"]
         if workflow and payload and method in ("POST", "PUT", "PATCH") and "request_id" in payload:

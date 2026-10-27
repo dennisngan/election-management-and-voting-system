@@ -48,7 +48,9 @@ def _safe(value: Any) -> Any:
     return deepcopy(value)
 
 
-def command_workflow(path: str) -> tuple[int, str] | None:
+def command_workflow(path: str, namespace_station_id: int = 0) -> tuple[int, str] | None:
+    if re.fullmatch(r"/api/workspace/constituencies/[1-9][0-9]*/recounts", path):
+        return namespace_station_id, "constituency_recount"
     matched = STATION_PATH.fullmatch(path)
     if matched is None:
         return None
@@ -130,7 +132,7 @@ class CommandJournal:
                 continue
             if (
                 path != self._path(origin, actor_id, row["request_id"])
-                or command_workflow(row["path"]) != (station_id, row["workflow"])
+                or command_workflow(row["path"], station_id) != (station_id, row["workflow"])
                 or row["method"] not in ("POST", "PUT", "PATCH")
                 or row["payload"].get("request_id") != row["request_id"]
                 or row["status"] not in {"pending", "uncertain", "committed", "rejected"}
@@ -150,6 +152,9 @@ class CommandJournal:
         method: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        if (type(station_id) is not int or station_id <= 0
+                or command_workflow(path, station_id) != (station_id, workflow)):
+            raise JournalError("recovery_command_invalid")
         origin, request_id = _origin(server_url), str(UUID(payload["request_id"]))
         safe_payload = _safe(payload)
         rows = self.commands(origin, actor_id, station_id)

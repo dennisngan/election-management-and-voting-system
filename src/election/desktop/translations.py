@@ -5,6 +5,7 @@ from election.desktop.allocation_translations import ALLOCATION_TRANSLATIONS
 from election.desktop.box_translations import BOX_EVENT_WORDS
 from election.desktop.complaint_period_translations import COMPLAINT_PERIOD_TRANSLATIONS
 from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
+from election.desktop.constituency_recount_translations import CONSTITUENCY_RECOUNT_TRANSLATIONS
 from election.desktop.constituency_result_translations import CONSTITUENCY_RESULT_TRANSLATIONS
 from election.desktop.count_discrepancy_translations import COUNT_DISCREPANCY_TRANSLATIONS
 from election.desktop.counter_return_translations import COUNTER_RETURN_TRANSLATIONS
@@ -2010,3 +2011,6 @@ for language, backup_labels in SERVER_BACKUP_TRANSLATIONS.items():
 
 for language, recount_labels in LOCAL_RECOUNT_TRANSLATIONS.items():
     TRANSLATIONS[language].update(recount_labels)
+
+for language, labels in CONSTITUENCY_RECOUNT_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)

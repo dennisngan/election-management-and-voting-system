@@ -8,8 +8,10 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest
+from election.desktop.constituency_recounts import ConstituencyRecountsController
 from election.desktop.event_times import format_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
+from election.desktop.recovery import RecoveryController
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
 NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
@@ -32,13 +34,39 @@ class ConstituencyResultsController(QObject):
         self._opened = False
         self._pending: tuple[str, str] | None = None
         self._state: dict[str, Any] = {}
+        recovery = parent.property("recovery") if parent is not None else None
+        self._recounts = ConstituencyRecountsController(
+            request, self, recovery if isinstance(recovery, RecoveryController) else None,
+        )
         self.reset()
+        self._recounts.stateChanged.connect(self.stateChanged.emit)
+        self._recounts.instructed.connect(self._recount_instructed)
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return qt_state(quantity_display(self._state))
+        view = qt_state(quantity_display(self._state))
+        child = self._recounts.property("state")
+        view["recount_protected"] = self.recount_changes_pending()
+        view["busy"] = view["busy"] or child["busy"]
+        view["refreshing"] = view["refreshing"] or child["refreshing"]
+        return view
+
+    @Property(QObject, constant=True)
+    def recounts(self) -> ConstituencyRecountsController:
+        return self._recounts
+
+    def recount_changes_pending(self) -> bool:
+        return self._recounts.blocks_navigation()
+
+    def recount_context_locked(self) -> bool:
+        return self._recounts.blocks_context_change()
+
+    def _recount_instructed(self) -> None:
+        self._clear_report()
+        self.refresh()
 
     def reset(self) -> None:
+        self._recounts.reset()
         self._generation += 1
         self._report_generation += 1
         self._opened = False
@@ -84,6 +112,7 @@ class ConstituencyResultsController(QObject):
             role=role,
             account_id=account_id if type(account_id) is int else 0,
         )
+        self._recounts.set_context(context)
         self.stateChanged.emit()
         if changed and self._opened and self._state["constituency_id"]:
             self.reload()
@@ -202,6 +231,7 @@ class ConstituencyResultsController(QObject):
     @Slot()
     def open(self) -> None:
         self._opened = True
+        self._recounts.open()
         if not self._state["result"]:
             self.reload()
 
@@ -217,6 +247,7 @@ class ConstituencyResultsController(QObject):
 
     @Slot()
     def refresh(self) -> None:
+        self._recounts.refresh()
         if (
             not self._opened
             or not self._state["constituency_id"]
@@ -242,6 +273,7 @@ class ConstituencyResultsController(QObject):
             and election.get("status") == "active"
             and not self._state["newer_basis"]
             and not self._state["busy"]
+            and not self.recount_changes_pending()
         )
 
     @Slot(int)
@@ -429,6 +461,9 @@ class ConstituencyResultsController(QObject):
     def _report_path(self, locale: str, extension: str = "") -> str | None:
         if locale not in ("tc", "sc", "en") or not self._state["constituency_id"]:
             self._error("constituency_result_not_found")
+            return None
+        if self.recount_changes_pending():
+            self._error("constituency_recount_changes_pending")
             return None
         if self._state["dirty"] or self._state["uncertain_save"] or self._state["newer_basis"]:
             self._error(

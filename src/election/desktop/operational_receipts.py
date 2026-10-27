@@ -3,6 +3,7 @@
 import re
 from datetime import datetime
 from typing import Any
+from uuid import UUID, uuid5
 
 
 def _positive(value: Any) -> bool:
@@ -130,8 +131,104 @@ def _recount_instruction_receipt(
     )
 
 
+def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
+    target = re.fullmatch(r"/api/workspace/constituencies/([1-9][0-9]*)/recounts", command["path"])
+    if (target is None or command["method"] != "POST"
+            or not _positive(command.get("station_id"))
+            or not isinstance(record, dict) or set(record) != {"instruction", "members"}):
+        return False
+    parent, receipts = record["instruction"], record["members"]
+    payload = command["payload"]
+    sources = payload.get("scope_sources")
+    keys = {"station_id", "scope_id", "scope_revision", "source_round_id",
+            "source_round_revision", "expected_selection_revision"}
+    if not (
+        isinstance(parent, dict) and isinstance(receipts, list)
+        and isinstance(sources, list) and sources
+        and all(isinstance(source, dict) and set(source) == keys
+                and all(_positive(value) for value in source.values()) for source in sources)
+        and len({source["scope_id"] for source in sources}) == len(sources)
+        and sources == sorted(sources, key=lambda source: (
+            source["station_id"], source["scope_id"],
+        ))
+        and _positive(parent.get("id"))
+        and parent.get("constituency_id") == int(target[1])
+        and parent.get("actor_id") == command["actor_id"]
+        and parent.get("request_id") == command["request_id"] == payload.get("request_id")
+        and parent.get("reason") == payload.get("reason")
+        and parent.get("basis_digest") == payload.get("basis_digest")
+        and parent.get("scope_sources") == sources
+        and _same_time(parent.get("event_at"), payload.get("event_at"))
+        and type(parent.get("member_count")) is int and parent["member_count"] == len(sources)
+        and type(parent.get("completed_member_count")) is int
+        and parent["completed_member_count"] == 0
+        and parent.get("historical_complete") is False and parent.get("completed_at") is None
+        and parent.get("is_latest") is True
+        and isinstance(parent.get("members"), list)
+        and len(parent["members"]) == len(receipts) == len(sources)
+    ):
+        return False
+    context = parent.get("context")
+    if not (isinstance(context, dict) and isinstance(context.get("constituency"), dict)
+            and context["constituency"].get("id") == int(target[1])):
+        return False
+    try:
+        if any(not isinstance(parent.get(key), str)
+               or datetime.fromisoformat(parent[key]).utcoffset() is None
+               for key in ("event_at", "entered_at")):
+            return False
+        request_id = UUID(command["request_id"])
+    except (TypeError, ValueError):
+        return False
+    round_ids, instruction_ids = set(), set()
+    for source, member, receipt in zip(sources, parent["members"], receipts, strict=True):
+        if not isinstance(member, dict) or not isinstance(receipt, dict):
+            return False
+        local_id = str(uuid5(request_id, f"scope:{source['scope_id']}"))
+        local_command = {
+            "method": "POST", "station_id": source["station_id"],
+            "actor_id": command["actor_id"], "request_id": local_id,
+            "payload": {
+                **{key: value for key, value in source.items()
+                   if key not in {"station_id", "scope_id"}},
+                "request_id": local_id, "event_at": payload["event_at"],
+                "reason": payload["reason"],
+            },
+        }
+        if not _recount_instruction_receipt(
+            local_command, receipt, source["station_id"], source["scope_id"],
+        ):
+            return False
+        instruction, round = receipt["instruction"], receipt["round"]
+        if not (
+            member.get("station_id") == source["station_id"]
+            and member.get("scope_id") == source["scope_id"]
+            and member.get("scope_source") == source
+            and member.get("local_instruction_id") == instruction["id"]
+            and member.get("new_round_id") == round["id"]
+            and member.get("new_round_number") == round["round_number"]
+            and member.get("round_revision") == 1 and member.get("progress") == "incomplete"
+            and member.get("current_required_round_id") == round["id"]
+            and all(member.get(key) is None for key in (
+                "completed_at", "completion_selection_id", "completion_selection_revision",
+                "completion_round_revision_id",
+            ))
+            and isinstance(member.get("source_context"), dict)
+            and round["scope_basis"].get("id") == source["scope_id"]
+            and round["scope_basis"].get("station_id") == source["station_id"]
+        ):
+            return False
+        if round["id"] in round_ids or instruction["id"] in instruction_ids:
+            return False
+        round_ids.add(round["id"])
+        instruction_ids.add(instruction["id"])
+    return True
+
+
 def valid_operational_receipt(command: dict[str, Any], record: Any) -> bool:
     """Accept only a canonical workflow DTO identifying this original operation."""
+    if command["workflow"] == "constituency_recount":
+        return _constituency_recount_receipt(command, record)
     instruction_path = re.fullmatch(
         r"/api/workspace/stations/([1-9][0-9]*)/counting-scopes/([1-9][0-9]*)/recounts",
         command["path"],
