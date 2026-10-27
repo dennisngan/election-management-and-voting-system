@@ -14,7 +14,7 @@ from election.desktop.operational_receipts import valid_operational_receipt
 from election.desktop.recovery import RecoveryController
 
 NETWORK_ERRORS = frozenset({
-    "request_failed", "disconnected", "database_unavailable",
+    "request_failed", "disconnected", "database_unavailable", "certificate_error",
     "recovery_journal_outcome_unavailable",
 })
 STALE_ERRORS = frozenset({
