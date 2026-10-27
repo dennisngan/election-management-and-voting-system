@@ -6,6 +6,9 @@ ReportLocale = Literal["tc", "sc", "en"]
 
 LABELS: dict[ReportLocale, dict[str, str]] = {
     "tc": {
+        "recount_pending": (
+            "所需重新點票輪次尚未獲批核並選用"
+        ),
         "title": "選區選舉結果報表",
         "election": "選舉",
         "election_status": "選舉狀態",
@@ -101,6 +104,9 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "prepared": "已準備",
     },
     "sc": {
+        "recount_pending": (
+            "所需重新点票轮次尚未获批核并选用"
+        ),
         "title": "选区选举结果报表",
         "election": "选举",
         "election_status": "选举状态",
@@ -196,6 +202,9 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "prepared": "已准备",
     },
     "en": {
+        "recount_pending": (
+            "The required recount round has not been approved and selected"
+        ),
         "title": "Constituency Election Results",
         "election": "Election",
         "election_status": "Election status",
