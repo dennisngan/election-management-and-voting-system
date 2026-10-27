@@ -105,6 +105,7 @@ def lost_recount_response(
         assert not server_thread.is_alive(), "The owned recount HTTPS server did not stop"
 
 
+@pytest.mark.parametrize("check_from_child", [False, True], ids=["recovery", "instruction-panel"])
 def test_restarted_client_cannot_discard_context_before_checking_original_recount_outcome(
     admin: TestClient,
     database_url: str,
@@ -112,6 +113,7 @@ def test_restarted_client_cannot_discard_context_before_checking_original_recoun
     qt_app: QCoreApplication,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    check_from_child: bool,
 ) -> None:
     monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "recount-restart-journal"))
     with complete_tie_setup(admin, database_url) as setup:
@@ -191,6 +193,16 @@ def test_restarted_client_cannot_discard_context_before_checking_original_recoun
             fresh_child = fresh_editor.property("recounts")
             assert isinstance(fresh_child, QObject)
             wait_for_editor_idle(qt_app, fresh_child)
+            restored_child = fresh_child.property("state")
+            assert restored_child["uncertain_save"] is True
+            assert restored_child["pending_request_id"] == request_id
+            assert restored_child["forms"] == {
+                "event_at": "2026-11-16 00:05:42.123456", "reason": reason,
+            }
+            assert restored_child["can_instruct"] is False
+            fresh_child.discardAndReload()
+            assert fresh_child.property("state")["error"] == "local_recount_outcome_unconfirmed"
+            assert fresh_child.property("state")["pending_request_id"] == request_id
             recovery = fresh_client.property("recovery")
             # Loading a station must restore its durable guard before Recovery is opened.
             assert fresh_client.property("workspace").property("unresolvedRequest") is True
@@ -228,7 +240,10 @@ def test_restarted_client_cannot_discard_context_before_checking_original_recoun
             assert any(row["request_id"] == request_id and row["status"] == "uncertain"
                        for row in recovery.property("state")["commands"])
 
-            recovery.checkOutcome(request_id)
+            if check_from_child:
+                fresh_child.checkOutcome()
+            else:
+                recovery.checkOutcome(request_id)
             wait_for_editor_idle(qt_app, recovery)
             wait_for_editor_idle(qt_app, fresh_child)
             wait_for_editor_idle(qt_app, fresh_editor)
@@ -236,6 +251,9 @@ def test_restarted_client_cannot_discard_context_before_checking_original_recoun
                            if row["request_id"] == request_id)
             assert checked["status"] == "committed" and checked["error"] == ""
             assert recovery.property("state")["error"] == ""
+            assert fresh_child.property("state")["uncertain_save"] is False
+            assert fresh_child.property("state")["pending_request_id"] == ""
+            assert fresh_child.property("state")["forms"] == {"event_at": "", "reason": ""}
             outcome_response = supervisor.get(outcome_path + "?workflow=count")
             assert outcome_response.status_code == 200, outcome_response.text
             outcome = outcome_response.json()
