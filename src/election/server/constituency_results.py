@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from election.server.box_models import BallotBox
 from election.server.configuration_models import Candidate, Constituency, Election
+from election.server.constituency_recount_state import constituency_recount_history
 from election.server.constituency_result_models import ConstituencyTieResolution
 from election.server.counting_round_models import CountRoundRevision
 from election.server.counting_rounds import round_at, round_context, round_view
@@ -449,6 +450,7 @@ def constituency_result(db: Session, actor: Account, constituency_id: int) -> di
     )
     return {
         "context": context,
+        "constituency_recounts": constituency_recount_history(db, constituency_id),
         "candidate_totals": total_rows,
         "contributions": contributions,
         "pending": pending,

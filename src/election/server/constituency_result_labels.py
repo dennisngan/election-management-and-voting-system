@@ -300,3 +300,123 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "prepared": "Prepared",
     },
 }
+
+
+_RECOUNT_LABELS = {
+    "history": (
+        "全選區重新點票指示",
+        "全选区重新点票指示",
+        "Constituency-wide recount instructions",
+    ),
+    "instruction_id": (
+        "全選區指示編號",
+        "全选区指示编号",
+        "Constituency instruction ID",
+    ),
+    "request_id": (
+        "原有要求編號",
+        "原有请求编号",
+        "Original request ID",
+    ),
+    "actor_id": (
+        "指示主管帳戶編號",
+        "指示主管账户编号",
+        "Instructing Supervisor account ID",
+    ),
+    "reason": (
+        "全選區指示原因",
+        "全选区指示原因",
+        "Constituency instruction reason",
+    ),
+    "event_at": (
+        "原指示發生時間（香港）",
+        "原指示发生时间（香港）",
+        "Original instruction time (Hong Kong)",
+    ),
+    "entered_at": (
+        "指示記錄時間（香港）",
+        "指示记录时间（香港）",
+        "Instruction entry time (Hong Kong)",
+    ),
+    "member_count": (
+        "原有指定範圍數目",
+        "原有指定范围数目",
+        "Original required scope count",
+    ),
+    "completed_count": (
+        "曾完成範圍數目",
+        "曾完成范围数目",
+        "Historically completed scope count",
+    ),
+    "historical_complete": (
+        "原指示曾完成",
+        "原指示曾完成",
+        "Original instruction historically complete",
+    ),
+    "completed_at": (
+        "首次完成選取時間（香港）",
+        "首次完成选取时间（香港）",
+        "First completion time (Hong Kong)",
+    ),
+    "is_latest": (
+        "最新全選區指示",
+        "最新全选区指示",
+        "Latest constituency instruction",
+    ),
+    "replacement_round": (
+        "原指定輪次記錄編號",
+        "原指定轮次记录编号",
+        "Original replacement round ID",
+    ),
+    "progress": (
+        "歷史進度",
+        "历史进度",
+        "Historical progress",
+    ),
+    "current_required_round": (
+        "目前所需輪次記錄編號",
+        "当前所需轮次记录编号",
+        "Current required round ID",
+    ),
+    "incomplete": (
+        "未完成",
+        "未完成",
+        "Incomplete",
+    ),
+    "submitted": (
+        "已提交，尚待批核",
+        "已提交，尚待批核",
+        "Submitted; awaiting approval",
+    ),
+    "approved": (
+        "已核准，尚待選取",
+        "已核准，尚待选取",
+        "Approved; awaiting selection",
+    ),
+    "completed": (
+        "曾完成核准及選取",
+        "曾完成核准及选取",
+        "Previously approved and selected",
+    ),
+    "scope_reference": (
+        "原範圍參考資料",
+        "原范围参考资料",
+        "Original scope reference",
+    ),
+    "source_round": (
+        "原來源輪次記錄編號",
+        "原来源轮次记录编号",
+        "Original source round ID",
+    ),
+    "completion_selection": (
+        "首次完成選取版本",
+        "首次完成选取版本",
+        "First completion selection revision",
+    ),
+}
+_RECOUNT_LANGUAGES: tuple[ReportLocale, ...] = ("tc", "sc", "en")
+for index, locale in enumerate(_RECOUNT_LANGUAGES):
+    LABELS[locale].update({
+        "constituency_recount_" + key: translations[index]
+        for key, translations in _RECOUNT_LABELS.items()
+    })

@@ -168,6 +168,63 @@ def _contribution_tables(
     return tables
 
 
+def _recount_tables(
+    instructions: list[dict[str, Any]], labels: dict[str, str],
+) -> list[HistoryTable]:
+    tables = []
+    for instruction in instructions:
+        detail = []
+        for field, key in (
+            ("id", "instruction_id"), ("request_id", "request_id"),
+            ("actor_id", "actor_id"), ("reason", "reason"),
+            ("event_at", "event_at"), ("entered_at", "entered_at"),
+            ("member_count", "member_count"), ("completed_member_count", "completed_count"),
+            ("historical_complete", "historical_complete"), ("completed_at", "completed_at"),
+            ("is_latest", "is_latest"),
+        ):
+            value = instruction[field]
+            shown = (hong_kong_time(value) if field.endswith("_at") and value
+                     else _value(value, labels))
+            detail.append([labels["constituency_recount_" + key], shown])
+        title = labels["constituency_recount_history"] + " · #" + str(instruction["id"])
+        tables.append(HistoryTable(
+            title, [[labels["field"], labels["value"]], *detail], (0.34, 0.66),
+        ))
+        rows = [[labels["scope_id"], labels["station_id"],
+                 labels["constituency_recount_replacement_round"],
+                 labels["constituency_recount_progress"],
+                 labels["constituency_recount_current_required_round"]]]
+        rows.extend([
+            str(member["scope_id"]), str(member["station_id"]), str(member["new_round_id"]),
+            labels["constituency_recount_" + member["progress"]],
+            str(member["current_required_round_id"]),
+        ] for member in instruction["members"])
+        tables.append(HistoryTable(title, rows, (0.12, 0.12, 0.18, 0.34, 0.24), split_in_row=False))
+        for member in instruction["members"]:
+            source = member["scope_source"]
+            source_context = member["source_context"]
+            context = source_context["context"]
+            values = [
+                [labels["station_id"], _station_label(context["station"], labels)],
+                [labels["scope_id"], str(member["scope_id"])],
+                [labels["constituency_recount_scope_reference"], source_context["scope_reference"]],
+                [labels["scope_revision"], str(source["scope_revision"])],
+                [labels["constituency_recount_source_round"], str(source["source_round_id"])],
+                [labels["round_revision"], str(source["source_round_revision"])],
+                [labels["selection_revision"], str(source["expected_selection_revision"])],
+                [labels["constituency_recount_completed_at"],
+                 hong_kong_time(member["completed_at"]) if member["completed_at"]
+                 else labels["not_recorded"]],
+                [labels["constituency_recount_completion_selection"],
+                 _value(member["completion_selection_revision"], labels)],
+            ]
+            tables.append(HistoryTable(
+                title + " · " + labels["scope_id"] + " #" + str(member["scope_id"]),
+                [[labels["field"], labels["value"]], *values], (0.34, 0.66),
+            ))
+    return tables
+
+
 def _tables(result: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]:
     context = result["context"]
     summary = [
@@ -316,6 +373,8 @@ def _tables(result: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable
                 (0.34, 0.66),
             )
         )
+    tables.extend(_recount_tables(result["constituency_recounts"], labels))
+
     for decision in result["resolution_history"]:
         basis = decision["basis"]
         candidate_names = {
