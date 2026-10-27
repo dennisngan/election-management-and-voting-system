@@ -28,7 +28,7 @@ ApplicationWindow {
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
     readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "specialPapers", "counterReturns", "turnout", "fallback", "complaints",
-        "complaintPeriods", "queue", "boxes", "accounting", "countingScopes", "countingRounds"].indexOf(currentPage) >= 0
+        "complaintPeriods", "queue", "boxes", "accounting", "countingScopes", "countingRounds", "constituency_results"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
     onCurrentPageChanged: Qt.callLater(function() { if (scroll.contentItem) scroll.contentItem.contentY = 0 })
@@ -54,6 +54,13 @@ ApplicationWindow {
             Math.max(0, viewport.contentHeight - viewport.height)))
     }
     function revealField(control) { revealIn(scroll, control) }
+
+    Connections {
+        target: scroll.contentItem
+        function onContentHeightChanged() {
+            Qt.callLater(function() { window.revealField(window.activeFocusItem) })
+        }
+    }
 
     Connections {
         target: controller
@@ -292,6 +299,15 @@ ApplicationWindow {
                         window.currentPage = "invalidReasons"
                         controller.invalidReasons.open()
                     }
+                }
+                Button {
+                    objectName: "serverBackupsNavigation"
+                    text: window.t("server_backups_navigation"); Layout.fillWidth: true
+                    visible: window.administrator
+                    highlighted: window.currentPage === "serverBackups"; flat: true
+                    Material.background: window.currentPage === "serverBackups" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    onClicked: { window.currentPage = "serverBackups"; controller.serverBackups.open() }
                 }
                 Button {
                     text: window.t("staff_accounts"); Layout.fillWidth: true
@@ -623,6 +639,26 @@ ApplicationWindow {
                         controller.countingRounds.open()
                     }
                 }
+                Button {
+                    id: constituencyResultsNavigation
+                    objectName: "constituencyResultsNavigation"
+                    text: window.t("constituency_results_title"); Layout.fillWidth: true; flat: true
+                    visible: window.state.account.role === "supervisor"
+                    highlighted: window.currentPage === "constituency_results"
+                    Material.background: window.currentPage === "constituency_results" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: constituencyResultsNavigation.text; textFormat: Text.PlainText
+                        font: constituencyResultsNavigation.font; color: window.ink; wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "constituency_results"
+                        controller.workspace.open()
+                        controller.constituencyResults.open()
+                    }
+                }
                 Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
                 Item { Layout.fillHeight: true }
                 Caption { text: window.t("role") + " · " + window.t(window.state.account.role || ""); Layout.fillWidth: true }
@@ -832,6 +868,15 @@ ApplicationWindow {
                     stationMode: window.currentPage === "stations"
                     onReveal: control => window.revealField(control)
                 }
+                ServerBackupsPage {
+                    visible: window.state.phase === "workspace" && window.currentPage === "serverBackups" && window.administrator
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
+                    serverBackups: controller.serverBackups
+                    words: window.words
+                    locale: window.state.locale
+                    onReveal: control => window.revealField(control)
+                }
                 StaffPage {
                     visible: window.state.phase === "workspace" && window.currentPage === "staff" && window.administrator
                     Layout.fillWidth: true
@@ -977,6 +1022,14 @@ ApplicationWindow {
                         visible: window.currentPage === "countingRounds"
                         Layout.fillWidth: true
                         countingRounds: controller.countingRounds
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    ConstituencyResultsPage {
+                        visible: window.currentPage === "constituency_results"
+                        Layout.fillWidth: true
+                        results: controller.constituencyResults
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)

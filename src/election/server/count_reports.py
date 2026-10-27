@@ -15,6 +15,7 @@ from election.server.counting_round_models import CountRoundRevision
 from election.server.counting_rounds import round_at, round_context, round_view
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
+from election.server.physical_decision_reports import physical_tables
 from election.server.stock_reports import ReportLocale
 from election.server.turnout_reports import hong_kong_time
 
@@ -499,35 +500,6 @@ def _workflow_tables(record: dict[str, Any], labels: dict[str, str]) -> list[His
 
 
 def _comparison_tables(record: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]:
-    tables = []
-    for comparison in record.get("physical_comparisons", []):
-        source_label = labels.get("source_" + comparison["source"], comparison["source"])
-        tables.append(
-            _table(
-                labels["physical_comparisons"] + " · " + source_label,
-                _pairs(
-                    {**comparison, "source_label": source_label},
-                    (
-                        ("source", "source_label"),
-                        ("expected_quantity", "expected_quantity"),
-                        ("actual_quantity", "actual_quantity"),
-                        ("difference_quantity", "difference_quantity"),
-                        ("available", "available"),
-                        ("comparison_status", "status"),
-                    ),
-                    labels,
-                ),
-                labels,
-            )
-        )
-    if not tables:
-        tables.append(
-            _table(
-                labels["physical_comparisons"],
-                [[labels["form"], labels["not_recorded"]]],
-                labels,
-            )
-        )
     blockers = []
     for blocker in record.get("approval_blockers", []):
         message = labels.get(blocker["code"], blocker["code"])
@@ -536,22 +508,19 @@ def _comparison_tables(record: dict[str, Any], labels: dict[str, str]) -> list[H
         if "difference_quantity" in blocker:
             message += " · " + _value("difference_quantity", blocker["difference_quantity"], labels)
         blockers.append(message)
-    tables.append(
+    return [
         _table(
             labels["approval_blockers"],
             [[labels["approval_blockers"], "; ".join(blockers) or labels["none"]]],
             labels,
         )
-    )
-    return tables
+    ]
 
 
 def _tables(report: dict[str, Any]) -> list[HistoryTable]:
     record, labels, form = report["record"], report["labels"], report["form"]
     tables = [_summary(record, labels)]
-    tables.extend(
-        _f2_tables(record, labels, include_outcomes=form in ("f2", "count"))
-    )
+    tables.extend(_f2_tables(record, labels, include_outcomes=form in ("f2", "count")))
     if form in ("f3", "count"):
         tables.extend(_f3_tables(record, labels))
     if form in ("f4", "count"):
@@ -559,6 +528,7 @@ def _tables(report: dict[str, Any]) -> list[HistoryTable]:
     if form == "count":
         tables.extend(_f1_tables(record, labels))
     tables.extend(_workflow_tables(record, labels))
+    tables.extend(physical_tables(record, labels))
     tables.extend(_comparison_tables(record, labels))
     tables.append(
         _table(

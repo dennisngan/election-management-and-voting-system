@@ -22,6 +22,7 @@ from election.server.counting_rounds import (
     round_at,
     round_context,
     round_view,
+    selection_context,
 )
 from election.server.counting_totals import f2_summary
 from election.server.lifecycle_models import ActiveElection
@@ -139,15 +140,15 @@ def counting_outcomes_router(
     Database = Annotated[Session, Depends(database)]
     Actor = Annotated[Account, Depends(ready_account)]
 
-    @router.put("/{round_id}/f2")
-    def save(
+    def persist(
         station_id: int,
         scope_id: int,
         round_id: int,
         data: F2Draft,
-        db: Database,
-        actor: Actor,
-        response: Response,
+        db: Session,
+        actor: Account,
+        *,
+        correction: bool = False,
     ) -> dict[str, Any]:
         if actor.role != "counting_officer":
             raise HTTPException(403, detail={"code": "counting_officer_required"})
@@ -157,7 +158,7 @@ def counting_outcomes_router(
         digest = hashlib.sha256(
             json.dumps(
                 {
-                    "action": "f2",
+                    "action": "amend-f2" if correction else "f2",
                     "station_id": station_id,
                     "scope_id": scope_id,
                     "round_id": round_id,
@@ -187,7 +188,9 @@ def counting_outcomes_router(
         if current is None or current.revision != data.expected_revision:
             raise HTTPException(409, detail={"code": "revision_conflict"})
         view = round_view(db, round, current, options)
-        if current.status != "draft":
+        if correction and not data.amendment_reason.strip():
+            raise HTTPException(422, detail={"code": "count_amendment_reason_required"})
+        if current.status != "draft" and not correction:
             raise HTTPException(409, detail={"code": "count_round_read_only"})
         if not view["source_current"]:
             raise HTTPException(409, detail={"code": "count_round_basis_stale"})
@@ -232,6 +235,13 @@ def counting_outcomes_router(
         ):
             raise HTTPException(422, detail={"code": "f2_outcomes_unbalanced"})
         frozen = deepcopy(current.data)
+        if correction:
+            for key in (
+                "submitted_at", "submitted_by", "completed_at", "completion_event",
+                "approved_at", "approved_by", "reviewed_revision", "reviewed_revision_id",
+                "approved_physical_decisions",
+            ):
+                frozen.pop(key, None)
         frozen.update(
             f1_metadata={
                 key: view[key]
@@ -254,6 +264,8 @@ def counting_outcomes_router(
         )
         db.add(row)
         db.flush()
+        if correction:
+            options.update(selection_context(db, scope_id, options))
         result = round_view(db, round, row, options)
         db.add(
             CountRoundRequest(
@@ -267,17 +279,46 @@ def counting_outcomes_router(
         db.add(
             AuditEvent(
                 actor_id=actor.id,
-                action="f2_draft_saved",
+                action="f2_corrected" if correction else "f2_draft_saved",
                 occurred_at=now,
                 details={
                     "station_id": station_id,
                     "scope_id": scope_id,
                     "round_id": round.id,
                     "revision": row.revision,
+                    **(
+                        {
+                            "reason": data.amendment_reason,
+                            "previous_revision": data.expected_revision,
+                        } if correction else {}
+                    ),
                 },
             )
         )
         db.commit()
         return result
+
+    @router.put("/{round_id}/f2")
+    def save(
+        station_id: int,
+        scope_id: int,
+        round_id: int,
+        data: F2Draft,
+        db: Database,
+        actor: Actor,
+        response: Response,
+    ) -> dict[str, Any]:
+        return persist(station_id, scope_id, round_id, data, db, actor)
+
+    @router.post("/{round_id}/amend-f2")
+    def correct_f2(
+        station_id: int,
+        scope_id: int,
+        round_id: int,
+        data: F2Draft,
+        db: Database,
+        actor: Actor,
+    ) -> dict[str, Any]:
+        return persist(station_id, scope_id, round_id, data, db, actor, correction=True)
 
     return router

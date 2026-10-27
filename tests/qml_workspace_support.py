@@ -11,7 +11,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from PySide6.QtCore import QCoreApplication, QEvent, QMetaObject, QPointF, Qt, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QMetaObject, QObject, QPointF, Qt, QUrl
 from PySide6.QtGui import QGuiApplication, QKeyEvent
 from PySide6.QtQml import QQmlApplicationEngine, QQmlProperty
 from PySide6.QtQuick import QQuickItem
@@ -58,16 +58,88 @@ def control(name):
     assert item is not None, 'Missing Material control: ' + name
     return item
 
-def focus(name):
+def _pointer_geometry(item, point=None):
+    if not item.property('visible') or item.width() <= 0 or item.height() <= 0:
+        return None
+    if point is None:
+        point = item.mapToScene(QPointF(item.width()/2, item.height()/2))
+    if not (0 < point.x() < window.width() and 0 < point.y() < window.height()):
+        return None
+    clips = []
+    ancestor = item.parentItem()
+    while ancestor is not None:
+        if ancestor.property('clip'):
+            local = ancestor.mapFromScene(QPointF(point))
+            if not (0 <= local.x() < ancestor.width() and 0 <= local.y() < ancestor.height()):
+                return None
+            clips.append((local.x(), local.y(), ancestor.width(), ancestor.height(),
+                ancestor.property('contentY'), ancestor.property('contentHeight')))
+        ancestor = ancestor.parentItem()
+    return (point.x(), point.y(), item.width(), item.height(),
+        window.width(), window.height(), tuple(clips))
+
+def _wait_in_focus_budget(predicate, deadline, name):
+    while True:
+        application.processEvents()
+        ready = predicate()
+        assert time.monotonic() < deadline, 'Material pointer readiness timed out: ' + name
+        if ready:
+            return
+        time.sleep(min(.005, max(0, deadline - time.monotonic())))
+
+def _modal_blocks(item, popups):
+    for popup in popups:
+        if not popup.property('modal') or not popup.property('visible'):
+            continue
+        content = popup.property('contentItem')
+        popup_item = content.parentItem() if isinstance(content, QQuickItem) else None
+        ancestor = item
+        while ancestor is not None and ancestor is not popup_item:
+            ancestor = ancestor.parentItem()
+        if popup_item is None or ancestor is None:
+            return True
+    return False
+
+def _focus_until(name, deadline):
     item = control(name)
     assert item.property('visible'), 'Control is hidden: ' + name
-    item.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+    rendered = QSignalSpy(window.frameSwapped)
+    popups = [obj for obj in window.findChildren(QObject) if obj.inherits('QQuickPopup')]
+    geometry = None
+    frame_goal = rendered.count() + 1
+
     def ready():
-        center = item.mapToScene(QPointF(item.width()/2, item.height()/2))
-        return (item.property('activeFocus') and 0 < center.x() < window.width()
-            and 0 < center.y() < window.height())
-    wait(ready)
+        nonlocal geometry, frame_goal
+        if _modal_blocks(item, popups):
+            geometry = None
+            frame_goal = rendered.count() + 1
+            window.requestUpdate()
+            return False
+        if not item.property('activeFocus'):
+            item.forceActiveFocus(Qt.FocusReason.OtherFocusReason)
+            geometry = None
+            frame_goal = rendered.count() + 1
+            window.requestUpdate()
+            return False
+        current = _pointer_geometry(item)
+        if current is None:
+            geometry = None
+            frame_goal = rendered.count() + 1
+            window.requestUpdate()
+            return False
+        if current != geometry:
+            geometry = current
+            frame_goal = rendered.count() + 1
+            window.requestUpdate()
+            return False
+        return rendered.count() >= frame_goal
+
+    window.requestUpdate()
+    _wait_in_focus_budget(ready, deadline, name)
     return item
+
+def focus(name):
+    return _focus_until(name, time.monotonic() + 8)
 
 def assert_multiline_inside_border(name):
     field = control(name)
@@ -85,10 +157,26 @@ def assert_multiline_inside_border(name):
         assert inside.x() + cursor.width() <= background.width() - 8
 
 def click(name):
-    item = focus(name)
+    deadline = time.monotonic() + 8
+    item = _focus_until(name, deadline)
+    assert item.property('enabled'), 'Control is disabled: ' + name
+    clicked = None
+    if item.inherits('QQuickAbstractButton'):
+        index = item.metaObject().indexOfSignal('clicked()')
+        assert index >= 0, 'Button has no observable clicked signal: ' + name
+        clicked = QSignalSpy(item, item.metaObject().method(index))
+        assert clicked.isValid(), 'Button clicked signal is unavailable: ' + name
     center = item.mapToScene(QPointF(item.width()/2, item.height()/2)).toPoint()
+    assert _pointer_geometry(item, center) is not None, (
+        'Control moved outside its viewport: ' + name)
+    assert time.monotonic() < deadline, 'Material pointer readiness timed out: ' + name
     QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
-    application.processEvents()
+    if clicked is not None:
+        _wait_in_focus_budget(lambda: clicked.count() > 0, deadline, name)
+        assert clicked.count() == 1, 'Pointer did not emit exactly one click: ' + name
+    else:
+        application.processEvents()
+        assert time.monotonic() < deadline, 'Material pointer readiness timed out: ' + name
 
 def click_confirmation(dialog, label):
     wait(lambda: dialog.property('opened') and dialog.property('activeFocus'))
