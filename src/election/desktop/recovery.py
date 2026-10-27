@@ -315,6 +315,11 @@ class RecoveryController(QObject):
                     or body.get("workflow") != command.get("workflow")
                     or body.get("status") not in ("committed", "not_found")
                     or (
+                        command.get("workflow") == "constituency_recount"
+                        and body.get("status") == "not_found"
+                        and set(body) != {"request_id", "workflow", "status"}
+                    )
+                    or (
                         body.get("status") == "committed"
                         and not valid_operational_receipt(command, body.get("record"))
                     )
