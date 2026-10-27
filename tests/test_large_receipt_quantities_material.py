@@ -126,13 +126,23 @@ def test_large_allocation_quantity_is_exact_in_recovery_and_paper_matching_mater
                 == 'committed')
         matching = control('outageExistingReceiptSummary')
         assert matching.property('visible') is True
-        quantity_details = [item for item in matching.findChildren(QQuickItem)
+        def visual_descendants(root):
+            pending = [root]
+            found = []
+            while pending:
+                item = pending.pop()
+                found.append(item)
+                pending.extend(item.childItems())
+            return found
+        quantity_details = [item for item in visual_descendants(matching)
             if item.property('visible')
             and item.property('caption') == controller.texts['allocation_quantity']]
-        assert len(quantity_details) == 1
+        assert len(quantity_details) == 1, [
+            (item.property('caption'), item.property('value'))
+            for item in visual_descendants(matching) if item.property('caption')]
         displayed_quantity = quantity_details[0].property('value')
         visible_values = [item.property('text')
-            for item in quantity_details[0].findChildren(QQuickItem) if item.property('visible')]
+            for item in visual_descendants(quantity_details[0]) if item.property('visible')]
         assert displayed_quantity in visible_values
         # Check the numeric field itself; the exact serial text contains the same digits.
         assert recovery_text.endswith(' ' + setup['quantity_text']) and (
