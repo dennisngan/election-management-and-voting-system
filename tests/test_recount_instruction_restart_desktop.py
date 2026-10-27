@@ -192,6 +192,8 @@ def test_restarted_client_cannot_discard_context_before_checking_original_recoun
             assert isinstance(fresh_child, QObject)
             wait_for_editor_idle(qt_app, fresh_child)
             recovery = fresh_client.property("recovery")
+            # Loading a station must restore its durable guard before Recovery is opened.
+            assert fresh_client.property("workspace").property("unresolvedRequest") is True
             recovery.open()
             wait_for_editor_idle(qt_app, recovery)
             restored_commands = [row for row in recovery.property("state")["commands"]
@@ -211,6 +213,9 @@ def test_restarted_client_cannot_discard_context_before_checking_original_recoun
             assert fresh_child.property("state")["scope_id"] == scope_id
             target_reads = endpoint.request_count("GET", target_path)
 
+            # A durable unresolved instruction also protects the current tally selection.
+            assert fresh_editor.selectRound(instruction["new_round_id"]) is False
+            assert fresh_editor.property("state")["selected"]["id"] == displayed_round["id"]
             workspace.selectStation(target_id, True)
             wait_for_editor_idle(qt_app, workspace)
             # Expected first RED at1d318c4: durable unresolved command does not guard this switch.
