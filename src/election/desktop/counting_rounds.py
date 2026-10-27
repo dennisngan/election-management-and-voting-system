@@ -12,6 +12,7 @@ from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.local_recounts import LocalRecountsController
 from election.desktop.paper_reentry import paper_options, paper_record_fields
+from election.desktop.recovery import RecoveryController
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
 NETWORK_ERRORS = frozenset({
@@ -79,14 +80,21 @@ class CountingRoundsController(QObject):
         self._clear_report()
         self.refresh()
 
+    def _durable_recount_unknown(self) -> bool:
+        return (isinstance(self._recovery, RecoveryController)
+                and self._recovery.recount_context_locked())
+
     def recount_changes_pending(self) -> bool:
-        return self._recounts.blocks_navigation()
+        # An initial explicit scope choice remains available after sign-in. Once
+        # chosen, the tally stays anchored until the original command is checked.
+        return (self._recounts.blocks_navigation()
+                or bool(self._state["selected_scope_id"] and self._durable_recount_unknown()))
 
     def recount_outcome_unknown(self) -> bool:
-        return self._recounts.outcome_unknown()
+        return self._recounts.outcome_unknown() or self._durable_recount_unknown()
 
     def recount_context_locked(self) -> bool:
-        return self._recounts.blocks_context_change()
+        return self._recounts.blocks_context_change() or self._durable_recount_unknown()
 
     def _block_recount_changes(self) -> bool:
         if not self.recount_changes_pending():
@@ -216,6 +224,7 @@ class CountingRoundsController(QObject):
         command = self._matching_recovery_command()
         if command is None:
             self._sync_paper_binding_lock()
+            self.stateChanged.emit()
             return
         status = command.get("status")
         if status not in {"committed", "rejected"}:
