@@ -1,0 +1,149 @@
+"""Large canonical allocation quantities remain exact in actual receipt views."""
+
+from collections.abc import Iterator
+from datetime import timedelta
+from pathlib import Path
+
+import pytest
+from PySide6.QtCore import QCoreApplication
+
+from tests.box_support import READY_PASSWORD
+from tests.desktop_support import HttpsServer, wait_for_editor_idle
+from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
+from tests.qml_workspace_support import run_workspace_qml
+from tests.stock_support import stock_payload
+from tests.test_allocation_paper_reentry_desktop import _register_paper
+from tests.test_allocation_paper_reentry_desktop import (
+    allocation_base_setup as allocation_base_setup,
+)
+from tests.test_paper_journal_failure_desktop import signed_in_client
+
+
+@pytest.fixture(scope="session")
+def database_url() -> Iterator[str]:
+    yield from lifecycle_database_url()
+
+
+@pytest.fixture(autouse=True)
+def isolated_receipt_state(
+    database_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "large-receipt-journal"))
+    with lifecycle_test_state(database_url):
+        yield
+
+
+def test_large_allocation_quantity_is_exact_in_recovery_and_paper_matching_material(
+    allocation_base_setup: dict,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    setup = allocation_base_setup
+    quantity = 9007199254740993
+    series = setup["series"] + "-EXACT"
+    first, last = "000000000000000001", "009007199254740993"
+    polling, base = setup["polling"], setup["base"]
+    station_id = setup["station"]["id"]
+    stock = polling.post(base + "/stock", json=stock_payload(
+        series=series, ordinary_quantity=quantity, replacement_quantity=0, tendered_quantity=0,
+        ranges=[{"pool": "ordinary", "serial_from": first, "serial_to": last}],
+        event_at="2026-11-15T08:00:00+08:00",
+    ))
+    assert stock.status_code == 201, stock.text
+    with signed_in_client(
+        https_server, setup["account"]["username"], station_id, qt_app,
+    ) as client:
+        allocations = client.property("allocations")
+        allocations.open()
+        wait_for_editor_idle(qt_app, allocations)
+        for key, value in {
+            "counter_id": str(setup["counter"]["id"]), "series": series,
+            "serial_from": first, "serial_to": last, "event_at": "2026-11-15 08:15:00",
+        }.items():
+            allocations.setField(key, value)
+        allocations.save()
+        wait_for_editor_idle(qt_app, allocations)
+        saved = allocations.property("state")["selected"]
+        assert allocations.property("state")["error"] == ""
+        assert saved["quantity"] == quantity and saved["quantity_display"] == str(quantity)
+        allocation_id = saved["id"]
+        recovery = client.property("recovery")
+        recovery.open()
+        wait_for_editor_idle(qt_app, recovery)
+        commands = [row for row in recovery.property("state")["commands"]
+                    if row["workflow"] == "allocation" and row["path"] == base + "/allocations"]
+        assert len(commands) == 1 and commands[0]["status"] == "committed"
+        request_id = commands[0]["request_id"]
+        assert commands[0]["receipt"]["record"]["quantity"] == quantity
+    assert https_server.request_count("POST", base + "/allocations") == 1
+    outcome_path = base + f"/request-outcomes/{request_id}"
+    original = polling.get(outcome_path, params={"workflow": "allocation"})
+    assert original.status_code == 200, original.text
+    assert original.json()["record"]["id"] == allocation_id
+    assert type(original.json()["record"]["quantity"]) is int
+    assert original.json()["record"]["quantity"] == quantity
+
+    # The ordinary receipt predates the separately registered paper reference.
+    setup["clock"].value += timedelta(minutes=1)
+    https_server.clock.value = setup["clock"].value
+    outage_path, paper = _register_paper(
+        setup, action="create", target={"counter_id": setup["counter"]["id"]},
+    )
+    paper_path = outage_path + f"/paper-records/{paper['id']}"
+    preview = polling.get(paper_path + "/receipt", params={"request_id": request_id})
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["record"] == original.json()["record"]
+    outage_id = int(outage_path.rsplit("/", 1)[1])
+    run_workspace_qml(
+        {
+            "server": https_server.url, "username": setup["account"]["username"],
+            "password": READY_PASSWORD, "station_id": station_id, "locale": "en",
+            "request_id": request_id, "quantity_text": str(quantity),
+            "outage_id": outage_id, "paper_id": paper["id"],
+        },
+        """
+        recovery = controller.property('recovery')
+        click('recoveryNavigation')
+        wait(lambda: not recovery.property('state')['busy'])
+        click('recoveryCommand_' + setup['request_id'])
+        summary = control('recoveryReceiptSummary')
+        assert summary.property('visible') is True
+        recovery_text = summary.property('text')
+
+        click('outagesNavigation')
+        outages = controller.property('outages')
+        wait(lambda: not outages.property('state')['busy']
+            and any(row['id'] == setup['outage_id'] for row in outages.property('state')['items']))
+        click('outageOption_' + str(setup['outage_id']))
+        wait(lambda: not outages.property('state')['busy']
+            and any(row['id'] == setup['paper_id']
+                for row in outages.property('state')['selected'].get('paper_records', [])))
+        click('outagePaperOption_' + str(setup['paper_id']))
+        enter('outageExistingRequestId', setup['request_id'])
+        click('outageExistingReceiptCheck')
+        wait(lambda: not outages.property('state')['busy']
+            and outages.property('state')['existing_receipt']['checked'].get('status')
+                == 'committed')
+        matching = control('outageExistingReceiptSummary')
+        assert matching.property('visible') is True
+        quantity_details = [item for item in matching.findChildren(QQuickItem)
+            if item.property('visible')
+            and item.property('caption') == controller.texts['allocation_quantity']]
+        assert len(quantity_details) == 1
+        displayed_quantity = quantity_details[0].property('value')
+        visible_values = [item.property('text')
+            for item in quantity_details[0].findChildren(QQuickItem) if item.property('visible')]
+        assert displayed_quantity in visible_values
+        # Check the numeric field itself; the exact serial text contains the same digits.
+        assert recovery_text.endswith(' ' + setup['quantity_text']) and (
+            displayed_quantity == setup['quantity_text']
+        ), {'expected': setup['quantity_text'], 'recovery': recovery_text,
+            'matching_quantity': displayed_quantity}
+        """,
+    )
+    assert https_server.request_count("POST", base + "/allocations") == 1
+    unchanged = polling.get(outcome_path, params={"workflow": "allocation"})
+    assert unchanged.status_code == 200 and unchanged.json() == original.json()
+    still_pending = polling.get(outage_path)
+    assert still_pending.status_code == 200
+    assert still_pending.json()["record"]["paper_records"][0]["status"] == "pending"
