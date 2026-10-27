@@ -55,7 +55,10 @@ class CountingRoundsController(QObject):
         self._pending: tuple[str, str] | None = None
         self._recovery = parent.property("recovery") if parent is not None else None
         self._state: dict[str, Any] = {}
-        self._recounts = LocalRecountsController(request, self)
+        self._recounts = LocalRecountsController(
+            request, self,
+            recovery=self._recovery if isinstance(self._recovery, RecoveryController) else None,
+        )
         self.reset()
         self._recounts.stateChanged.connect(self.stateChanged.emit)
         self._recounts.instructed.connect(self._recount_instructed)

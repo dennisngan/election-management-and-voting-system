@@ -10,6 +10,8 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 from election.desktop.configuration import AuthorizedRequest
 from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
+from election.desktop.operational_receipts import valid_operational_receipt
+from election.desktop.recovery import RecoveryController
 
 NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
 STALE_ERRORS = frozenset({
@@ -38,9 +40,12 @@ class LocalRecountsController(QObject):
     stateChanged = Signal()
     instructed = Signal()
 
-    def __init__(self, request: AuthorizedRequest, parent: QObject | None = None) -> None:
+    def __init__(
+        self, request: AuthorizedRequest, parent: QObject | None = None,
+        *, recovery: RecoveryController | None = None,
+    ) -> None:
         super().__init__(parent)
-        self._request = request
+        self._request, self._recovery = request, recovery
         self._generation = 0
         self._pending: dict[str, Any] | None = None
         self._read_allowed = False
@@ -56,6 +61,8 @@ class LocalRecountsController(QObject):
     def reset(self) -> None:
         self._generation += 1
         self._pending = None
+        self._restored_request_id = ""
+        self._restored_owns_draft = False
         self._read_allowed = False
         self._state = {
             "context": {}, "station_id": 0, "election_id": 0, "actor_id": 0,
@@ -80,6 +87,8 @@ class LocalRecountsController(QObject):
         if changed:
             self.reset()
         self._state.update(context=deepcopy(context), **identity)
+        if self._recovery is not None:
+            self.sync_recovery(self._recovery.property("state")["commands"])
         self.stateChanged.emit()
         if changed and _positive(identity["station_id"]) and _positive(scope_id):
             self.reload()
@@ -105,6 +114,7 @@ class LocalRecountsController(QObject):
     def _editable(self) -> bool:
         return bool(
             self._read_allowed and self._state["role"] == "supervisor"
+            and not (self._recovery is not None and self._recovery.recount_context_locked())
             and self._state["context"].get("election", {}).get("status") == "active"
             and not any(self._state[key] for key in (
                 "busy", "newer_basis", "uncertain_save"
@@ -180,7 +190,10 @@ class LocalRecountsController(QObject):
                 self._adopt_read(body)
                 self._settled()
                 return
-            if self._state["dirty"] or self._state["uncertain_save"] or self._state["newer_basis"]:
+            if self._restored_request_id and not self._state["scope"]:
+                # This fresh read supplies display context, never the retained command body.
+                self._adopt_read(body)
+            elif self._state["dirty"] or self._state["uncertain_save"] or self._state["newer_basis"]:
                 old = self._basis(
                     self._state["scope"], self._state["selection"], self._state["pending"]
                 )
@@ -235,7 +248,13 @@ class LocalRecountsController(QObject):
 
     @Slot()
     def checkOutcome(self) -> None:
-        if self._state["uncertain_save"] and self._pending is not None:
+        if not self._state["uncertain_save"]:
+            return
+        request_id = self._state["pending_request_id"]
+        if self._recovery is not None and request_id:
+            self._recovery.open()
+            self._recovery.checkOutcome(request_id)
+        elif self._pending is not None:
             self._load(background=False, check=True)
 
     @Slot(str, result=str)
@@ -303,9 +322,55 @@ class LocalRecountsController(QObject):
                     for row in round["invalid_papers"])
         )
 
+    def _restore_recovery(self, commands: list[dict[str, Any]]) -> None:
+        command = next((row for row in commands if (
+            row.get("actor_id") == self._state["actor_id"]
+            and row.get("station_id") == self._state["station_id"]
+            and row.get("workflow") == "count" and row.get("method") == "POST"
+            and row.get("path") == self._path()
+            and isinstance(row.get("payload"), dict)
+            and (row.get("request_id") == self._restored_request_id
+                 if self._restored_request_id else row.get("status") in {"pending", "uncertain"})
+        )), None)
+        if command is None:
+            return
+        if command.get("status") in {"pending", "uncertain"}:
+            payload = command["payload"]
+            if not self._restored_request_id:
+                self._restored_request_id = command["request_id"]
+                self._restored_owns_draft = not self._state["dirty"]
+                if self._restored_owns_draft:
+                    self._state.update(forms={
+                        "event_at": format_event_time(payload.get("event_at", "")).removesuffix(" HKT"),
+                        "reason": payload.get("reason", ""),
+                    }, dirty=True)
+            self._state.update(uncertain_save=True, pending_request_id=self._restored_request_id)
+            self.stateChanged.emit()
+            return
+        receipt = command.get("receipt")
+        body = receipt.get("record") if isinstance(receipt, dict) else None
+        if command.get("status") == "committed" and valid_operational_receipt(command, body):
+            if self._restored_owns_draft:
+                self._state.update(dirty=False, forms={"event_at": "", "reason": ""})
+            self._state.update(uncertain_save=False, pending_request_id="", error="", notice="")
+        elif command.get("status") == "rejected":
+            code = str(command.get("error") or "local_recount_not_ready")
+            self._state.update(
+                uncertain_save=False, pending_request_id="", error=code,
+                newer_basis=code in STALE_ERRORS, notice="",
+            )
+        else:
+            return
+        self._restored_request_id = ""
+        self._restored_owns_draft = False
+        self.stateChanged.emit()
+
     def sync_recovery(self, commands: list[dict[str, Any]]) -> None:
-        """Settle only this live draft from its validated actor-scoped receipt."""
-        if self._pending is None or not self._state["uncertain_save"]:
+        """Restore or settle only this actor/scope's exact retained command."""
+        if self._pending is None:
+            self._restore_recovery(commands)
+            return
+        if not self._state["uncertain_save"]:
             return
         original = self._pending["command"]
         command = next((row for row in commands if (
