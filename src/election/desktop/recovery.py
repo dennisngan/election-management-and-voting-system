@@ -344,7 +344,14 @@ class RecoveryController(QObject):
             try:
                 finish(status, error=code)
             except OSError, ValueError, RuntimeError:
-                self._state.update(busy=False, error="recovery_journal_unavailable")
+                self._state.update(
+                    busy=False,
+                    error=(
+                        "recovery_journal_outcome_unavailable"
+                        if code == "recovery_journal_outcome_unavailable"
+                        else "recovery_journal_unavailable"
+                    ),
+                )
             self.stateChanged.emit()
 
         self._request(path, method, payload, loaded, failed)
