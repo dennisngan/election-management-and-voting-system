@@ -82,6 +82,7 @@ class DesktopController(QObject):
             "capabilities": {},
         }
         self._token = ""
+        self._context_writes: set[object] = set()
         journal_directory = os.environ.get("ELECTION_CLIENT_STATE_DIR") or str(
             Path(
                 QStandardPaths.writableLocation(
@@ -183,7 +184,8 @@ class DesktopController(QObject):
                 or self._complaint_periods.property("state")["busy"]
             ),
             unresolved_guard=lambda: bool(
-                self._recovery.recount_context_locked()
+                self._context_writes
+                or self._recovery.recount_context_locked()
                 or self._counting_rounds.recount_context_locked()
                 or self._allocations.property("state").get("paper_uncertain", False)
                 or self._counting_rounds.property("state").get("uncertain_save", False)
@@ -443,6 +445,19 @@ class DesktopController(QObject):
                 )
                 return
 
+        pending_write = (
+            object() if payload and "request_id" in payload
+            and method in {"POST", "PUT", "PATCH", "DELETE"} else None
+        )
+        if pending_write is not None:
+            self._context_writes.add(pending_write)
+            self._workspace.stateChanged.emit()
+
+        def release_context() -> None:
+            if pending_write is not None and pending_write in self._context_writes:
+                self._context_writes.remove(pending_write)
+                self._workspace.stateChanged.emit()
+
         def remember(status: str, *, body: dict[str, Any] | None = None, code: str = "") -> None:
             if command is not None:
                 self._command_journal.record_outcome(
@@ -450,55 +465,65 @@ class DesktopController(QObject):
                 )
 
         def saved(body: dict[str, Any]) -> None:
-            if command is not None:
-                valid = valid_operational_receipt(command, body)
-                try:
-                    remember(
-                        "committed" if valid else "uncertain",
-                        body=body,
-                        code="" if valid else "invalid_response",
-                    )
-                except OSError, ValueError, RuntimeError:
-                    failure("recovery_journal_outcome_unavailable")
-                    return
-                if not valid:
-                    failure("request_failed")
-                    return
-            success(body)
+            try:
+                if command is not None:
+                    valid = valid_operational_receipt(command, body)
+                    try:
+                        remember(
+                            "committed" if valid else "uncertain",
+                            body=body,
+                            code="" if valid else "invalid_response",
+                        )
+                    except OSError, ValueError, RuntimeError:
+                        failure("recovery_journal_outcome_unavailable")
+                        return
+                    if not valid:
+                        failure("request_failed")
+                        return
+                success(body)
+            finally:
+                release_context()
 
         def failed(code: str) -> None:
-            original_code = code
             try:
-                remember(
-                    "uncertain"
-                    if code
-                    in {
-                        "disconnected",
-                        "request_failed",
-                        "invalid_response",
-                        "certificate_error",
-                        "database_unavailable",
-                        "session_expired",
-                        "access_changed",
-                    }
-                    or (
-                        command is not None
+                original_code = code
+                try:
+                    remember(
+                        "uncertain"
+                        if code
+                        in {
+                            "disconnected",
+                            "request_failed",
+                            "invalid_response",
+                            "certificate_error",
+                            "database_unavailable",
+                            "session_expired",
+                            "access_changed",
+                        }
+                        or (
+                            command is not None
+                            and command["status"] == "uncertain"
+                            and not command.get("retry_after_not_found")
+                        )
+                        or code == "invalid_credentials"
+                        and command is not None
                         and command["status"] == "uncertain"
-                        and not command.get("retry_after_not_found")
+                        else "rejected",
+                        code=code,
                     )
-                    or code == "invalid_credentials"
-                    and command is not None
-                    and command["status"] == "uncertain"
-                    else "rejected",
-                    code=code,
-                )
-            except OSError, ValueError, RuntimeError:
-                code = "recovery_journal_outcome_unavailable"
-            failure(code)
-            if original_code == "session_expired":
-                self._error(original_code)
+                except OSError, ValueError, RuntimeError:
+                    code = "recovery_journal_outcome_unavailable"
+                failure(code)
+                if original_code == "session_expired":
+                    self._error(original_code)
+            finally:
+                release_context()
 
-        self._request(path, method, payload, saved, failed, token=self._token)
+        try:
+            self._request(path, method, payload, saved, failed, token=self._token)
+        except Exception:
+            release_context()
+            raise
 
     def _authorized_download(
         self, path: str, success: ResultHandler, failure: Callable[[str], None]
@@ -536,6 +561,8 @@ class DesktopController(QObject):
 
     def _invalidate_pending_replies(self) -> None:
         self._generation += 1
+        self._context_writes.clear()
+        self._workspace.stateChanged.emit()
         self._refreshing = False
         self._active_refreshing = False
 
