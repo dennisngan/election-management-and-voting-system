@@ -5,7 +5,7 @@ import json
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -164,13 +164,43 @@ def constituency_recounts_router(
     timestamp: Callable[[], datetime],
 ) -> APIRouter:
     router = APIRouter(
-        prefix="/api/workspace/constituencies/{constituency_id}/recounts",
+        prefix="/api/workspace/constituencies/{constituency_id}",
         tags=["constituency recount instructions"],
     )
     Database = Annotated[Session, Depends(database)]
     Actor = Annotated[Account, Depends(ready_account)]
 
-    @router.get("")
+    @router.get("/request-outcomes/{request_id}")
+    def outcome(
+        constituency_id: int, request_id: UUID,
+        workflow: Literal["constituency_recount"], db: Database, actor: Actor,
+    ) -> dict[str, Any]:
+        constituency_result(db, actor, constituency_id)
+        cached = db.scalar(
+            select(ConstituencyResultRequest)
+            .where(
+                ConstituencyResultRequest.request_id == str(request_id),
+                ConstituencyResultRequest.constituency_id == constituency_id,
+                ConstituencyResultRequest.actor_id == actor.id,
+            )
+            .with_for_update().execution_options(populate_existing=True)
+        )
+        receipt = cached.response if cached is not None else None
+        # Tie decisions share the request store, but are not recount acknowledgements.
+        instruction = receipt.get("instruction") if isinstance(receipt, dict) else None
+        if not (
+            isinstance(instruction, dict)
+            and instruction.get("request_id") == str(request_id)
+            and instruction.get("constituency_id") == constituency_id
+            and instruction.get("actor_id") == actor.id
+        ):
+            return {"request_id": str(request_id), "workflow": workflow, "status": "not_found"}
+        return {
+            "request_id": str(request_id), "workflow": workflow,
+            "status": "committed", "record": receipt,
+        }
+
+    @router.get("/recounts")
     def read(constituency_id: int, db: Database, actor: Actor) -> dict[str, Any]:
         result = constituency_result(db, actor, constituency_id)
         rows = list(db.scalars(
@@ -188,7 +218,7 @@ def constituency_recounts_router(
                              for index, row in enumerate(rows)],
         }
 
-    @router.post("", status_code=201)
+    @router.post("/recounts", status_code=201)
     def instruct(
         constituency_id: int, data: ConstituencyRecountInput,
         response: Response, db: Database, actor: Actor,
