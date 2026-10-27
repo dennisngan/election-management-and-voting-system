@@ -47,7 +47,14 @@ def private_active_pointer(database_url: str) -> Iterator[None]:
 
 @dataclass
 class AggregateReceiptBoundary(HttpsServer):
-    truncate_next_post_path: str = ""
+    alter_next_post_path: str = ""
+    post_fault: str = "truncated_candidates"
+    foreign_constituency_id: int = 0
+    foreign_station_id: int = 0
+    original_source_context: dict = field(default_factory=dict)
+    delivered_source_context: dict = field(default_factory=dict)
+    original_round_id: int = 0
+    delivered_round_id: int | float = 0
     altered_response_count: int = 0
     original_candidate_ids: list[int] = field(default_factory=list)
     delivered_candidate_ids: list[int] = field(default_factory=list)
@@ -77,7 +84,7 @@ def aggregate_receipt_boundary(
         with endpoint.lock:
             alter_write = (
                 request.method == "POST"
-                and request.url.path == endpoint.truncate_next_post_path
+                and request.url.path == endpoint.alter_next_post_path
                 and response.status_code == 201
             )
             alter_read = (
@@ -86,7 +93,8 @@ def aggregate_receipt_boundary(
                 and response.status_code == 200
             )
             if alter_write:
-                endpoint.truncate_next_post_path = ""
+                endpoint.alter_next_post_path = ""
+                post_fault = endpoint.post_fault
             if alter_read:
                 endpoint.null_context_next_get_path = ""
         if not (alter_write or alter_read):
@@ -97,13 +105,41 @@ def aggregate_receipt_boundary(
         body = b"".join(chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks)
         payload = json.loads(body)
         if alter_write:
-            votes = payload["members"][0]["round"]["candidate_votes"]
+            first_round = payload["members"][0]["round"]
+            member = payload["instruction"]["members"][0]
+            votes = first_round["candidate_votes"]
             assert len(votes) == 2
             original_ids = [row["candidate_id"] for row in votes]
-            votes.pop()
+            original_context = deepcopy(member["source_context"])
+            original_round_id = first_round["id"]
+            assert type(original_round_id) is int
+            if post_fault == "truncated_candidates":
+                votes.pop()
+            elif post_fault == "duplicate_candidate_ids":
+                votes[1]["candidate_id"] = votes[0]["candidate_id"]
+            elif post_fault == "empty_source_context":
+                member["source_context"] = {}
+            elif post_fault == "foreign_source_constituency":
+                assert endpoint.foreign_constituency_id > 0
+                member["source_context"]["context"]["constituency"]["id"] = (
+                    endpoint.foreign_constituency_id
+                )
+            elif post_fault == "foreign_source_station":
+                assert endpoint.foreign_station_id > 0
+                member["source_context"]["context"]["station"]["id"] = (
+                    endpoint.foreign_station_id
+                )
+            elif post_fault == "float_round_id":
+                first_round["id"] = float(original_round_id)
+            else:
+                raise AssertionError("An explicitly supported aggregate receipt fault is required")
             with endpoint.lock:
                 endpoint.original_candidate_ids = original_ids
                 endpoint.delivered_candidate_ids = [row["candidate_id"] for row in votes]
+                endpoint.original_source_context = original_context
+                endpoint.delivered_source_context = deepcopy(member["source_context"])
+                endpoint.original_round_id = original_round_id
+                endpoint.delivered_round_id = first_round["id"]
                 endpoint.altered_response_count += 1
         else:
             assert isinstance(payload["context"]["constituency"], dict)
@@ -139,7 +175,12 @@ def aggregate_receipt_boundary(
         assert not thread.is_alive(), "The owned aggregate-receipt HTTPS fixture did not stop"
 
 
-def test_truncated_blank_candidate_rows_remain_unknown_until_exact_aggregate_outcome(
+@pytest.mark.parametrize("receipt_fault", [
+    "truncated_candidates", "duplicate_candidate_ids", "empty_source_context",
+    "foreign_source_constituency", "foreign_source_station", "float_round_id",
+])
+def test_noncanonical_blank_receipt_remains_unknown_until_exact_aggregate_outcome(
+    receipt_fault: str,
     admin: TestClient,
     database_url: str,
     aggregate_receipt_boundary: AggregateReceiptBoundary,
@@ -192,7 +233,10 @@ def test_truncated_blank_candidate_rows_remain_unknown_until_exact_aggregate_out
             instructed = QSignalSpy(recounts.instructed)
             assert instructed.isValid()
             with endpoint.lock:
-                endpoint.truncate_next_post_path = target
+                endpoint.alter_next_post_path = target
+                endpoint.post_fault = receipt_fault
+                endpoint.foreign_constituency_id = setup["stations"]["S1"]["constituency_id"]
+                endpoint.foreign_station_id = setup["stations"]["S1"]["id"]
             recounts.instruct(READY_PASSWORD)
             wait_for_editor_idle(qt_app, recounts)
             wait_for_editor_idle(qt_app, results)
@@ -234,7 +278,44 @@ def test_truncated_blank_candidate_rows_remain_unknown_until_exact_aggregate_out
             assert endpoint.original_candidate_ids == [
                 row["candidate_id"] for row in blank_views[0]["record"]["candidate_votes"]
             ]
-            assert endpoint.delivered_candidate_ids == endpoint.original_candidate_ids[:-1]
+            if receipt_fault == "truncated_candidates":
+                assert endpoint.delivered_candidate_ids == endpoint.original_candidate_ids[:-1]
+            elif receipt_fault == "duplicate_candidate_ids":
+                assert endpoint.delivered_candidate_ids == [
+                    endpoint.original_candidate_ids[0], endpoint.original_candidate_ids[0],
+                ]
+            else:
+                assert endpoint.delivered_candidate_ids == endpoint.original_candidate_ids
+            original_context = endpoint.original_source_context
+            delivered_context = endpoint.delivered_source_context
+            assert original_context == parent["members"][0]["source_context"]
+            assert original_context["context"]["constituency"]["id"] == constituency_id
+            assert original_context["context"]["station"]["id"] == station_id
+            if receipt_fault == "empty_source_context":
+                assert delivered_context == {}
+            elif receipt_fault == "foreign_source_constituency":
+                assert endpoint.foreign_constituency_id != constituency_id
+                assert delivered_context["context"]["constituency"]["id"] == (
+                    endpoint.foreign_constituency_id
+                )
+                assert delivered_context["context"]["station"] == original_context["context"][
+                    "station"
+                ]
+            elif receipt_fault == "foreign_source_station":
+                assert endpoint.foreign_station_id != station_id
+                assert delivered_context["context"]["station"]["id"] == endpoint.foreign_station_id
+                assert delivered_context["context"]["constituency"] == original_context["context"][
+                    "constituency"
+                ]
+            else:
+                assert delivered_context == original_context
+            assert endpoint.original_round_id == blank_views[0]["record"]["id"]
+            if receipt_fault == "float_round_id":
+                assert type(endpoint.delivered_round_id) is float
+                assert endpoint.delivered_round_id == endpoint.original_round_id
+            else:
+                assert type(endpoint.delivered_round_id) is int
+                assert endpoint.delivered_round_id == endpoint.original_round_id
             assert endpoint.request_count("POST", target) == 1
 
             recovery = client.property("recovery")
