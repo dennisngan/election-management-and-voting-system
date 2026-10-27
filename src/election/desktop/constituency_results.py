@@ -115,6 +115,7 @@ class ConstituencyResultsController(QObject):
         self._recounts.set_context(context)
         self.stateChanged.emit()
         if changed and self._opened and self._state["constituency_id"]:
+            self._recounts.open()
             self.reload()
 
     def _path(self, suffix: str = "") -> str:
