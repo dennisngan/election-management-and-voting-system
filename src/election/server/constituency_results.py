@@ -17,9 +17,9 @@ from election.server.constituency_result_models import ConstituencyTieResolution
 from election.server.counting_round_models import CountRoundRevision
 from election.server.counting_rounds import round_at, round_context, round_view
 from election.server.counting_scopes import scope_options
-from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account
 from election.server.polling import as_utc
+from election.server.recount_authority import lock_recount_supervisor
 from election.server.recount_state import scope_recount_state
 from election.server.station_models import PollingStation
 from election.server.stock import stock_scope
@@ -71,9 +71,7 @@ def _references(row: dict[str, Any] | None, keys: tuple[str, ...]) -> dict[str, 
 
 def constituency_result(db: Session, actor: Account, constituency_id: int) -> dict[str, Any]:
     """Read an authorized result and bind decisions to substantive source references."""
-    if actor.role != "supervisor":
-        raise HTTPException(403, detail={"code": "supervisor_required"})
-    db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
+    actor = lock_recount_supervisor(db, actor)
     constituency = db.get(Constituency, constituency_id)
     if constituency is None:
         raise HTTPException(404, detail={"code": "constituency_not_found"})

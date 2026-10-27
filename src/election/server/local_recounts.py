@@ -23,9 +23,9 @@ from election.server.counting_rounds import (
     round_context,
     round_view,
 )
-from election.server.lifecycle_models import ActiveElection
 from election.server.local_recount_models import LocalRecountInstruction
 from election.server.models import Account, AuditEvent
+from election.server.recount_authority import lock_recount_supervisor
 from election.server.recount_state import scope_recount_state
 from election.server.security import verify_password
 from election.server.turnout_basis import turnout_scope
@@ -185,9 +185,7 @@ def local_recounts_router(
         station_id: int, scope_id: int, data: LocalRecountInput,
         response: Response, db: Database, actor: Actor,
     ) -> dict[str, Any]:
-        if actor.role != "supervisor":
-            raise HTTPException(403, detail={"code": "supervisor_required"})
-        db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
+        actor = lock_recount_supervisor(db, actor)
         turnout_scope(db, actor, station_id, writable=True)
         password_hash = db.scalar(
             select(Account.password_hash).where(Account.id == actor.id).with_for_update()
