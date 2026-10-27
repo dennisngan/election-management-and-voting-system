@@ -18,11 +18,10 @@ from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.results_support import save_result_round
 from tests.test_constituency_tie_api import complete_tie_setup
 from tests.test_counting_rounds_desktop import f1_editor
-from tests.test_paper_journal_failure_desktop import CompletedWriteServer
+from tests.test_paper_journal_failure_desktop import CompletedWriteServer, obstructed_journal_file
 from tests.test_paper_journal_failure_desktop import (
     completed_write_server as completed_write_server,
 )
-from tests.test_paper_journal_failure_desktop import obstructed_journal_file
 from tests.test_paper_journal_failure_desktop import (
     private_command_directory as private_command_directory,
 )
