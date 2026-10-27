@@ -21,6 +21,7 @@ ColumnLayout {
     readonly property bool supervisor: (editorState.role || "") === "supervisor"
     readonly property bool hasContext: !!editorState.constituency_id
     readonly property bool editable: supervisor && hasContext && !working && !unknown
+    readonly property bool fieldsEditable: editable && !newer
     readonly property bool canInstruct: editable && !loading && !newer
         && !!editorState.can_instruct
         && String(form.event_at || "").trim().length > 0
@@ -211,7 +212,7 @@ ColumnLayout {
                     objectName: "constituencyRecountEventAt"
                     text: panel.form.event_at || ""
                     maximumLength: 32
-                    readOnly: !panel.editable
+                    readOnly: !panel.fieldsEditable
                     working: panel.working
                     Accessible.name: panel.t("constituency_recount_time")
                     onTextEdited: panel.recounts.setField("event_at", text)
@@ -224,7 +225,7 @@ ColumnLayout {
                     objectName: "constituencyRecountReason"
                     Layout.fillWidth: true
                     implicitHeight: Math.max(92, contentHeight + topPadding + bottomPadding)
-                    readOnly: !panel.editable
+                    readOnly: !panel.fieldsEditable
                     enabled: !panel.working
                     text: panel.form.reason || ""
                     textFormat: TextEdit.PlainText
