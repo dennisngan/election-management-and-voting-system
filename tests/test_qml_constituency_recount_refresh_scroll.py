@@ -66,17 +66,19 @@ def _prepare_two_additional_sources(setup: dict) -> list[dict]:
             for number, box in enumerate(boxes, 1)]
 
 
+@pytest.mark.parametrize("scope_count", [2, 4], ids=["two-pending", "four-pending"])
 def test_normal_workspace_refresh_keeps_wide_recount_heading_in_the_user_viewport(
     admin: TestClient,
     database_url: str,
     https_server: HttpsServer,
+    scope_count: int,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     journal_directory = tmp_path / "wide-scroll-regression-journal"
     monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
     with complete_tie_setup(admin, database_url) as setup:
-        extra_sources = _prepare_two_additional_sources(setup)
+        extra_sources = _prepare_two_additional_sources(setup) if scope_count == 4 else []
         mixed = save_result_round(setup, [6, 4], approve_and_select=True)
         supervisor = setup["clients"]["supervisor"]
         base = f"/api/workspace/constituencies/{setup['constituency_id']}"
@@ -84,13 +86,13 @@ def test_normal_workspace_refresh_keeps_wide_recount_heading_in_the_user_viewpor
         baseline = supervisor.get(result_path)
         assert baseline.status_code == 200, baseline.text
         assert baseline.json()["complete"] is True and baseline.json()["pending"] == []
-        assert len(baseline.json()["contributions"]) == 4
+        assert len(baseline.json()["contributions"]) == scope_count
         assert [row["quantity"] for row in baseline.json()["candidate_totals"]] == [6, 4]
         options = supervisor.get(wide_path)
         assert options.status_code == 200, options.text
         assert options.json()["can_instruct"] is True
         sources = options.json()["scope_sources"]
-        assert len(sources) == 4
+        assert len(sources) == scope_count
         assert {row["source_round_id"] for row in sources} == {
             mixed["selected"]["id"], setup["n3_round"]["selected"]["id"],
             *(row["selected"]["id"] for row in extra_sources),
@@ -119,7 +121,7 @@ def test_normal_workspace_refresh_keeps_wide_recount_heading_in_the_user_viewpor
         assert pending.status_code == 200, pending.text
         result = pending.json()
         assert result["complete"] is False and result["provisional"] is True
-        assert result["contributions"] == [] and len(result["pending"]) == 4
+        assert result["contributions"] == [] and len(result["pending"]) == scope_count
         assert {row["scope_id"] for row in result["pending"]} == {
             row["scope_id"] for row in sources
         }
@@ -138,7 +140,7 @@ def test_normal_workspace_refresh_keeps_wide_recount_heading_in_the_user_viewpor
                 "username": setup["accounts"]["supervisor"]["username"],
                 "password": READY_PASSWORD,
                 "station_id": setup["stations"]["N1"]["id"], "locale": "en",
-                "constituency_id": setup["constituency_id"],
+                "constituency_id": setup["constituency_id"], "scope_count": scope_count,
                 "actor_id": setup["accounts"]["supervisor"]["id"],
                 "election_id": setup["election"]["id"],
                 "basis_digest": result["basis_digest"],
@@ -155,7 +157,7 @@ def test_normal_workspace_refresh_keeps_wide_recount_heading_in_the_user_viewpor
                 for key in ('busy', 'refreshing')))
             record = results.property('state')['result']
             assert record['basis_digest'] == setup['basis_digest']
-            assert len(record['pending']) == 4
+            assert len(record['pending']) == setup['scope_count']
             assert {row['scope_id'] for row in record['pending']} == set(setup['pending_scope_ids'])
             assert {row['code'] for row in record['pending']} == {'recount_pending'}
             assert child.property('state')['can_instruct'] is False
@@ -246,7 +248,8 @@ def test_normal_workspace_refresh_keeps_wide_recount_heading_in_the_user_viewpor
                     assert child.property('state')['account_id'] == setup['actor_id']
                     assert child.property('state')['station_id'] == setup['station_id']
                     assert child.property('state')['role'] == 'supervisor'
-                    assert child.property('state')['context']['election']['id'] == setup['election_id']
+                    assert child.property('state')['context']['election']['id'] == (
+                        setup['election_id'])
                     # Intended genuine RED: normal unchanged refresh re-reveals
                     # the offscreen focus target and scrolls away from this heading.
                     assert abs(after['content_y'] - anchored['content_y']) <= 1.0, diagnostic
