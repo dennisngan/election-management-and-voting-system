@@ -58,7 +58,11 @@ ApplicationWindow {
     Connections {
         target: scroll.contentItem
         function onContentHeightChanged() {
-            Qt.callLater(function() { window.revealField(window.activeFocusItem) })
+            Qt.callLater(function() {
+                var control = window.activeFocusItem
+                if (control && control.cursorPosition !== undefined && control.readOnly !== true)
+                    window.revealField(control)
+            })
         }
     }
 
