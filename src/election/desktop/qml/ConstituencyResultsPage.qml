@@ -185,8 +185,8 @@ ColumnLayout {
             text: page.t("constituency_results_refresh")
             flat: true
             highlighted: false
-            working: page.loading
-            enabled: !page.loading
+            working: page.working
+            enabled: !page.working
             onClicked: page.results.reload()
             onReveal: control => page.reveal(control)
         }
