@@ -193,7 +193,8 @@ class LocalRecountsController(QObject):
             if self._restored_request_id and not self._state["scope"]:
                 # This fresh read supplies display context, never the retained command body.
                 self._adopt_read(body)
-            elif self._state["dirty"] or self._state["uncertain_save"] or self._state["newer_basis"]:
+            elif (self._state["dirty"] or self._state["uncertain_save"]
+                  or self._state["newer_basis"]):
                 old = self._basis(
                     self._state["scope"], self._state["selection"], self._state["pending"]
                 )
@@ -341,7 +342,9 @@ class LocalRecountsController(QObject):
                 self._restored_owns_draft = not self._state["dirty"]
                 if self._restored_owns_draft:
                     self._state.update(forms={
-                        "event_at": format_event_time(payload.get("event_at", "")).removesuffix(" HKT"),
+                        "event_at": format_event_time(
+                            payload.get("event_at", "")
+                        ).removesuffix(" HKT"),
                         "reason": payload.get("reason", ""),
                     }, dirty=True)
             self._state.update(uncertain_save=True, pending_request_id=self._restored_request_id)
