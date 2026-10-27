@@ -55,6 +55,8 @@ def command_workflow(path: str) -> tuple[int, str] | None:
     station_id, resource = int(matched[1]), matched[2]
     if resource.startswith("counting-scopes/") and "/rounds" in resource:
         return station_id, "count"
+    if re.fullmatch(r"counting-scopes/[1-9][0-9]*/recounts", resource):
+        return station_id, "count"
     if resource.startswith("turnout/"):
         return station_id, "turnout"
     if resource == "allocations" or resource.startswith("allocations/"):
