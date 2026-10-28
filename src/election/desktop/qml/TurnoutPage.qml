@@ -344,7 +344,7 @@ ColumnLayout {
             Detail {
                 objectName: "turnoutPaperServerEntryTime"
                 visible: !!page.paperRecord.id
-                caption: page.t("entered_at")
+                caption: page.t("server_entry")
                 value: page.turnout.formatPaperTime(page.paperRecord.entered_at || "")
             }
             FormCaption {
