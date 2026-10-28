@@ -657,7 +657,7 @@ ColumnLayout {
             }
             FormCaption {
                 visible: !(page.selected.paper_records || []).length
-                text: page.t("outage_empty")
+                text: page.t("outage_papers_empty")
             }
             Repeater {
                 model: page.selected.paper_records || []
