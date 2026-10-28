@@ -95,12 +95,16 @@ def test_assigned_officer_previews_the_selected_outage_statement_in_material(
 
 
 @pytest.mark.parametrize(
-    ("locale", "decision_label", "status_label", "history_label", "outage_label"),
+    ("locale", "decision_label", "status_label", "history_label", "outage_label",
+     "status_caption", "unreconciled_label"),
     [
-        ("tc", "核對決定修訂", "目前紙本核對已核准", "核對決定歷史", "中斷修訂"),
-        ("sc", "核对决定修订", "当前纸本核对已核准", "核对决定历史", "中断修订"),
+        ("tc", "核對決定修訂", "目前紙本核對已核准", "核對決定歷史", "中斷修訂",
+         "目前紙本核對狀態", "尚未完成目前紙本核對"),
+        ("sc", "核对决定修订", "当前纸本核对已核准", "核对决定历史", "中断修订",
+         "当前纸本核对状态", "尚未完成当前纸本核对"),
         ("en", "Reconciliation decision revision", "Current paper reconciliation is approved",
-         "Reconciliation decision history", "Outage revision"),
+         "Reconciliation decision history", "Outage revision",
+         "Current paper reconciliation status", "Current paper reconciliation is not complete"),
     ],
 )
 def test_material_reconciliation_revision_is_distinct_from_outage_revision(
@@ -112,6 +116,8 @@ def test_material_reconciliation_revision_is_distinct_from_outage_revision(
     status_label: str,
     history_label: str,
     outage_label: str,
+    status_caption: str,
+    unreconciled_label: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         https_server.clock.value = setup["clock"].value
@@ -136,6 +142,49 @@ def test_material_reconciliation_revision_is_distinct_from_outage_revision(
         })
         assert amended.status_code == 200, amended.text
         assert amended.json()["revision"] == 2
+        unreconciled = counter.get(outage_path)
+        assert unreconciled.status_code == 200, unreconciled.text
+        initial = unreconciled.json()["record"]
+        assert initial["reconciled"] is False and not initial["reconciliation"]
+        assert initial["reconciliation_history"] == []
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": READY_PASSWORD, "station_id": station_id, "locale": locale,
+                "outage_id": initial["id"], "status_caption": status_caption,
+                "status_label": status_label, "unreconciled_label": unreconciled_label,
+            },
+            """
+            click('outagesNavigation')
+            outages = controller.outages
+            wait(lambda: not any(outages.property('state')[key]
+                for key in ('busy', 'refreshing')))
+            click('outageOption_' + str(setup['outage_id']))
+            wait(lambda: not outages.property('state')['busy']
+                and outages.property('state')['selected'].get('id') == setup['outage_id'])
+            assert outages.property('state')['selected']['reconciled'] is False
+            frame()
+            def visual_descendants(root):
+                pending = list(root.childItems())
+                while pending:
+                    item = pending.pop()
+                    yield item
+                    pending.extend(item.childItems())
+            details = list(visual_descendants(control('outageReportPanel').parentItem()))
+            current = [item for item in details
+                if item.property('visible')
+                and item.property('caption') == setup['status_caption']]
+            assert len(current) == 1, [(item.property('caption'), item.property('value'))
+                for item in details if item.property('visible') and item.property('caption')]
+            labels = [item.property('text') for item in visual_descendants(current[0])
+                if item.property('visible') and item.inherits('QQuickText')]
+            assert current[0].property('value') == setup['unreconciled_label']
+            assert setup['status_caption'] in labels and setup['unreconciled_label'] in labels
+            assert not any(item.property('visible')
+                and item.property('caption') == setup['status_label'] for item in details)
+            """,
+        )
         approved = supervisor.post(outage_path + "/approve", json={
             "request_id": str(uuid4()), "expected_revision": 2,
             "expected_reconciliation_revision": 0,
@@ -159,7 +208,7 @@ def test_material_reconciliation_revision_is_distinct_from_outage_revision(
                 "password": READY_PASSWORD, "station_id": station_id, "locale": locale,
                 "outage_id": record["id"], "decision_label": decision_label,
                 "status_label": status_label, "history_label": history_label,
-                "outage_label": outage_label,
+                "outage_label": outage_label, "status_caption": status_caption,
             },
             """
             click('outagesNavigation')
@@ -192,7 +241,9 @@ def test_material_reconciliation_revision_is_distinct_from_outage_revision(
                 assert caption in labels
                 return detail.property('value'), labels
 
-            current, current_labels = shown_detail(setup['status_label'])
+            current, current_labels = shown_detail(setup['status_caption'])
+            assert not any(item.property('visible')
+                and item.property('caption') == setup['status_label'] for item in details)
             expected = setup['status_label'] + ' · ' + setup['decision_label'] + ' 1'
             assert current == expected, (current, expected)
             assert expected in current_labels
