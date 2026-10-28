@@ -604,3 +604,118 @@ def test_material_precise_save_paper_preserves_time_and_missing_cumulative(
         assert linked["original_event_at"] == "2026-11-15T01:30:12.123456Z"
         assert linked["reentry"]["record"] == record
         assert linked["reentry"]["actor_id"] == account["id"]
+
+
+@pytest.mark.parametrize(
+    ("locale", "server_entry_caption", "original_caption"),
+    [
+        ("tc", "伺服器記錄時間", "紙本原始事件時間（香港時間）"),
+        ("sc", "服务器记录时间", "纸本原始事件时间（香港时间）"),
+        ("en", "Server entry time", "Original paper event time (HKT)"),
+    ],
+    ids=("tc", "sc", "en"),
+)
+def test_material_turnout_paper_server_entry_caption_preserves_separate_times(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    locale: str,
+    server_entry_caption: str,
+    original_caption: str,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    clock = TurnoutClock()
+    https_server.clock.value = clock.value
+    with turnout_staff(admin, database_url, clock, [station_id]) as (officer, account):
+        outage = _outage(officer, station_id, reference="Entry caption " + uuid4().hex[:8])
+        paper = _paper(
+            officer,
+            station_id,
+            outage["id"],
+            reference="N1-TURNOUT-CAPTION-" + uuid4().hex[:8],
+            action="save",
+            period_index=1,
+            event_at="2026-11-15T09:30:00+08:00",
+        )
+        assert paper["original_event_at"] == "2026-11-15T01:30:00Z"
+        assert paper["entered_at"] == "2026-11-15T04:00:00Z"
+        monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "client-state"))
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": locale,
+                "paper_id": paper["id"],
+                "original_event_at": paper["original_event_at"],
+                "entered_at": paper["entered_at"],
+                "server_entry_caption": server_entry_caption,
+                "original_caption": original_caption,
+            },
+            """
+            def visible_texts(root):
+                pending = list(root.childItems())
+                texts = []
+                while pending:
+                    item = pending.pop()
+                    text = item.property('text')
+                    if item.property('visible') and isinstance(text, str):
+                        texts.append(text)
+                    pending.extend(item.childItems())
+                return texts
+
+            click('turnoutNavigation')
+            turnout = controller.property('turnout')
+            wait(lambda: not turnout.property('state')['busy']
+                and not turnout.property('state')['paper_refreshing'])
+            click('turnoutPaperRefresh')
+            wait(lambda: not turnout.property('state')['paper_refreshing']
+                and [row['id'] for row in turnout.property('state')['paper_records']]
+                == [setup['paper_id']])
+            assert control('turnoutPaperPicker').property('currentIndex') == 0
+            choose('turnoutPaperPicker', 1)
+            wait(lambda: turnout.property('state')['paper_record'].get('id')
+                == setup['paper_id'])
+            frame()
+
+            entry = control('turnoutPaperServerEntryTime')
+            assert entry.property('visible') is True
+            assert entry.property('caption') == setup['server_entry_caption'], (
+                entry.property('caption'), setup['server_entry_caption'])
+            assert setup['server_entry_caption'] in visible_texts(entry)
+            assert entry.property('value') == '2026-11-15 12:00 HKT'
+            entry_value = control('turnoutPaperServerEntryTimeValue')
+            assert entry_value.property('visible') is True
+            assert entry_value.property('text') == '2026-11-15 12:00 HKT'
+
+            original = control('turnoutPaperOriginalEventAt')
+            assert original.property('visible') is True
+            assert original.property('caption') == setup['original_caption']
+            assert setup['original_caption'] in visible_texts(original)
+            assert original.property('value') == '2026-11-15 09:30 HKT'
+            original_value = control('turnoutPaperOriginalEventAtValue')
+            assert original_value.property('visible') is True
+            assert original_value.property('text') == '2026-11-15 09:30 HKT'
+            selected = turnout.property('state')['paper_record']
+            assert selected['original_event_at'] == setup['original_event_at']
+            assert selected['entered_at'] == setup['entered_at']
+            assert selected['status'] == 'pending'
+            assert control('turnoutEventTime').property('text') == '2026-11-15 09:30'
+            """,
+        )
+        response = officer.get(
+            f"/api/workspace/stations/{station_id}/outages/{outage['id']}"
+        )
+        assert response.status_code == 200, response.text
+        stored = next(
+            row for row in response.json()["record"]["paper_records"]
+            if row["id"] == paper["id"]
+        )
+        assert stored["original_event_at"] == paper["original_event_at"]
+        assert stored["entered_at"] == paper["entered_at"]
+        assert stored["status"] == "pending"
+        assert stored["reentry"] is None
