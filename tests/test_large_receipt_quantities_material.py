@@ -289,3 +289,102 @@ def test_existing_allocation_counter_code_caption_in_checked_and_linked_material
     assert linked["reentry"]["link"]["reason"] == reason
     unchanged = polling.get(outcome_path, params={"workflow": "allocation"})
     assert unchanged.status_code == 200 and unchanged.json() == original.json()
+
+
+@pytest.mark.parametrize(
+    ("locale", "station_empty_text", "papers_empty_text"),
+    [
+        ("tc", "此投票站尚無連線中斷紀錄。", "此中斷紀錄尚未登記紙本參考。"),
+        ("sc", "此投票站尚无连接中断记录。", "此中断记录尚未登记纸本参考。"),
+        ("en", "No connectivity outages are recorded for this station.",
+         "No paper references are recorded for this outage."),
+    ],
+)
+def test_existing_outage_without_papers_has_its_own_empty_message_in_material(
+    allocation_base_setup: dict,
+    https_server: HttpsServer,
+    locale: str,
+    station_empty_text: str,
+    papers_empty_text: str,
+) -> None:
+    setup = allocation_base_setup
+    polling, base = setup["polling"], setup["base"]
+    outage_path = base + "/outages"
+    empty = polling.get(outage_path)
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["items"] == []
+    workspace_setup = {
+        "server": https_server.url, "username": setup["account"]["username"],
+        "password": READY_PASSWORD, "station_id": setup["station"]["id"], "locale": locale,
+        "station_empty_text": station_empty_text, "papers_empty_text": papers_empty_text,
+    }
+    visible_labels_script = """
+        def visible_page_labels():
+            pending = [control('outageReportPanel').parentItem()]
+            labels = []
+            while pending:
+                item = pending.pop()
+                if item.property('visible') and item.inherits('QQuickText'):
+                    text = item.property('text')
+                    if isinstance(text, str) and text:
+                        labels.append(text)
+                pending.extend(item.childItems())
+            return labels
+    """
+    run_workspace_qml(
+        workspace_setup,
+        visible_labels_script + """
+        click('outagesNavigation')
+        outages = controller.property('outages')
+        wait(lambda: not outages.property('state')['busy']
+            and outages.property('state')['station_id'] == setup['station_id'])
+        assert outages.property('state')['items'] == []
+        assert not outages.property('state')['selected'].get('id')
+        frame()
+        labels = visible_page_labels()
+        assert setup['station_empty_text'] in labels, labels
+        assert setup['papers_empty_text'] not in labels, labels
+        """,
+    )
+
+    created = polling.post(
+        outage_path,
+        json={
+            "request_id": str(uuid4()), "reference": "Empty paper list " + uuid4().hex[:8],
+            "kind": "network", "started_at": "2026-11-15T08:00:00+08:00",
+            "ended_at": "2026-11-15T08:30:00+08:00",
+            "notes": "This outage exists; no paper references have been registered.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    outage_id = created.json()["id"]
+    detail_path = outage_path + f"/{outage_id}"
+    before = polling.get(detail_path)
+    assert before.status_code == 200, before.text
+    assert before.json()["record"]["id"] == outage_id
+    assert before.json()["record"]["paper_records"] == []
+    run_workspace_qml(
+        {**workspace_setup, "outage_id": outage_id, "reference": created.json()["reference"]},
+        visible_labels_script + """
+        click('outagesNavigation')
+        outages = controller.property('outages')
+        wait(lambda: not outages.property('state')['busy']
+            and any(row['id'] == setup['outage_id'] for row in outages.property('state')['items']))
+        click('outageOption_' + str(setup['outage_id']))
+        wait(lambda: not outages.property('state')['busy']
+            and outages.property('state')['selected'].get('id') == setup['outage_id'])
+        assert outages.property('state')['selected']['paper_records'] == []
+        option = control('outageOption_' + str(setup['outage_id']))
+        assert option.property('visible') is True
+        assert setup['reference'] in option.property('text')
+        assert control('outageReportPanel').property('visible') is True
+        frame()
+        labels = visible_page_labels()
+        assert setup['papers_empty_text'] in labels, labels
+        assert setup['station_empty_text'] not in labels, labels
+        """,
+    )
+    after = polling.get(detail_path)
+    assert after.status_code == 200 and after.json() == before.json()
+    assert https_server.request_count("POST", outage_path) == 0
+    assert https_server.request_count("POST", detail_path + "/paper-records") == 0
