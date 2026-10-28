@@ -525,3 +525,82 @@ def test_uncertain_turnout_paper_write_stays_bound_until_public_outcome_is_commi
         history = officer.get(path + "/1/history")
         assert history.status_code == 200, history.text
         assert len(history.json()["items"]) == 1
+
+
+@pytest.mark.parametrize("locale", ["en", "tc", "sc"])
+def test_material_precise_save_paper_preserves_time_and_missing_cumulative(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    locale: str,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    path = scope["path"]
+    clock = TurnoutClock()
+    https_server.clock.value = clock.value
+    with turnout_staff(admin, database_url, clock, [station_id]) as (officer, account):
+        outage = _outage(officer, station_id, reference="Precise turnout " + uuid4().hex[:8])
+        paper = _paper(
+            officer,
+            station_id,
+            outage["id"],
+            reference="TURNOUT-PRECISE-" + uuid4().hex[:8],
+            action="save",
+            period_index=1,
+            event_at="2026-11-15T09:30:12.123456+08:00",
+        )
+        monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "client-state"))
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": locale,
+            },
+            f"""
+            click('turnoutNavigation')
+            turnout = controller.property('turnout')
+            wait(lambda: not turnout.property('state')['busy'])
+            click('turnoutPaperRefresh')
+            wait(lambda: len(turnout.property('state')['paper_records']) == 1)
+            choose('turnoutPaperPicker', 1)
+            wait(lambda: turnout.property('state')['paper_record'].get('id') == {paper['id']})
+            assert control('turnoutEventTime').property('text') == '2026-11-15 09:30:12.123456'
+            enter('turnoutHourly', '0')
+            assert control('turnoutCumulative').property('text') == ''
+            enter('turnoutSource', 'Paper supplies hourly zero; cumulative figure not supplied.')
+            assert control('turnoutSave').property('enabled') is True
+            click('turnoutSave')
+            wait(lambda: not turnout.property('state')['busy'])
+            saved = turnout.property('state')
+            assert saved['selected'].get('revision') == 1, {{'error': saved['error']}}
+            assert saved['selected']['status'] == 'draft'
+            assert saved['selected']['event_at'] == '2026-11-15T01:30:12.123456Z'
+            assert saved['selected']['supplied_hourly'] == 0
+            assert saved['selected']['supplied_cumulative'] is None
+            assert saved['paper_record'] == {{}}
+            assert saved['dirty'] is False
+            """,
+        )
+        assert https_server.request_count("PUT", path + "/1") == 1
+        response = officer.get(path + "/1")
+        assert response.status_code == 200, response.text
+        record = response.json()
+        assert record["status"] == "draft"
+        assert record["event_at"] == "2026-11-15T01:30:12.123456Z"
+        assert record["supplied_hourly"] == 0
+        assert record["supplied_cumulative"] is None
+        result = officer.get(
+            f"/api/workspace/stations/{station_id}/outages/{outage['id']}"
+        )
+        assert result.status_code == 200, result.text
+        linked = next(row for row in result.json()["record"]["paper_records"]
+                      if row["id"] == paper["id"])
+        assert linked["status"] == "entered"
+        assert linked["original_event_at"] == "2026-11-15T01:30:12.123456Z"
+        assert linked["reentry"]["record"] == record
+        assert linked["reentry"]["actor_id"] == account["id"]
