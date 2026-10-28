@@ -312,7 +312,7 @@ def test_existing_outage_without_papers_has_its_own_empty_message_in_material(
     outage_path = base + "/outages"
     empty = polling.get(outage_path)
     assert empty.status_code == 200, empty.text
-    assert empty.json()["items"] == []
+    assert empty.json()["outages"] == []
     workspace_setup = {
         "server": https_server.url, "username": setup["account"]["username"],
         "password": READY_PASSWORD, "station_id": setup["station"]["id"], "locale": locale,
