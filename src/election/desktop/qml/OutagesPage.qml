@@ -162,7 +162,7 @@ ColumnLayout {
         ]
         if (record.workflow === "count" || paper.workflow === "count") {
             if (record.round_number !== undefined)
-                facts.push(page.t("outage_target_round") + " " + page.exact(record.round_number))
+                facts.push(page.t("f1_round") + " " + page.exact(record.round_number))
         } else if (paper.workflow === "turnout") {
             facts.push(page.t("outage_target_period") + " " + page.exact(record.period_index))
             facts.push(page.t("outage_receipt_hourly") + " " + page.quantity(record, "supplied_hourly"))

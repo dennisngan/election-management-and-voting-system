@@ -316,7 +316,8 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
             click('outagePaperOption_' + str(setup['paper_id']))
             entered_text = visible_label_text(control('outageReportPanel').parentItem())
             assert_original_count_caption(entered_text)
-            assert has_label(entered_text, setup['round_id_caption'], setup['round_id']), entered_text
+            assert has_label(entered_text, setup['round_id_caption'],
+                setup['round_id']), entered_text
             """,
         )
 
