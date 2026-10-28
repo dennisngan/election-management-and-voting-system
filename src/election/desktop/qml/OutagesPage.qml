@@ -967,7 +967,7 @@ ColumnLayout {
             Detail {
                 caption: page.t("outage_reconciled")
                 value: page.selected.reconciled && (page.selected.reconciliation || {}).is_current
-                    ? page.t("outage_reconciled") + " · " + page.t("outage_revision") + " "
+                    ? page.t("outage_reconciled") + " · " + page.t("outage_reconciliation_revision") + " "
                         + page.exact(page.selected.reconciliation.revision)
                     : page.t("outage_not_reconciled")
             }
@@ -976,7 +976,7 @@ ColumnLayout {
                 delegate: Detail {
                     required property var modelData
                     caption: page.t("outage_reconciliation_history") + " · "
-                        + page.t("outage_revision") + " " + page.exact(modelData.revision)
+                        + page.t("outage_reconciliation_revision") + " " + page.exact(modelData.revision)
                     value: page.t(modelData.valid ? "outage_reconciled" : "outage_not_reconciled")
                         + " · " + page.t("outage_actor") + " " + page.exact(modelData.actor_id)
                         + " · " + page.timeHkt(modelData.accepted_at)
