@@ -966,7 +966,7 @@ ColumnLayout {
             Heading { text: page.t("outage_reconcile") }
             FormCaption { text: page.t("outage_reconcile_hint") }
             Detail {
-                caption: page.t("outage_reconciled")
+                caption: page.t("outage_reconciliation_status")
                 value: page.selected.reconciled && (page.selected.reconciliation || {}).is_current
                     ? page.t("outage_reconciled") + " · " + page.t("outage_reconciliation_revision") + " "
                         + page.exact(page.selected.reconciliation.revision)
