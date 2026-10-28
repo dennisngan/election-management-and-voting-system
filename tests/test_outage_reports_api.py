@@ -427,6 +427,8 @@ def test_outage_preview_separates_later_link_metadata_from_the_original_receipt(
             "tc",
             {
                 "section": "不可變更收據內容",
+                "event_time": "原始業務事件時間（香港時間）",
+                "completion_time": "點票完成時間（香港時間）",
                 "original_request": "重新輸入請求編號",
                 "original_status": "原始業務記錄狀態",
                 "submitted": "已提交",
@@ -441,6 +443,8 @@ def test_outage_preview_separates_later_link_metadata_from_the_original_receipt(
             "sc",
             {
                 "section": "不可变更收据内容",
+                "event_time": "原始业务事件时间（香港时间）",
+                "completion_time": "点票完成时间（香港时间）",
                 "original_request": "重新输入请求编号",
                 "original_status": "原始业务记录状态",
                 "submitted": "已提交",
@@ -455,6 +459,8 @@ def test_outage_preview_separates_later_link_metadata_from_the_original_receipt(
             "en",
             {
                 "section": "Immutable receipt details",
+                "event_time": "Original business event time (Hong Kong time)",
+                "completion_time": "Count completed at (HKT)",
                 "original_request": "Re-entry request ID",
                 "original_status": "Original business record status",
                 "submitted": "Submitted",
@@ -476,7 +482,11 @@ def test_linked_receipt_provenance_is_translated_in_preview_csv_and_pdf(
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         linked = _link_original_count_receipt(setup)
+        assert linked["original_record"]["event_at"] == "2026-11-15T15:15:12.123456Z"
+        assert linked["original_record"]["completed_at"] == "2026-11-15T16:00:00.123456Z"
         expected_rows = [
+            [labels["event_time"], "2026-11-15 23:15:12.123456 HKT"],
+            [labels["completion_time"], "2026-11-16 00:00:00.123456 HKT"],
             [labels["original_request"], linked["original_request_id"]],
             [labels["original_status"], labels["submitted"]],
             [labels["request"], linked["link"]["request_id"]],
@@ -496,6 +506,9 @@ def test_linked_receipt_provenance_is_translated_in_preview_csv_and_pdf(
         )
         for expected in expected_rows:
             assert expected in receipt_rows
+        assert [
+            labels["event_time"], "2026-11-16 00:00:00.123456 HKT",
+        ] not in receipt_rows
         assert linked["link"]["request_id"] != linked["original_request_id"]
 
         csv_response = officer.get(statement_path + ".csv", params={"locale": locale})
