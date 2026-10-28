@@ -22,14 +22,65 @@ def isolated_client_command_journal(tmp_path, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(tmp_path / "desktop-commands"))
 
 
+@pytest.mark.parametrize(
+    ("locale", "round_caption", "round_id_caption", "record_id_caption",
+     "revision_caption", "submitted_caption"),
+    [
+        ("tc", "點票輪次", "點票輪次編號", "原始記錄編號", "原始記錄修訂", "已提交"),
+        ("sc", "点票轮次", "点票轮次编号", "原始记录编号", "原始记录修订", "已提交"),
+        ("en", "Count round", "Count round ID", "Original record ID",
+         "Original record revision", "Submitted"),
+    ],
+)
 def test_counting_officer_links_an_existing_count_receipt_from_material(
     admin: TestClient,
     database_url: str,
     https_server: HttpsServer,
+    locale: str,
+    round_caption: str,
+    round_id_caption: str,
+    record_id_caption: str,
+    revision_caption: str,
+    submitted_caption: str,
 ) -> None:
     with tally_setup(admin, database_url) as setup:
         counter = setup["counter"]
         station_id = setup["stations"]["N1"]["id"]
+        # Reserve a global round ID in a disjoint scope before this scope's first
+        # round. The received N2 box and its approved P(18) already exist publicly.
+        other_box = setup["boxes"]["transferred_n2"]
+        scopes_path = setup["paths"]["n1_counting_scopes"]
+        other_scope = counter.post(
+            scopes_path,
+            json={
+                "request_id": str(uuid4()), "expected_revision": 0,
+                "reference": "Other receipt scope " + uuid4().hex[:8],
+                "event_at": "2026-11-15T23:10:00+08:00",
+                "box_revisions": [
+                    {"box_id": other_box["id"], "revision": other_box["revision"]}
+                ],
+                "accounting_revisions": [
+                    {"station_id": setup["stations"]["N2"]["id"], "revision": 1}
+                ],
+            },
+        )
+        assert other_scope.status_code == 201, other_scope.text
+        other_submitted = counter.post(
+            scopes_path + f"/{other_scope.json()['id']}/submit",
+            json={"request_id": str(uuid4()), "expected_revision": 1},
+        )
+        assert other_submitted.status_code == 200, other_submitted.text
+        assert other_submitted.json()["count_ready"] is True
+        assert other_submitted.json()["id"] != setup["scope"]["id"]
+        other_rounds_path = scopes_path + f"/{other_scope.json()['id']}/rounds"
+        other_options = counter.get(other_rounds_path)
+        assert other_options.status_code == 200, other_options.text
+        other_f1 = complete_f1_command(other_options.json(), actual_counted_quantity=5)
+        other_f1["candidate_votes"][0]["quantity"] = 5
+        other_round = counter.post(other_rounds_path, json=other_f1)
+        assert other_round.status_code == 201, other_round.text
+        assert other_round.json()["round_number"] == 1
+
         rounds_path = setup["rounds_path"]
         options_response = counter.get(rounds_path)
         assert options_response.status_code == 200, options_response.text
@@ -40,6 +91,8 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
         f1_saved = counter.post(rounds_path, json=f1_command)
         assert f1_saved.status_code == 201, f1_saved.text
         round_id = f1_saved.json()["id"]
+        assert f1_saved.json()["round_number"] == 1
+        assert round_id != f1_saved.json()["round_number"]
         round_path = f"{rounds_path}/{round_id}"
         f2_saved = counter.put(
             round_path + "/f2",
@@ -141,7 +194,13 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
                 "username": setup["accounts"]["receiveronly"]["username"],
                 "password": READY_PASSWORD,
                 "station_id": station_id,
-                "locale": "en",
+                "locale": locale,
+                "round_id": round_id,
+                "round_caption": round_caption,
+                "round_id_caption": round_id_caption,
+                "record_id_caption": record_id_caption,
+                "revision_caption": revision_caption,
+                "submitted_caption": submitted_caption,
                 "outage_id": outage_id,
                 "paper_id": paper_before["id"],
                 "original_request_id": original_request_id,
@@ -151,6 +210,7 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
                 "reason": reason,
             },
             """
+            import re
             from tests.test_physical_acceptance_recovery_desktop import (
                 assert_public_business_fields,
             )
@@ -215,18 +275,34 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
             assert_public_business_fields(checked, setup['expected_preview'])
             summary = control('outageExistingReceiptSummary')
             assert summary.property('visible') is True
-            summary_parts = []
-            pending_summary = [summary]
-            while pending_summary:
-                item = pending_summary.pop()
-                for property_name in ('text', 'value'):
-                    value = item.property(property_name)
-                    if isinstance(value, str) and value:
-                        summary_parts.append(value)
-                pending_summary.extend(item.childItems())
-            summary_text = ' '.join(summary_parts)
-            assert str(setup['submitted_record_id']) in summary_text
-            assert 'submitted' in summary_text.lower()
+            def visible_label_text(root):
+                pending = [root]
+                texts = []
+                while pending:
+                    item = pending.pop()
+                    if item.property('visible') and item.inherits('QQuickText'):
+                        text = item.property('text')
+                        if isinstance(text, str) and text:
+                            texts.append(text)
+                    pending.extend(item.childItems())
+                return ' '.join(texts)
+
+            def has_label(text, caption, value):
+                return re.search(re.escape(caption + ' ' + str(value))
+                    + '(?![0-9A-Za-z_])', text) is not None
+
+            def assert_original_count_caption(text):
+                assert has_label(text, setup['round_caption'], 1), text
+                assert not has_label(text, setup['round_id_caption'], 1), text
+                assert has_label(text, setup['record_id_caption'],
+                    setup['submitted_record_id']), text
+                assert has_label(text, setup['revision_caption'],
+                    setup['submitted_record_revision']), text
+                assert setup['submitted_caption'].lower() in text.lower(), text
+
+            assert_original_count_caption(visible_label_text(summary))
+            page_text = visible_label_text(control('outageReportPanel').parentItem())
+            assert has_label(page_text, setup['round_id_caption'], setup['round_id']), page_text
 
             enter('outageExistingReceiptReason', setup['reason'])
             link_button = control('outageExistingReceiptLink')
@@ -236,6 +312,11 @@ def test_counting_officer_links_an_existing_count_receipt_from_material(
             wait(lambda: not outages.property('state')['busy']
                 and any(row['id'] == setup['paper_id'] and row['status'] == 'entered'
                     for row in outages.property('state')['selected'].get('paper_records', [])))
+            wait(lambda: not control('outageExistingReceiptSummary').property('visible'))
+            click('outagePaperOption_' + str(setup['paper_id']))
+            entered_text = visible_label_text(control('outageReportPanel').parentItem())
+            assert_original_count_caption(entered_text)
+            assert has_label(entered_text, setup['round_id_caption'], setup['round_id']), entered_text
             """,
         )
 
