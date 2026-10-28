@@ -169,7 +169,8 @@ ColumnLayout {
             facts.push(page.t("outage_receipt_cumulative") + " " + page.quantity(record, "supplied_cumulative"))
         } else if (paper.workflow === "allocation") {
             var counter = record.counter || ({})
-            facts.push(page.t("outage_target_counter") + " " + page.exact(counter.code || counter.id))
+            facts.push(page.t(counter.code ? "counter_code" : "outage_target_counter") + " "
+                + page.exact(counter.code || counter.id))
             facts.push(page.t("allocation_quantity") + " " + page.quantity(record, "quantity"))
             facts.push(page.t("outage_receipt_event") + " " + page.timeHkt(record.event_at))
         }
