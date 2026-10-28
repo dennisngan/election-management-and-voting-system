@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from PySide6.QtCore import QCoreApplication
@@ -157,3 +158,134 @@ def test_large_allocation_quantity_is_exact_in_recovery_and_paper_matching_mater
     still_pending = polling.get(outage_path)
     assert still_pending.status_code == 200
     assert still_pending.json()["record"]["paper_records"][0]["status"] == "pending"
+
+
+@pytest.mark.parametrize(
+    ("locale", "code_caption", "counter_id_caption", "record_id_caption", "revision_caption"),
+    [
+        ("tc", "發票櫃台代號", "發票櫃台編號", "原始記錄編號", "原始記錄修訂"),
+        ("sc", "发票柜台代号", "发票柜台编号", "原始记录编号", "原始记录修订"),
+        ("en", "Issuance counter code", "Issuance counter ID", "Original record ID",
+         "Original record revision"),
+    ],
+)
+def test_existing_allocation_counter_code_caption_in_checked_and_linked_material(
+    allocation_base_setup: dict,
+    https_server: HttpsServer,
+    locale: str,
+    code_caption: str,
+    counter_id_caption: str,
+    record_id_caption: str,
+    revision_caption: str,
+) -> None:
+    setup = allocation_base_setup
+    polling, base = setup["polling"], setup["base"]
+    counter_id = setup["counter"]["id"]
+    assert setup["counter"]["code"] == "C1" != str(counter_id)
+    request_id = str(uuid4())
+    saved = polling.post(
+        base + "/allocations",
+        json={
+            "request_id": request_id, "counter_id": counter_id,
+            "series": setup["series"], "serial_from": "000001", "serial_to": "000002",
+            "event_at": "2026-11-15T08:15:00+08:00",
+        },
+    )
+    assert saved.status_code == 201, saved.text
+    original_record = saved.json()
+    assert original_record["counter"]["code"] == "C1"
+    assert original_record["counter"]["id"] == counter_id
+    outcome_path = base + f"/request-outcomes/{request_id}"
+    original = polling.get(outcome_path, params={"workflow": "allocation"})
+    assert original.status_code == 200, original.text
+    assert original.json()["record"] == original_record
+    setup["clock"].value += timedelta(minutes=1)
+    https_server.clock.value = setup["clock"].value
+    outage_path, paper = _register_paper(
+        setup, action="create", target={"counter_id": counter_id},
+    )
+    paper_path = outage_path + f"/paper-records/{paper['id']}"
+    reason = "Link the original allocation receipt while preserving counter code and target ID."
+    run_workspace_qml(
+        {
+            "server": https_server.url, "username": setup["account"]["username"],
+            "password": READY_PASSWORD, "station_id": setup["station"]["id"],
+            "locale": locale, "request_id": request_id, "counter_id": counter_id,
+            "code_caption": code_caption, "counter_id_caption": counter_id_caption,
+            "record_id_caption": record_id_caption, "revision_caption": revision_caption,
+            "record_id": original_record["id"], "revision": original_record["revision"],
+            "outage_id": int(outage_path.rsplit("/", 1)[1]), "paper_id": paper["id"],
+            "reason": reason,
+        },
+        """
+        import re
+        click('outagesNavigation')
+        outages = controller.property('outages')
+        wait(lambda: not outages.property('state')['busy']
+            and any(row['id'] == setup['outage_id'] for row in outages.property('state')['items']))
+        click('outageOption_' + str(setup['outage_id']))
+        wait(lambda: not outages.property('state')['busy']
+            and any(row['id'] == setup['paper_id']
+                for row in outages.property('state')['selected'].get('paper_records', [])))
+        click('outagePaperOption_' + str(setup['paper_id']))
+        enter('outageExistingRequestId', setup['request_id'])
+        click('outageExistingReceiptCheck')
+        wait(lambda: not outages.property('state')['busy']
+            and outages.property('state')['existing_receipt']['checked'].get('status')
+                == 'committed')
+
+        def visible_label_text(root):
+            pending = [root]
+            texts = []
+            while pending:
+                item = pending.pop()
+                if item.property('visible') and item.inherits('QQuickText'):
+                    text = item.property('text')
+                    if isinstance(text, str) and text:
+                        texts.append(text)
+                pending.extend(item.childItems())
+            return ' '.join(texts)
+
+        def has_label(text, caption, value):
+            return re.search(re.escape(caption + ' ' + str(value))
+                + '(?![0-9A-Za-z_])', text) is not None
+
+        def assert_original_counter_caption(text):
+            assert has_label(text, setup['code_caption'], 'C1'), text
+            assert not has_label(text, setup['counter_id_caption'], 'C1'), text
+            assert has_label(text, setup['record_id_caption'], setup['record_id']), text
+            assert has_label(text, setup['revision_caption'], setup['revision']), text
+
+        summary = control('outageExistingReceiptSummary')
+        assert summary.property('visible') is True
+        assert_original_counter_caption(visible_label_text(summary))
+        page_text = visible_label_text(control('outageReportPanel').parentItem())
+        assert has_label(page_text, setup['counter_id_caption'], setup['counter_id']), page_text
+        enter('outageExistingReceiptReason', setup['reason'])
+        assert control('outageExistingReceiptLink').property('enabled') is True
+        click('outageExistingReceiptLink')
+        wait(lambda: not outages.property('state')['busy']
+            and any(row['id'] == setup['paper_id'] and row['status'] == 'entered'
+                for row in outages.property('state')['selected'].get('paper_records', [])))
+        wait(lambda: not control('outageExistingReceiptSummary').property('visible'))
+        click('outagePaperOption_' + str(setup['paper_id']))
+        entered_text = visible_label_text(control('outageReportPanel').parentItem())
+        assert_original_counter_caption(entered_text)
+        assert has_label(entered_text, setup['counter_id_caption'],
+            setup['counter_id']), entered_text
+        """,
+    )
+    assert https_server.request_count("GET", paper_path + "/receipt") == 1
+    assert https_server.request_count("POST", paper_path + "/link-receipt") == 1
+    assert https_server.request_count("POST", base + "/allocations") == 0
+    current = polling.get(outage_path)
+    assert current.status_code == 200, current.text
+    linked = next(row for row in current.json()["record"]["paper_records"]
+                  if row["id"] == paper["id"])
+    assert linked["status"] == "entered" and linked["revision"] == paper["revision"]
+    assert linked["reentry"]["request_id"] == request_id
+    assert linked["reentry"]["record"] == original_record
+    assert linked["reentry"]["link"]["request_id"] != request_id
+    assert linked["reentry"]["link"]["reason"] == reason
+    unchanged = polling.get(outcome_path, params={"workflow": "allocation"})
+    assert unchanged.status_code == 200 and unchanged.json() == original.json()
