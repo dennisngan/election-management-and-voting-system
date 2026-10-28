@@ -831,8 +831,11 @@ class TurnoutController(QObject):
                 if paper.get("action") == "save"
                 else self._state["selected"].get("event_at")
             )
-            if original and text == self.formatTime(original).removesuffix(" HKT"):
-                # The minute form must not round a precise saved or paper event time.
+            if original and text in (
+                self.formatTime(original).removesuffix(" HKT"),
+                format_event_time(original).removesuffix(" HKT"),
+            ):
+                # Unchanged saved or paper displays preserve the exact source time.
                 values["event_at"] = original
             else:
                 values["event_at"] = (
