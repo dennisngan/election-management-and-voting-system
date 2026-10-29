@@ -84,8 +84,9 @@ ColumnLayout {
     }
     function kindLabel(value) { return t("outage_" + value) }
     function workflowLabel(value) { return t("outage_" + value) }
-    function actionLabel(value) {
-        if (value === "submit") return t("outage_submit")
+    function actionLabel(workflow, value) {
+        if (value === "submit")
+            return t(workflow === "turnout" ? "outage_submit_turnout" : "outage_submit")
         if (value === "save") return t("outage_save_turnout")
         if (value === "create") return t("outage_create_allocation")
         if (value === "amend") return t("outage_amend_allocation")
@@ -107,7 +108,7 @@ ColumnLayout {
             : paperForm.workflow === "allocation" ? ["create", "amend"]
             : ["submit"]
         actionOptions = actions.map(function(value) {
-            return {value: value, label: page.actionLabel(value)}
+            return {value: value, label: page.actionLabel(page.paperForm.workflow, value)}
         })
     }
     function requestSelect(id) {
@@ -670,7 +671,7 @@ ColumnLayout {
                         text: page.t("outage_paper_reference") + " · " + parent.modelData.paper_reference
                             + " · " + page.t("outage_" + parent.modelData.status)
                             + " · " + page.workflowLabel(parent.modelData.workflow) + " / "
-                            + page.actionLabel(parent.modelData.action) + " · "
+                            + page.actionLabel(parent.modelData.workflow, parent.modelData.action) + " · "
                             + page.t("outage_paper_revision") + " " + parent.modelData.revision
                         highlighted: page.editorState.selected_paper_id === parent.modelData.id
                         enabled: !page.working
