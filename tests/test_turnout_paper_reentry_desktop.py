@@ -719,3 +719,212 @@ def test_material_turnout_paper_server_entry_caption_preserves_separate_times(
         assert stored["entered_at"] == paper["entered_at"]
         assert stored["status"] == "pending"
         assert stored["reentry"] is None
+
+
+@pytest.mark.parametrize(
+    (
+        "locale",
+        "count_submit",
+        "turnout_save",
+        "turnout_submit",
+        "allocation_create",
+        "allocation_amend",
+    ),
+    [
+        (
+            "tc",
+            "提交點票",
+            "儲存投票率",
+            "提交投票率",
+            "新增派發",
+            "修正派發",
+        ),
+        (
+            "sc",
+            "提交点票",
+            "保存投票率",
+            "提交投票率",
+            "新增派发",
+            "修正派发",
+        ),
+        (
+            "en",
+            "Submit count",
+            "Save turnout",
+            "Submit turnout",
+            "Create allocation",
+            "Amend allocation",
+        ),
+    ],
+)
+def test_material_outage_turnout_submit_caption_and_native_paper_registration(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    locale: str,
+    count_submit: str,
+    turnout_save: str,
+    turnout_submit: str,
+    allocation_create: str,
+    allocation_amend: str,
+) -> None:
+    scope = turnout_scope(admin)
+    station_id = scope["stations"][0]["id"]
+    clock = TurnoutClock()
+    https_server.clock.value = clock.value
+    with turnout_staff(admin, database_url, clock, [station_id]) as (officer, account):
+        outage = _outage(
+            officer,
+            station_id,
+            reference="Action-caption outage " + uuid4().hex[:8],
+            ended_at="2026-11-15T10:00:00+08:00",
+        )
+        save_paper = _paper(
+            officer,
+            station_id,
+            outage["id"],
+            reference="CAPTION-SAVE-" + uuid4().hex[:8],
+            action="save",
+            period_index=1,
+            event_at="2026-11-15T09:30:00+08:00",
+        )
+        submit_reference = "CAPTION-SUBMIT-" + uuid4().hex[:8]
+        monkeypatch.setenv(
+            "ELECTION_CLIENT_STATE_DIR", str(tmp_path / "submit-caption-client-state")
+        )
+        run_workspace_qml(
+            {
+                "server": https_server.url,
+                "username": account["username"],
+                "password": READY_PASSWORD,
+                "station_id": station_id,
+                "locale": locale,
+                "outage_id": outage["id"],
+                "save_paper_id": save_paper["id"],
+                "submit_reference": submit_reference,
+                "count_submit": count_submit,
+                "turnout_save": turnout_save,
+                "turnout_submit": turnout_submit,
+                "allocation_create": allocation_create,
+                "allocation_amend": allocation_amend,
+            },
+            """
+            # Named Choice/TextEntry objects are layouts around actual input controls.
+            # Resolve only these known wrappers; retain the real shared helpers.
+            original_control = control
+            input_types = {
+                'outagePaperWorkflow': 'QQuickComboBox',
+                'outagePaperAction': 'QQuickComboBox',
+                'outagePaperReference': 'QQuickTextInput',
+                'outagePaperOriginalTime': 'QQuickTextInput',
+                'outagePaperPeriodIndex': 'QQuickTextInput',
+            }
+
+            def control(name):
+                owner = original_control(name)
+                expected_type = input_types.get(name)
+                if expected_type is None:
+                    return owner
+                pending = [owner]
+                matches = []
+                while pending:
+                    item = pending.pop()
+                    if item.inherits(expected_type):
+                        matches.append(item)
+                    pending.extend(item.childItems())
+                assert len(matches) == 1, ('Unique actual input required', name, len(matches))
+                return matches[0]
+
+            def assert_closed_action(expected):
+                item = control('outagePaperAction')
+                popup_visible = QQmlProperty(item, 'popup.visible')
+                assert popup_visible.isValid()
+                assert popup_visible.read() is False, 'Action picker must be closed'
+                assert item.property('currentText') == expected, (
+                    'Closed action caption', item.property('currentText'), expected)
+
+            click('outagesNavigation')
+            outages = controller.property('outages')
+            wait(lambda: not outages.property('state')['busy']
+                and any(row['id'] == setup['outage_id']
+                    for row in outages.property('state')['items']))
+            click('outageOption_' + str(setup['outage_id']))
+            wait(lambda: not outages.property('state')['busy']
+                and outages.property('state')['selected'].get('id') == setup['outage_id']
+                and any(row['id'] == setup['save_paper_id']
+                    for row in outages.property('state')['selected'].get('paper_records', [])))
+            click('outagePaperNew')
+            wait(lambda: outages.property('state')['paper_editable'])
+            frame()
+
+            # Count remains Count. A turnout selection must not reuse its Submit noun.
+            assert control('outagePaperWorkflow').property('currentIndex') == 0
+            assert_closed_action(setup['count_submit'])
+            choose('outagePaperWorkflow', 1)
+            assert_closed_action(setup['turnout_save'])
+            choose('outagePaperAction', 1)
+            assert_closed_action(setup['turnout_submit'])
+
+            # Existing allocation captions also retain their independent meanings.
+            choose('outagePaperWorkflow', 2)
+            assert_closed_action(setup['allocation_create'])
+            choose('outagePaperAction', 1)
+            assert_closed_action(setup['allocation_amend'])
+            choose('outagePaperWorkflow', 0)
+            assert_closed_action(setup['count_submit'])
+            choose('outagePaperWorkflow', 1)
+            assert_closed_action(setup['turnout_save'])
+            choose('outagePaperAction', 1)
+            assert_closed_action(setup['turnout_submit'])
+
+            # Register only this Submit reference, through real visible QML inputs.
+            enter('outagePaperReference', setup['submit_reference'])
+            enter('outagePaperOriginalTime', '2026-11-15 09:30')
+            enter('outagePaperPeriodIndex', '1')
+            click('outagePaperSave')
+            wait(lambda: not outages.property('state')['busy']
+                and any(row['paper_reference'] == setup['submit_reference']
+                    for row in outages.property('state')['selected'].get('paper_records', [])))
+            submitted_paper = next(row
+                for row in outages.property('state')['selected']['paper_records']
+                if row['paper_reference'] == setup['submit_reference'])
+            submit_card_name = 'outagePaperOption_' + str(submitted_paper['id'])
+            submit_card = focus(submit_card_name)
+            frame()
+            submit_text = submit_card.property('text')
+            assert setup['submit_reference'] in submit_text
+            assert setup['turnout_submit'] in submit_text, submit_text
+            assert setup['count_submit'] not in submit_text, submit_text
+
+            # The other actionLabel call site must keep the existing Save card correct.
+            save_card = focus('outagePaperOption_' + str(setup['save_paper_id']))
+            frame()
+            assert setup['turnout_save'] in save_card.property('text')
+            """,
+        )
+        paper_path = (
+            f"/api/workspace/stations/{station_id}/outages/{outage['id']}/paper-records"
+        )
+        assert https_server.request_count("POST", paper_path) == 1
+        assert https_server.request_count("PUT", scope["path"] + "/1") == 0
+        assert https_server.request_count("POST", scope["path"] + "/1/submit") == 0
+        response = officer.get(f"/api/workspace/stations/{station_id}/outages/{outage['id']}")
+        assert response.status_code == 200, response.text
+        papers = {
+            row["paper_reference"]: row for row in response.json()["record"]["paper_records"]
+        }
+        saved = papers[submit_reference]
+        assert saved["workflow"] == "turnout"
+        assert saved["action"] == "submit"
+        assert saved["target"] == {"period_index": 1}
+        assert saved["original_event_at"] == "2026-11-15T01:30:00Z"
+        assert saved["entered_at"] == "2026-11-15T04:00:00Z"
+        assert saved["actor_id"] == account["id"]
+        assert saved["status"] == "pending"
+        assert saved["reentry"] is None
+        assert papers[save_paper["paper_reference"]] == save_paper
+        missing = officer.get(scope["path"] + "/1")
+        assert missing.status_code == 404, missing.text
+        assert missing.json()["detail"]["code"] == "turnout_record_not_found"
