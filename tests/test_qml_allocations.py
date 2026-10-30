@@ -1,13 +1,27 @@
 """The actual Material allocation controls save through real TLS and MySQL."""
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
 from tests.desktop_support import HttpsServer
+from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.qml_workspace_support import run_workspace_qml
 from tests.stock_support import READY_PASSWORD, ready_client, staff_account
 from tests.test_allocation_api import allocation_payload
 from tests.test_allocation_api import allocation_setup as allocation_setup
+
+
+@pytest.fixture(scope="module")
+def database_url() -> Iterator[str]:
+    yield from lifecycle_database_url()
+
+
+@pytest.fixture(autouse=True)
+def isolated_lifecycle_state(database_url: str) -> Iterator[None]:
+    with lifecycle_test_state(database_url):
+        yield
 
 
 @pytest.mark.parametrize("locale", ["tc", "sc", "en"])

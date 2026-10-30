@@ -1,12 +1,15 @@
 """Trace allocation station context and its initial public HTTPS read."""
 
 import json
+from collections.abc import Iterator
 
+import pytest
 from PySide6.QtCore import QCoreApplication, QEvent
 
 from election.desktop.controller import DesktopController
 from tests.allocation_desktop_support import setup_idle
 from tests.desktop_support import TLS_DIRECTORY, HttpsServer, state_of, wait_for
+from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.stock_support import READY_PASSWORD
 from tests.test_allocation_api import (
     allocation_payload,
@@ -14,6 +17,17 @@ from tests.test_allocation_api import (
 from tests.test_allocation_api import (
     allocation_setup as allocation_setup,
 )
+
+
+@pytest.fixture(scope="module")
+def database_url() -> Iterator[str]:
+    yield from lifecycle_database_url()
+
+
+@pytest.fixture(autouse=True)
+def isolated_lifecycle_state(database_url: str) -> Iterator[None]:
+    with lifecycle_test_state(database_url):
+        yield
 
 
 def test_allocation_initial_read_uses_selected_station_context(

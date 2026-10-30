@@ -18,6 +18,10 @@ from tests.test_client_recovery_contract_desktop import RecoveryFaultServer
 from tests.test_client_recovery_contract_desktop import (
     recovery_fault_server as recovery_fault_server,
 )
+from tests.test_counting_workflow_retry_desktop import LostSelectionResponse
+from tests.test_counting_workflow_retry_desktop import (
+    lost_selection_response as lost_selection_response,
+)
 
 
 @pytest.fixture(scope="session")
@@ -377,12 +381,15 @@ def test_supervisor_cannot_select_polling_allocation_paper(
 
 def test_lost_allocation_response_keeps_paper_binding_until_recovery_confirms_commit(
     allocation_paper_setup: dict,
-    https_server: HttpsServer,
+    lost_selection_response: LostSelectionResponse,
 ) -> None:
     setup = allocation_paper_setup
     paper_id = setup["paper"]["id"]
     counter_index = _counter_index_script("editor", setup["counter"]["id"])
-    https_server.truncate_next_allocation_write = True
+    endpoint = lost_selection_response
+    endpoint.clock.value = setup["clock"].value
+    endpoint.drop_path = setup["base"] + "/allocations"
+    endpoint.drop_status = 201
     scenario = """
         click('allocationNavigation')
         editor = controller.property('allocations')
@@ -431,7 +438,7 @@ def test_lost_allocation_response_keeps_paper_binding_until_recovery_confirms_co
     )
     run_workspace_qml(
         {
-            "server": https_server.url,
+            "server": endpoint.url,
             "username": setup["account"]["username"],
             "password": READY_PASSWORD,
             "station_id": setup["station"]["id"],
@@ -439,6 +446,9 @@ def test_lost_allocation_response_keeps_paper_binding_until_recovery_confirms_co
         scenario,
     )
 
+    assert endpoint.response_tagged.is_set()
+    assert endpoint.response_dropped.is_set()
+    assert endpoint.request_count("POST", setup["base"] + "/allocations") == 1
     current = setup["polling"].get(setup["base"] + "/allocations")
     assert current.status_code == 200, current.text
     items = current.json()["items"]

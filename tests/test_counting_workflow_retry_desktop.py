@@ -33,6 +33,7 @@ from tests.test_physical_acceptance_recovery_desktop import assert_public_busine
 @dataclass
 class LostSelectionResponse(HttpsServer):
     drop_path: str = ""
+    drop_status: int = 200
     drop_peer: tuple[str, int] | None = None
     response_tagged: threading.Event = field(default_factory=threading.Event)
     response_dropped: threading.Event = field(default_factory=threading.Event)
@@ -134,7 +135,12 @@ class TransparentTlsProxy:
         def copy(source: socket.socket, destination: socket.socket, *, from_backend: bool) -> None:
             try:
                 while not closed.is_set():
-                    data = source.recv(65536)
+                    try:
+                        data = source.recv(65536)
+                    except TimeoutError:
+                        # The client owns the HTTP deadline. An idle backend may
+                        # still be preparing its real response between polls.
+                        continue
                     if not data:
                         close_pair()
                         return
@@ -204,7 +210,7 @@ def lost_selection_response(
         if (
             request.method == "POST"
             and request.url.path == endpoint.drop_path
-            and response.status_code == 200
+            and response.status_code == endpoint.drop_status
             and peer is not None
         ):
             with endpoint.lock:
