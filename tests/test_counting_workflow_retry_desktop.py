@@ -27,6 +27,7 @@ from tests.tally_support import complete_f1_command, tally_setup
 from tests.test_counting_rounds_desktop import database_url as database_url
 from tests.test_counting_rounds_desktop import f1_editor
 from tests.test_counting_rounds_desktop import private_active_pointer as private_active_pointer
+from tests.test_physical_acceptance_recovery_desktop import assert_public_business_fields
 
 
 @dataclass
@@ -246,7 +247,7 @@ def lost_selection_response(
         backend_listener.close()
 
 
-def test_uncertain_selection_retains_command_after_wrong_password_retry(
+def test_uncertain_selection_checks_original_outcome_before_any_password_retry(
     admin: TestClient,
     database_url: str,
     lost_selection_response: LostSelectionResponse,
@@ -293,7 +294,7 @@ def test_uncertain_selection_retains_command_after_wrong_password_retry(
             setup["accounts"]["supervisor"],
             setup["stations"]["N1"]["id"],
             setup["scope"]["id"],
-        ) as (_, editor):
+        ) as (client, editor):
             endpoint.drop_path = target + "/select"
             editor.selectApproved(READY_PASSWORD)
             wait_for_editor_idle(qt_app, editor)
@@ -312,9 +313,53 @@ def test_uncertain_selection_retains_command_after_wrong_password_retry(
             assert selected["selection"]["revision"] == 1
             assert editor.property("state")["uncertain_save"] is True
 
+            recovery = client.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            commands = recovery.property("state")["commands"]
+            assert len(commands) == 1
+            command = commands[0]
+            request_id, original_payload = command["request_id"], dict(command["payload"])
+            assert command["workflow"] == "count" and command["path"] == target + "/select"
+            assert command["status"] == "uncertain"
+            assert command["confirmation_required"] is True and "password" not in original_payload
+
             editor.selectApproved("Incorrect-Password-42!")
             wait_for_editor_idle(qt_app, editor)
-            denied = editor.property("state")
-            assert denied["error"] == "invalid_credentials"
-            assert endpoint.request_count("POST", target + "/select") == 2
-            assert denied["uncertain_save"] is True
+            blocked = editor.property("state")
+            assert blocked["error"] == "recovery_outcome_check_required"
+            assert endpoint.request_count("POST", target + "/select") == 1
+            assert blocked["uncertain_save"] is True
+            recovery.reload()
+            wait_for_editor_idle(qt_app, recovery)
+            retained = recovery.property("state")["commands"][0]
+            assert retained["request_id"] == request_id and retained["payload"] == original_payload
+            assert retained["status"] == "uncertain"
+
+            recovery.checkOutcome(request_id)
+            wait_for_editor_idle(qt_app, recovery)
+            wait_for_editor_idle(qt_app, editor)
+            committed = recovery.property("state")["commands"][0]
+            assert (
+                committed["request_id"] == request_id
+                and committed["payload"] == original_payload
+            )
+            assert committed["status"] == "committed" and committed["error"] == ""
+            station_id = setup["stations"]["N1"]["id"]
+            outcome = supervisor.get(
+                f"/api/workspace/stations/{station_id}/request-outcomes/{request_id}?workflow=count"
+            )
+            assert outcome.status_code == 200, outcome.text
+            assert outcome.json()["status"] == "committed"
+            record = committed["receipt"]["record"]
+            assert_public_business_fields(record, outcome.json()["record"])
+            assert record["selection"]["revision"] == 1
+            assert record["actual_counted_quantity"] == 5
+            assert record["actual_counted_quantity_display"] == "5"
+            assert record["questionable_quantity"] == 0
+            assert record["questionable_quantity_display"] == "0"
+            recovered = editor.property("state")
+            assert recovered["uncertain_save"] is False
+            assert recovered["selected"]["selection"]["revision"] == 1
+            assert endpoint.request_count("POST", target + "/select") == 1
+            assert len(supervisor.get(path).json()["selection_history"]) == 1

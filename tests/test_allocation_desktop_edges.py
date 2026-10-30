@@ -16,6 +16,7 @@ from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.stock_support import ready_client, staff_account, stock_payload
 from tests.test_allocation_api import allocation_payload
 from tests.test_allocation_api import allocation_setup as allocation_setup
+from tests.test_physical_acceptance_recovery_desktop import assert_public_business_fields
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +45,7 @@ def fill_allocation(editor: Any, setup: dict, **changes: str) -> dict:
 
 
 @pytest.mark.parametrize("amended_elsewhere", [False, True])
-def test_uncertain_create_retries_only_on_request_and_recovers_the_original_saved_revision(
+def test_uncertain_create_checks_original_outcome_before_loading_its_saved_revision(
     allocation_setup: dict, https_server: HttpsServer, qt_app: QCoreApplication,
     amended_elsewhere: bool,
 ) -> None:
@@ -52,7 +53,7 @@ def test_uncertain_create_retries_only_on_request_and_recovers_the_original_save
     path = setup["base"] + "/allocations"
     with allocation_editor(
         https_server, qt_app, setup["account"], setup["station"]["id"]
-    ) as (_, editor):
+    ) as (client, editor):
         fields = fill_allocation(editor, setup)
         https_server.truncate_next_allocation_write = True
         editor.save()
@@ -64,6 +65,15 @@ def test_uncertain_create_retries_only_on_request_and_recovers_the_original_save
         saved = setup["officer"].get(path).json()["items"]
         assert len(saved) == 1
         original = saved[0]
+        recovery = client.property("recovery")
+        recovery.open()
+        wait_for(qt_app, lambda: setup_idle(recovery))
+        commands = recovery.property("state")["commands"]
+        assert len(commands) == 1
+        command = commands[0]
+        request_id, original_payload = command["request_id"], dict(command["payload"])
+        assert command["workflow"] == "allocation" and command["path"] == path
+        assert command["status"] == "uncertain"
         QTest.qWait(100)
         assert https_server.request_count("POST", path) == 1
         if amended_elsewhere:
@@ -77,12 +87,47 @@ def test_uncertain_create_retries_only_on_request_and_recovers_the_original_save
             assert changed.status_code == 200
         editor.save()
         wait_for(qt_app, lambda: setup_idle(editor))
+        blocked = editor.property("state")
+        assert blocked["error"] == "recovery_outcome_check_required"
+        assert blocked["selected"] == {} and blocked["forms"] == fields
+        assert blocked["dirty"] is True
+        assert https_server.request_count("POST", path) == 1
+        recovery.reload()
+        wait_for(qt_app, lambda: setup_idle(recovery))
+        retained = recovery.property("state")["commands"][0]
+        assert retained["request_id"] == request_id and retained["payload"] == original_payload
+        assert retained["status"] == "uncertain"
+
+        recovery.checkOutcome(request_id)
+        wait_for(qt_app, lambda: setup_idle(recovery))
+        committed = recovery.property("state")["commands"][0]
+        assert committed["request_id"] == request_id and committed["payload"] == original_payload
+        assert committed["status"] == "committed" and committed["error"] == ""
+        record = committed["receipt"]["record"]
+        assert_public_business_fields(record, original)
+        assert record["revision"] == 1 and record["serial_to"] == "000003"
+        assert record["quantity"] == 3 and record["quantity_display"] == "3"
+        assert https_server.request_count("POST", path) == 1
+        checked = editor.property("state")
+        assert checked["selected"] == {} and checked["forms"] == fields
+        assert checked["dirty"] is True
+
+        assert editor.loadAllocation(original["id"], True)
+        wait_for(qt_app, lambda: setup_idle(editor))
+        assert editor.property("state")["selected"]["revision"] == (
+            2 if amended_elsewhere else 1
+        )
+        if amended_elsewhere:
+            assert editor.loadRevision(1, False)
+            wait_for(qt_app, lambda: setup_idle(editor))
+        editor.refresh()
+        wait_for(qt_app, lambda: setup_idle(editor))
         recovered = editor.property("state")
         assert recovered["error"] == "" and recovered["dirty"] is False
         assert recovered["selected"]["id"] == original["id"]
         assert recovered["selected"]["revision"] == 1
         assert recovered["selected"]["serial_to"] == "000003"
-        assert https_server.request_count("POST", path) == 2
+        assert https_server.request_count("POST", path) == 1
         current = setup["officer"].get(path).json()
         assert len(current["items"]) == 1
         if amended_elsewhere:

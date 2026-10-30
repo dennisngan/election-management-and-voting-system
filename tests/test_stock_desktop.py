@@ -1,6 +1,7 @@
 """Received stock is edited and exported through real TLS/MySQL desktop controls."""
 
 import csv
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from PySide6.QtCore import QCoreApplication, QEvent
 from election.desktop.controller import DesktopController
 from tests.configuration_desktop_support import setup_idle
 from tests.desktop_support import TLS_DIRECTORY, HttpsServer, state_of, wait_for
+from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.stock_desktop_support import fill_ordinary_receipt, stock_editor
 from tests.stock_support import (
     READY_PASSWORD,
@@ -19,6 +21,18 @@ from tests.stock_support import (
     stock_payload,
     stock_stations,
 )
+
+
+@pytest.fixture(scope="module")
+def database_url() -> Iterator[str]:
+    yield from lifecycle_database_url()
+
+
+@pytest.fixture(autouse=True)
+def isolated_lifecycle_state(database_url: str) -> Iterator[None]:
+    # These draft/assignment checks must not inherit another test's active election.
+    with lifecycle_test_state(database_url):
+        yield
 
 
 def test_officer_records_corrects_previews_and_exports_a_received_stock_revision(

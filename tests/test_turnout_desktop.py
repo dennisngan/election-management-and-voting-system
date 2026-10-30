@@ -706,7 +706,10 @@ def test_turnout_uncertain_save_retry_keeps_one_revision_and_preserves_dirty_ref
         )
         assert command["status"] == "committed"
         assert command["payload"] == original_payload
-        assert command["receipt"]["record"] == persisted[0]
+        assert command["receipt"]["record"] == {
+            **persisted[0],
+            "supplied_hourly_display": "10",
+        }
         assert server.request_count("PUT", path + "/1") == 1
         assert editor.reload(True)
         wait_for(qt_app, lambda: setup_idle(editor))
