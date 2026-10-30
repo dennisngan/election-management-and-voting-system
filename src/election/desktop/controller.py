@@ -402,7 +402,9 @@ class DesktopController(QObject):
     def _lifecycle_changed(self) -> None:
         if self._state["phase"] == "workspace":
             election = self._lifecycle.property("state").get("active_election")
-            if isinstance(election, dict) and election != self._last_lifecycle_active:
+            if (
+                election is None or isinstance(election, dict)
+            ) and election != self._last_lifecycle_active:
                 self._last_lifecycle_active = election
                 self._active_generation += 1
                 self._apply_active_election(election)
