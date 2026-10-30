@@ -66,6 +66,13 @@ def command_workflow(path: str, namespace_station_id: int = 0) -> tuple[int, str
     return None
 
 
+def election_command_workflow(path: str) -> tuple[int, str] | None:
+    matched = re.fullmatch(
+        r"/api/workspace/elections/([1-9][0-9]*)/(?:finalizations|reopenings)", path,
+    )
+    return (int(matched[1]), "election_completion") if matched is not None else None
+
+
 def _origin(server_url: str) -> str:
     parsed = urlsplit(server_url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
@@ -74,6 +81,9 @@ def _origin(server_url: str) -> str:
 
 
 def _target(path: str) -> str:
+    election = election_command_workflow(path)
+    if election is not None:
+        return f"/api/workspace/elections/{election[0]}"
     # Completion/approval and F1/F2 writes address the same count identity.
     matched = re.match(r"(.*/rounds/[1-9][0-9]*)(?:/|$)", path)
     if matched:
@@ -159,6 +169,8 @@ class CommandJournal:
         safe_payload = _safe(payload)
         rows = self.commands(origin, actor_id, station_id)
         previous = next((row for row in rows if row["request_id"] == request_id), None)
+        if previous is None and self._path(origin, actor_id, request_id).exists():
+            raise JournalError("recovery_command_conflict")
         if previous and previous["status"] != "rejected":
             if (previous["path"], previous["method"], previous["payload"]) != (
                 path,
@@ -195,6 +207,78 @@ class CommandJournal:
             "status": "pending",
             "receipt": None,
             "error": "",
+        }
+        self._write(self._path(origin, actor_id, request_id), row)
+        return deepcopy(row)
+
+    def election_commands(
+        self, server_url: str, actor_id: int, election_id: int,
+    ) -> list[dict[str, Any]]:
+        if not self._directory(create=False):
+            return []
+        origin = _origin(server_url)
+        rows = []
+        for path in self.directory.glob("*.json"):
+            if not private_file(path):
+                raise JournalError("recovery_journal_unavailable")
+            row = json.loads(path.read_text(encoding="utf-8"))
+            if (
+                row.get("server_url"), row.get("actor_id"), row.get("namespace"),
+                row.get("election_id"),
+            ) != (origin, actor_id, "election", election_id):
+                continue
+            if (
+                type(election_id) is not int or election_id <= 0 or "station_id" in row
+                or path != self._path(origin, actor_id, row["request_id"])
+                or election_command_workflow(row["path"]) != (election_id, row["workflow"])
+                or row["method"] != "POST"
+                or row["payload"].get("request_id") != row["request_id"]
+                or row["status"] not in {"pending", "uncertain", "committed", "rejected"}
+            ):
+                raise JournalError("recovery_journal_unavailable")
+            row["target"] = _target(row["path"])
+            rows.append(_safe(row))
+        return sorted(rows, key=lambda row: row["created_at"], reverse=True)
+
+    def prepare_election(
+        self, server_url: str, actor_id: int, election_id: int,
+        path: str, method: str, payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        if (
+            type(election_id) is not int or election_id <= 0 or method != "POST"
+            or election_command_workflow(path) != (election_id, "election_completion")
+        ):
+            raise JournalError("recovery_command_invalid")
+        origin, request_id = _origin(server_url), str(UUID(payload["request_id"]))
+        safe_payload = _safe(payload)
+        rows = self.election_commands(origin, actor_id, election_id)
+        previous = next((row for row in rows if row["request_id"] == request_id), None)
+        if previous is None and self._path(origin, actor_id, request_id).exists():
+            raise JournalError("recovery_command_conflict")
+        if previous and previous["status"] != "rejected":
+            if (previous["path"], previous["method"], previous["payload"]) != (
+                path, method, safe_payload,
+            ):
+                raise JournalError("recovery_command_conflict")
+            if previous["status"] in UNRESOLVED:
+                if previous.get("error") != "request_not_found":
+                    raise JournalError("recovery_outcome_check_required")
+                previous.update(status="uncertain", error="")
+                self._write(self._path(origin, actor_id, request_id), previous)
+                return {**deepcopy(previous), "retry_after_not_found": True}
+            return previous
+        if any(
+            row["request_id"] != request_id and row["status"] in UNRESOLVED
+            and row["target"] == _target(path) for row in rows
+        ):
+            raise JournalError("recovery_pending_command")
+        row = {
+            "request_id": request_id, "server_url": origin, "actor_id": actor_id,
+            "namespace": "election", "election_id": election_id,
+            "workflow": "election_completion", "path": path, "method": method,
+            "payload": safe_payload, "confirmation_required": "password" in payload,
+            "target": _target(path), "created_at": datetime.now(UTC).isoformat(),
+            "status": "pending", "receipt": None, "error": "",
         }
         self._write(self._path(origin, actor_id, request_id), row)
         return deepcopy(row)

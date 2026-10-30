@@ -27,7 +27,12 @@ from PySide6.QtNetwork import (
 from election.desktop.accounting import AccountingController
 from election.desktop.allocations import AllocationController
 from election.desktop.boxes import BoxesController
-from election.desktop.client_command_journal import CommandJournal, JournalError, command_workflow
+from election.desktop.client_command_journal import (
+    CommandJournal,
+    JournalError,
+    command_workflow,
+    election_command_workflow,
+)
 from election.desktop.complaint_categories import ComplaintCategoriesController
 from election.desktop.complaint_periods import ComplaintPeriodsController
 from election.desktop.complaints import ComplaintCasesController
@@ -100,6 +105,7 @@ class DesktopController(QObject):
         self._configuration = ConfigurationController(self._authorized_request, self)
         self._server_backups = ServerBackupsController(self._authorized_request, self)
         self._election_completion = ElectionCompletionController(self._authorized_request, self)
+        self._election_completion.finalized.connect(self._completion_finalized)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
         self._staff = StaffController(self._authorized_request, self)
@@ -152,6 +158,8 @@ class DesktopController(QObject):
                 or self._outages.property("state")["busy"]
                 or self._accounting.property("state")["dirty"]
                 or self._accounting.property("state")["busy"]
+                or self._election_completion.property("state")["busy"]
+                or self._election_completion.property("state")["uncertain_save"]
                 or self._polling.property("state")["dirty"]
                 or self._polling.property("state")["busy"]
                 or self._stock.property("state")["dirty"]
@@ -189,6 +197,8 @@ class DesktopController(QObject):
             unresolved_guard=lambda: bool(
                 self._context_writes
                 or self._recovery.recount_context_locked()
+                or self._recovery.election_context_locked()
+                or self._election_completion.property("state")["uncertain_save"]
                 or self._counting_rounds.recount_context_locked()
                 or self._constituency_results.recount_context_locked()
                 or self._allocations.property("state").get("paper_uncertain", False)
@@ -199,6 +209,7 @@ class DesktopController(QObject):
                 or self._constituency_results.property("state").get("uncertain_save", False)
             ),
         )
+        self._election_completion.stateChanged.connect(self._workspace.stateChanged.emit)
         self._accounting.stateChanged.connect(self._workspace.stateChanged.emit)
         self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
         self._stock.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -353,13 +364,6 @@ class DesktopController(QObject):
 
     def _workspace_changed(self) -> None:
         context = self._workspace.property("state")["selected"]
-        self._recovery.set_context(
-            context.get("station", {}).get("id", 0),
-            self._state["account"].get("role", ""),
-            self._state["server_url"],
-            self._state["account"].get("id", 0),
-            (context.get("constituency") or {}).get("id", 0),
-        )
         self._outages.set_context(context)
         self._accounting.set_context(context)
         self._polling.set_context(context)
@@ -377,7 +381,9 @@ class DesktopController(QObject):
         self._turnout.set_context(context)
         self._complaints.set_context(context)
         self._complaint_periods.set_context(context)
-        self._state["election"] = context.get("election") or self._state["active_election"]
+        election = context.get("election") or self._state["active_election"]
+        if election is not None or (self._state["election"] or {}).get("status") != "finalized":
+            self._state["election"] = election
         self._state["constituency"] = context.get("constituency")
         self._state["station"] = context.get("station")
         self._state["capabilities"] = context.get("capabilities", {})
@@ -386,18 +392,32 @@ class DesktopController(QObject):
 
     def _apply_active_election(self, election: dict[str, Any] | None) -> None:
         self._state["active_election"] = election
-        if not self._workspace.property("state")["selected"]:
+        if not self._workspace.property("state")["selected"] and (
+            election is not None or (self._state["election"] or {}).get("status") != "finalized"
+        ):
             self._state["election"] = election
         self._configuration.sync_active_election(election)
         self._sync_completion_context()
         self.stateChanged.emit()
 
     def _sync_completion_context(self) -> None:
+        election = self._state["election"] or self._state["active_election"]
         self._election_completion.set_context(
-            self._state["account"],
-            self._state["election"] or self._state["active_election"],
-            self._state["server_url"],
+            self._state["account"], election, self._state["server_url"],
         )
+        self._recovery.set_context(
+            (self._state["station"] or {}).get("id", 0),
+            self._state["account"].get("role", ""), self._state["server_url"],
+            self._state["account"].get("id", 0),
+            (self._state["constituency"] or {}).get("id", 0),
+            (election or {}).get("id", 0),
+        )
+
+    def _completion_finalized(self, receipt: dict[str, Any]) -> None:
+        self._active_generation += 1
+        self._state["election"] = dict(receipt["election"])
+        self._apply_active_election(None)
+        self._workspace.refresh()
 
     def _lifecycle_changed(self) -> None:
         if self._state["phase"] == "workspace":
@@ -449,14 +469,22 @@ class DesktopController(QObject):
         failure: Callable[[str], None],
     ) -> None:
         command = None
-        workflow = command_workflow(path, (self._state.get("station") or {}).get("id", 0))
+        election_workflow = election_command_workflow(path)
+        workflow = election_workflow or command_workflow(
+            path, (self._state.get("station") or {}).get("id", 0),
+        )
         account_id = self._state["account"].get("id", 0)
         origin = self._state["server_url"]
         if workflow and payload and method in ("POST", "PUT", "PATCH") and "request_id" in payload:
             try:
-                command = self._command_journal.prepare(
-                    origin, account_id, workflow[0], workflow[1], path, method, payload
-                )
+                if election_workflow is not None:
+                    command = self._command_journal.prepare_election(
+                        origin, account_id, election_workflow[0], path, method, payload,
+                    )
+                else:
+                    command = self._command_journal.prepare(
+                        origin, account_id, workflow[0], workflow[1], path, method, payload,
+                    )
             except (OSError, ValueError, KeyError, TypeError, JournalError) as error:
                 failure(
                     str(error)

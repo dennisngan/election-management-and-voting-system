@@ -1,15 +1,20 @@
-"""Read-only completion assessment for the selected real election."""
+"""Reviewed election completion and durable original command acknowledgements."""
 
 from copy import deepcopy
 from typing import Any
+from uuid import uuid4
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest
+from election.desktop.exact_numbers import qt_state, quantity_display
+from election.desktop.operational_receipts import valid_operational_receipt
+from election.desktop.recovery import NETWORK_ERRORS
 
 
 class ElectionCompletionController(QObject):
     stateChanged = Signal()
+    finalized = Signal(object)
 
     def __init__(self, request: AuthorizedRequest, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -22,15 +27,17 @@ class ElectionCompletionController(QObject):
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return deepcopy(self._state)
+        return qt_state(quantity_display(self._state))
 
     def reset(self) -> None:
         self._generation += 1
         self._opened = False
         self._scope = None
+        self._command: dict[str, Any] | None = None
         self._state = {
             "election_id": None, "actor_id": None, "role": "", "election": {},
             "assessment": {}, "busy": False, "refreshing": False, "error": "",
+            "receipt": {}, "pending_request_id": "", "uncertain_save": False,
         }
         self.stateChanged.emit()
 
@@ -98,3 +105,70 @@ class ElectionCompletionController(QObject):
         self._request(
             f"/api/workspace/elections/{election_id}/completion", "GET", None, loaded, failed
         )
+
+    @Slot(str)
+    def finalize(self, password: str) -> None:
+        assessment = self._state["assessment"]
+        election_id = self._state["election_id"]
+        if (
+            self._state["role"] != "supervisor" or self._state["busy"]
+            or self._state["refreshing"] or self._state["uncertain_save"]
+            or assessment.get("can_finalize") is not True
+            or type(election_id) is not int or election_id <= 0
+            or (assessment.get("election") or {}).get("id") != election_id
+        ):
+            self._state["error"] = "election_completion_not_ready"
+            self.stateChanged.emit()
+            return
+        if not password:
+            self._state["error"] = "invalid_credentials"
+            self.stateChanged.emit()
+            return
+        payload = {
+            "request_id": str(uuid4()),
+            "expected_election_revision": assessment["election"]["revision"],
+            "basis_digest": assessment["basis_digest"],
+        }
+        path = f"/api/workspace/elections/{election_id}/finalizations"
+        command = {
+            "namespace": "election", "election_id": election_id,
+            "workflow": "election_completion", "method": "POST", "path": path,
+            "actor_id": self._state["actor_id"], "request_id": payload["request_id"],
+            "payload": deepcopy(payload),
+        }
+        self._command = command
+        self._generation += 1
+        generation = self._generation
+        self._state.update(busy=True, error="", pending_request_id=payload["request_id"])
+        self.stateChanged.emit()
+
+        def saved(body: dict[str, Any]) -> None:
+            if generation != self._generation:
+                return
+            if not valid_operational_receipt(command, body):
+                self._state.update(busy=False, uncertain_save=True, error="invalid_response")
+                self.stateChanged.emit()
+                return
+            self._command = None
+            self._state.update(
+                busy=False, receipt=deepcopy(body), pending_request_id="", uncertain_save=False,
+                election=deepcopy(body["election"]), error="",
+                assessment={
+                    **self._state["assessment"], "election": deepcopy(body["election"]),
+                    "active_election_id": None, "can_finalize": False,
+                },
+            )
+            self.stateChanged.emit()
+            self.finalized.emit(body)
+
+        def failed(code: str) -> None:
+            if generation != self._generation:
+                return
+            uncertain = code in NETWORK_ERRORS - {"recovery_journal_unavailable"}
+            self._state.update(busy=False, uncertain_save=uncertain, error=code)
+            if not uncertain:
+                self._command = None
+                self._state["pending_request_id"] = ""
+            self.stateChanged.emit()
+
+        self._request(path, "POST", {**payload, "password": password}, saved, failed)

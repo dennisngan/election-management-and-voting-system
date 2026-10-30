@@ -25,6 +25,10 @@ NETWORK_ERRORS = frozenset({
 class CommandJournal(Protocol):
     def commands(self, server_url: str, actor_id: int, station_id: int) -> list[dict[str, Any]]: ...
 
+    def election_commands(
+        self, server_url: str, actor_id: int, election_id: int,
+    ) -> list[dict[str, Any]]: ...
+
     def record_outcome(
         self,
         server_url: str,
@@ -72,6 +76,7 @@ class RecoveryController(QObject):
         self._account_id = 0
         self._state = {
             "station_id": 0,
+            "election_id": 0,
             "role": "",
             "commands": [],
             "busy": False,
@@ -103,11 +108,12 @@ class RecoveryController(QObject):
 
     def set_context(
         self, station_id: int, role: str, server_url: str, account_id: int,
-        constituency_id: int = 0,
+        constituency_id: int = 0, election_id: int = 0,
     ) -> None:
         origin = self._origin(server_url)
         values = {
             "constituency_id": constituency_id if type(constituency_id) is int else 0,
+            "election_id": election_id if type(election_id) is int and election_id > 0 else 0,
             "station_id": station_id if type(station_id) is int and station_id > 0 else 0,
             "role": role if role in ROLES else "",
         }
@@ -130,7 +136,8 @@ class RecoveryController(QObject):
 
     def _context_ready(self) -> bool:
         return bool(
-            self._state["station_id"]
+            (self._state["station_id"]
+             or self._state["role"] == "supervisor" and self._state["election_id"])
             and self._account_id
             and self._state["role"] in ROLES
             and self._server_url
@@ -138,7 +145,7 @@ class RecoveryController(QObject):
 
     def _workflow_allowed(self, workflow: Any) -> bool:
         role = self._state["role"]
-        if workflow == "constituency_recount":
+        if workflow in {"constituency_recount", "election_completion"}:
             return bool(role == "supervisor")
         if workflow == "count":
             return role in ("counting_officer", "supervisor")
@@ -147,14 +154,26 @@ class RecoveryController(QObject):
         return False
 
     def _current_commands(self) -> list[dict[str, Any]]:
-        rows = self._journal.commands(self._server_url, self._account_id, self._state["station_id"])
+        station_id, election_id = self._state["station_id"], self._state["election_id"]
+        rows = (
+            self._journal.commands(self._server_url, self._account_id, station_id)
+            if station_id else []
+        )
+        if self._state["role"] == "supervisor" and election_id:
+            rows.extend(self._journal.election_commands(
+                self._server_url, self._account_id, election_id,
+            ))
         constituency_id = self._state.get("constituency_id", 0)
         return [
             deepcopy(row)
             for row in rows
             if row.get("server_url") == self._server_url
             and row.get("actor_id") == self._account_id
-            and row.get("station_id") == self._state["station_id"]
+            and (
+                row.get("namespace") == "election" and "station_id" not in row
+                and row.get("election_id") == election_id
+                or row.get("namespace") != "election" and row.get("station_id") == station_id
+            )
             and self._workflow_allowed(row.get("workflow"))
             and (row.get("workflow") != "constituency_recount" or row.get("path")
                  == f"/api/workspace/constituencies/{constituency_id}/recounts")
@@ -171,6 +190,13 @@ class RecoveryController(QObject):
                 rf"/api/workspace/stations/{station_id}/counting-scopes/[1-9][0-9]*/recounts",
                 row.get("path", ""),
             ) is not None)
+            for row in self._state["commands"]
+        )
+
+    def election_context_locked(self) -> bool:
+        return any(
+            row.get("workflow") == "election_completion"
+            and row.get("status") in {"pending", "uncertain"}
             for row in self._state["commands"]
         )
 
@@ -228,13 +254,19 @@ class RecoveryController(QObject):
         except ValueError, TypeError, AttributeError:
             self._error("recovery_command_not_found")
             return
-        path = (
-            f"/api/workspace/stations/{self._state['station_id']}"
-            f"/request-outcomes/{request_id}?workflow={command['workflow']}"
-        )
-        if command["workflow"] == "constituency_recount":
+        if command["workflow"] == "election_completion":
+            path = (
+                f"/api/workspace/elections/{command['election_id']}"
+                f"/request-outcomes/{request_id}?workflow=election_completion"
+            )
+        elif command["workflow"] == "constituency_recount":
             path = command["path"].removesuffix("/recounts") + (
                 f"/request-outcomes/{request_id}?workflow=constituency_recount"
+            )
+        else:
+            path = (
+                f"/api/workspace/stations/{self._state['station_id']}"
+                f"/request-outcomes/{request_id}?workflow={command['workflow']}"
             )
         self._send(path, "GET", None, command, request_id, retry=False)
 
@@ -261,11 +293,18 @@ class RecoveryController(QObject):
         path, method = command.get("path"), command.get("method")
         constituency_id = self._state.get("constituency_id", 0)
         payload = command.get("payload")
+        valid_path = isinstance(path, str) and (
+            path == f"/api/workspace/constituencies/{constituency_id}/recounts"
+            if command["workflow"] == "constituency_recount"
+            else path.startswith(f"/api/workspace/stations/{self._state['station_id']}/")
+        )
+        if command["workflow"] == "election_completion":
+            valid_path = path in {
+                f"/api/workspace/elections/{self._state['election_id']}/finalizations",
+                f"/api/workspace/elections/{self._state['election_id']}/reopenings",
+            } and command.get("election_id") == self._state["election_id"]
         if (
-            not isinstance(path, str)
-            or not (path == f"/api/workspace/constituencies/{constituency_id}/recounts"
-                    if command["workflow"] == "constituency_recount"
-                    else path.startswith(f"/api/workspace/stations/{self._state['station_id']}/"))
+            not isinstance(path, str) or not valid_path
             or method not in ("POST", "PUT")
             or not isinstance(payload, dict)
         ):
@@ -315,7 +354,7 @@ class RecoveryController(QObject):
                     or body.get("workflow") != command.get("workflow")
                     or body.get("status") not in ("committed", "not_found")
                     or (
-                        command.get("workflow") == "constituency_recount"
+                        command.get("workflow") in {"constituency_recount", "election_completion"}
                         and body.get("status") == "not_found"
                         and set(body) != {"request_id", "workflow", "status"}
                     )

@@ -288,8 +288,72 @@ def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
     return True
 
 
+def _election_completion_receipt(command: dict[str, Any], record: Any) -> bool:
+    target = re.fullmatch(
+        r"/api/workspace/elections/([1-9][0-9]*)/(finalizations|reopenings)", command["path"],
+    )
+    if (
+        target is None or command["method"] != "POST"
+        or command.get("namespace") != "election" or "station_id" in command
+        or command.get("election_id") != int(target[1])
+        or not isinstance(record, dict)
+        or set(record) != {"request_id", "election", "active_election_id", "event"}
+    ):
+        return False
+    payload, election, event = command["payload"], record["election"], record["event"]
+    expected = payload.get("expected_election_revision")
+    finalizing = target[2] == "finalizations"
+    if not (
+        _positive(expected) and isinstance(election, dict) and isinstance(event, dict)
+        and record["request_id"] == command["request_id"] == payload.get("request_id")
+        and election.get("id") == int(target[1])
+        and election.get("status") == ("finalized" if finalizing else "active")
+        and type(election.get("revision")) is int and election["revision"] == expected + 1
+        and isinstance(election.get("name"), str)
+        and record["active_election_id"] == (None if finalizing else int(target[1]))
+        and all(_positive(event.get(key)) for key in (
+            "id", "election_id", "election_revision", "actor_id",
+        ))
+        and event["election_id"] == int(target[1])
+        and event["election_revision"] == election["revision"]
+        and event["actor_id"] == command["actor_id"]
+        and event.get("kind") == ("finalization" if finalizing else "reopening")
+        and isinstance(event.get("basis_digest"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", event["basis_digest"])
+        and isinstance(event.get("outcome"), dict)
+        and event["outcome"].get("election") == election
+        and isinstance(event.get("accepted_at"), str)
+    ):
+        return False
+    try:
+        if datetime.fromisoformat(event["accepted_at"]).utcoffset() is None:
+            return False
+    except ValueError:
+        return False
+    if finalizing:
+        outcome = event["outcome"]
+        return bool(
+            event["basis_digest"] == payload.get("basis_digest")
+            and event.get("previous_finalization_id") is None and event.get("reason") == ""
+            and isinstance(outcome.get("sources"), dict)
+            and isinstance(outcome.get("results"), list) and outcome["results"]
+            and all(isinstance(result, dict) and result.get("status") == "finalized"
+                    and result.get("provisional") is False for result in outcome["results"])
+        )
+    return bool(
+        _positive(payload.get("previous_finalization_id"))
+        and event.get("previous_finalization_id") == payload["previous_finalization_id"]
+        and event.get("reason") == payload.get("reason")
+        and isinstance(event.get("reason"), str) and event["reason"].strip()
+        and event["outcome"].get("previous_finalization_id")
+        == payload["previous_finalization_id"]
+    )
+
+
 def valid_operational_receipt(command: dict[str, Any], record: Any) -> bool:
     """Accept only a canonical workflow DTO identifying this original operation."""
+    if command["workflow"] == "election_completion":
+        return _election_completion_receipt(command, record)
     if command["workflow"] == "constituency_recount":
         return _constituency_recount_receipt(command, record)
     instruction_path = re.fullmatch(
