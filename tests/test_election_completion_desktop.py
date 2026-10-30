@@ -20,6 +20,7 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtTest import QSignalSpy
 
 from election.desktop.controller import DesktopController
@@ -46,6 +47,10 @@ from tests.test_paper_journal_failure_desktop import (
     completed_write_server as completed_write_server,
 )
 from tests.test_physical_acceptance_recovery_desktop import assert_public_business_fields
+from tests.test_recount_checked_retry_desktop import ReconnectableRecountServer
+from tests.test_recount_checked_retry_desktop import (
+    reconnectable_recount_server as reconnectable_recount_server,
+)
 from tests.test_recount_instruction_restart_desktop import (
     lost_recount_response as lost_recount_response,
 )
@@ -1364,6 +1369,233 @@ def test_large_finalized_quantities_round_trip_through_event_cache_and_public_qt
             cached_again = supervisor.get(outcome_path)
             assert cached_again.status_code == 200 and cached_again.json() == cached
             assert https_server.request_count("POST", base + "/finalizations") == 1
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
+
+
+def test_predispatch_finalization_requires_checked_original_retry_with_fresh_own_password(
+    admin: TestClient,
+    database_url: str,
+    reconnectable_recount_server: ReconnectableRecountServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "election-checked-original-retry-journal"
+    assert not journal_directory.exists()
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        endpoint = reconnectable_recount_server
+        endpoint.clock.value = setup["clock"].value
+        origin = endpoint.url
+        actor = setup["accounts"]["supervisor"]
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        server_before_response = supervisor.get(setup["completion_path"])
+        assert server_before_response.status_code == 200, server_before_response.text
+        server_before = server_before_response.json()
+        assert server_before["can_finalize"] is True
+        client = DesktopController(origin, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(origin, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            reviewed = completion.property("state")["assessment"]
+            assert_public_business_fields(reviewed, server_before)
+            assert endpoint.request_count("POST", target) == 0
+            endpoint.disconnect_proxy()
+            try:
+                completion.finalize(BOX_READY_PASSWORD)
+                wait_for_editor_idle(qt_app, completion)
+                unknown = completion.property("state")
+                assert unknown["error"] == "disconnected"
+                assert unknown["uncertain_save"] is True and unknown["receipt"] == {}
+                request_id = unknown["pending_request_id"]
+                assert str(UUID(request_id)) == request_id
+                assert endpoint.request_count("POST", target) == 0
+            finally:
+                endpoint.reconnect_proxy()
+            assert endpoint.url == origin
+            outcome_path = (
+                f"/api/workspace/elections/{election_id}/request-outcomes/{request_id}"
+            )
+            query_path = outcome_path + "?workflow=election_completion"
+            expected_payload = {
+                "request_id": request_id,
+                "expected_election_revision": reviewed["election"]["revision"],
+                "basis_digest": reviewed["basis_digest"],
+            }
+            recovery = client.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            commands = recovery.property("state")["commands"]
+            assert len(commands) == 1
+            original = commands[0]
+            assert original["namespace"] == "election" and "station_id" not in original
+            assert original["election_id"] == election_id and election_id > 0
+            assert original["request_id"] == request_id
+            assert original["server_url"] == origin and original["actor_id"] == actor["id"]
+            assert original["workflow"] == "election_completion"
+            assert original["method"] == "POST" and original["path"] == target
+            assert original["payload"] == expected_payload
+            assert original["status"] == "uncertain" and original["error"] == "disconnected"
+            assert original["confirmation_required"] is True and original["receipt"] is None
+            identity_fields = (
+                "namespace", "election_id", "request_id", "server_url", "actor_id",
+                "workflow", "path", "method", "payload", "confirmation_required",
+            )
+            files = list(journal_directory.rglob("*.json"))
+            assert len(files) == 1 and private_file(files[0])
+            journal_file = files[0]
+            unknown_bytes = journal_file.read_bytes()
+            _assert_completion_credential_free(json.loads(unknown_bytes))
+            absent_response = supervisor.get(query_path)
+            assert absent_response.status_code == 200, absent_response.text
+            not_found = {
+                "request_id": request_id, "workflow": "election_completion", "status": "not_found",
+            }
+            assert absent_response.json() == not_found
+            unchanged_response = supervisor.get(setup["completion_path"])
+            assert unchanged_response.status_code == 200, unchanged_response.text
+            assert unchanged_response.json() == server_before
+
+            client.refresh()
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for_editor_idle(qt_app, completion)
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            recovery.reload()
+            wait_for_editor_idle(qt_app, recovery)
+            retained_state = completion.property("state")
+            assert retained_state["uncertain_save"] is True
+            assert retained_state["pending_request_id"] == request_id
+            assert retained_state["receipt"] == {}
+            assert journal_file.read_bytes() == unknown_bytes
+            assert endpoint.request_count("POST", target) == 0
+            assert endpoint.request_count("GET", outcome_path) == 0
+            recovery.retry(request_id, BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, recovery)
+            assert recovery.property("state")["error"] == "recovery_retry_unavailable"
+            assert completion.property("state")["pending_request_id"] == request_id
+            assert endpoint.request_count("POST", target) == 0
+            assert endpoint.request_count("GET", outcome_path) == 0
+            assert journal_file.read_bytes() == unknown_bytes
+
+            recovery.checkOutcome(request_id)
+            wait_for_editor_idle(qt_app, recovery)
+            wait_for_editor_idle(qt_app, completion)
+            checked = recovery.property("state")["commands"]
+            assert len(checked) == 1
+            for key in identity_fields:
+                assert checked[0][key] == original[key]
+            assert checked[0]["status"] == "uncertain"
+            assert checked[0]["error"] == "request_not_found" and checked[0]["receipt"] is None
+            assert completion.property("state")["uncertain_save"] is True
+            assert completion.property("state")["pending_request_id"] == request_id
+            assert endpoint.request_count("GET", outcome_path) == 1
+            assert endpoint.request_count("POST", target) == 0
+            checked_bytes = journal_file.read_bytes()
+            durable_checked = json.loads(checked_bytes)
+            assert durable_checked["status"] == "uncertain"
+            assert durable_checked["error"] == "request_not_found"
+            assert durable_checked["payload"] == expected_payload
+            recovery.retry(request_id, "")
+            wait_for_editor_idle(qt_app, recovery)
+            assert recovery.property("state")["error"] == "invalid_credentials"
+            assert completion.property("state")["pending_request_id"] == request_id
+            assert endpoint.request_count("POST", target) == 0
+            assert journal_file.read_bytes() == checked_bytes
+
+            delivered_statuses = []
+
+            def observe_retry_status(reply: QNetworkReply) -> None:
+                if reply.url().path() == target:
+                    delivered_statuses.append(int(
+                        reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 0
+                    ))
+
+            recovery.retry(request_id, BOX_READY_PASSWORD)
+            # Consequential credentials get a new normal Qt manager synchronously.
+            # Observe its public signal before processing events; never read body/headers.
+            managers = client.findChildren(QNetworkAccessManager)
+            assert managers
+            for manager in managers:
+                manager.finished.connect(observe_retry_status)
+            wait_for_editor_idle(qt_app, recovery)
+            wait_for_editor_idle(qt_app, completion)
+            assert delivered_statuses == [201]
+            assert endpoint.request_count("POST", target) == 1
+            assert endpoint.request_count("GET", outcome_path) == 1
+            committed = recovery.property("state")["commands"]
+            assert len(committed) == 1
+            for key in identity_fields:
+                assert committed[0][key] == original[key]
+            assert committed[0]["status"] == "committed" and committed[0]["error"] == ""
+            canonical_response = supervisor.get(query_path)
+            assert canonical_response.status_code == 200, canonical_response.text
+            canonical = canonical_response.json()
+            assert canonical["request_id"] == request_id
+            assert canonical["workflow"] == "election_completion"
+            assert canonical["status"] == "committed"
+            receipt = canonical["record"]
+            assert receipt["request_id"] == request_id
+            assert receipt["election"] == {
+                **server_before["election"], "status": "finalized",
+                "revision": server_before["election"]["revision"] + 1,
+            }
+            assert receipt["event"]["basis_digest"] == expected_payload["basis_digest"]
+            assert receipt["event"]["outcome"]["sources"] == server_before["sources"]
+            assert receipt["active_election_id"] is None
+            settled = completion.property("state")
+            assert settled["uncertain_save"] is False
+            assert settled["pending_request_id"] == "" and settled["error"] == ""
+            assert_public_business_fields(settled["receipt"], receipt)
+            assert_public_business_fields(committed[0]["receipt"]["record"], receipt)
+            assert client.property("state")["active_election"] is None
+            durable = json.loads(journal_file.read_text(encoding="utf-8"))
+            for key in identity_fields:
+                assert durable[key] == original[key]
+            assert "station_id" not in durable
+            assert durable["status"] == "committed"
+            assert durable["receipt"]["record"] == receipt
+            _assert_completion_credential_free(durable)
+            _assert_completion_credential_free(settled)
+            committed_bytes = journal_file.read_bytes()
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            recovery.reload()
+            wait_for_editor_idle(qt_app, recovery)
+            assert endpoint.request_count("POST", target) == 1
+            assert endpoint.request_count("GET", outcome_path) == 1
+            assert journal_file.read_bytes() == committed_bytes
+            with endpoint.lock:
+                station_outcomes = [
+                    path for method, path in endpoint.requests
+                    if method == "GET" and path.startswith("/api/workspace/stations/")
+                    and "/request-outcomes/" in path
+                ]
+                business_writes = [
+                    (method, path) for method, path in endpoint.requests
+                    if method in {"POST", "PUT", "PATCH"} and not path.startswith("/api/auth/")
+                ]
+            assert station_outcomes == []
+            assert business_writes == [("POST", target)]
+            final_current = supervisor.get(setup["completion_path"])
+            assert final_current.status_code == 200, final_current.text
+            assert final_current.json()["election"] == receipt["election"]
+            assert final_current.json()["active_election_id"] is None
         finally:
             client.shutdown()
             client.deleteLater()
