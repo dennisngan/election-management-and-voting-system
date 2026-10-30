@@ -96,3 +96,9 @@ A staff member responsible for recording counts and recounts of physical ballots
 
 **Supervisor**:
 A staff member responsible for reviewing operational records and approving completion.
+
+**Finalized outcome**:
+The preserved reviewed result and supporting records at an election’s finalization. It remains viewable when reopening and later work change the current results.
+
+**Reopening**:
+A Supervisor-authorized return of a finalized election to active work, with a recorded reason and its earlier finalized outcomes preserved. No different election may be active at the same time.
