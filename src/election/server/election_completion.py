@@ -124,6 +124,12 @@ def election_completion_router(
                 {**pending, "constituency_id": constituency_id}
                 for pending in result["pending"]
             )
+            if result["tie_candidate_ids"] and result["resolved_candidate_id"] is None:
+                blockers.append({
+                    "code": "result_tie_resolution_required",
+                    "constituency_id": constituency_id,
+                    "candidate_ids": result["tie_candidate_ids"],
+                })
         context = {
             "id": election.id, "name": election.name,
             "status": election.status, "revision": election.revision,
