@@ -485,3 +485,58 @@ def test_completion_preserves_selected_count_physical_disposition(
         assert stock["acceptance"]["id"] == decision["id"]
         assert stock["acceptance"]["reason"] == reason
         assert chosen["approved_physical_decisions"] == [decision]
+
+
+def test_supervisor_finalizes_reviewed_election_and_clears_active_pointer_atomically(
+    admin: TestClient, database_url: str
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        reviewed = response.json()
+        assert reviewed["can_finalize"] is True
+        election_id = setup["election"]["id"]
+        request_id = str(uuid4())
+        finalized = supervisor.post(
+            f"/api/workspace/elections/{election_id}/finalizations",
+            json={
+                "request_id": request_id,
+                "expected_election_revision": reviewed["election"]["revision"],
+                "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+            },
+        )
+        assert finalized.status_code == 201, finalized.text
+        receipt = finalized.json()
+        assert receipt["request_id"] == request_id
+        assert receipt["active_election_id"] is None
+        assert receipt["election"] == {
+            **reviewed["election"], "status": "finalized",
+            "revision": reviewed["election"]["revision"] + 1,
+        }
+        event = receipt["event"]
+        assert event["id"] > 0 and event["kind"] == "finalization"
+        assert event["election_id"] == election_id
+        assert event["actor_id"] == setup["accounts"]["supervisor"]["id"]
+        assert event["election_revision"] == receipt["election"]["revision"]
+        assert event["accepted_at"] == "2026-11-15T16:00:00Z"
+        assert event["reason"] == "" and event["previous_finalization_id"] is None
+        assert event["basis_digest"] == reviewed["basis_digest"]
+        assert event["outcome"]["sources"] == reviewed["sources"]
+        assert event["outcome"]["election"] == receipt["election"]
+        assert [
+            [row["quantity"] for row in result["candidate_totals"]]
+            for result in event["outcome"]["results"]
+        ] == [[6, 4], [4, 1]]
+        assert [result["winner_candidate_id"] for result in event["outcome"]["results"]] == [
+            result["candidate_totals"][0]["candidate_id"]
+            for result in reviewed["sources"]["constituencies"]
+        ]
+        active = supervisor.get("/api/active-election")
+        assert active.status_code == 200, active.text
+        assert active.json()["election"] is None
+        current = supervisor.get(setup["completion_path"])
+        assert current.status_code == 200, current.text
+        assert current.json()["election"] == receipt["election"]
+        assert current.json()["active_election_id"] is None
+        assert current.json()["can_finalize"] is False
