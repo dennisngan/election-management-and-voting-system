@@ -261,11 +261,11 @@ class CommandJournal:
         previous = next((row for row in rows if row["request_id"] == request_id), None)
         if previous is None and self._path(origin, actor_id, request_id).exists():
             raise JournalError("recovery_command_conflict")
+        if previous and (previous["path"], previous["method"], previous["payload"]) != (
+            path, method, safe_payload,
+        ):
+            raise JournalError("recovery_command_conflict")
         if previous and previous["status"] != "rejected":
-            if (previous["path"], previous["method"], previous["payload"]) != (
-                path, method, safe_payload,
-            ):
-                raise JournalError("recovery_command_conflict")
             if previous["status"] in UNRESOLVED:
                 if previous.get("error") != "request_not_found":
                     raise JournalError("recovery_outcome_check_required")
