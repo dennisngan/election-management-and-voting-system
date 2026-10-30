@@ -26,7 +26,11 @@ ColumnLayout {
     spacing: 20
 
     function t(key) { return (words && words[key]) || key }
-    function messageText(code) { return (words && words[code]) || t("request_failed") }
+    function messageText(code) {
+        return (words && words[code])
+            || (words && words["constituency_results_pending_" + code])
+            || t("request_failed")
+    }
     function electionText() {
         if (!hasElection) return t("no_election")
         var name = String(election.name || "")
@@ -45,6 +49,10 @@ ColumnLayout {
             text += " · " + t("election_completion_station") + " #" + String(row.station_id)
         else if (row.constituency_id !== undefined && row.constituency_id !== null)
             text += " · " + t("recovery_constituency") + " #" + String(row.constituency_id)
+        if (row.scope_id !== undefined && row.scope_id !== null)
+            text += " · " + t("constituency_results_scope") + " #" + String(row.scope_id)
+        if (row.box_ids && row.box_ids.length > 0)
+            text += " · " + t("constituency_results_boxes") + " " + row.box_ids.join(", ")
         return text
     }
 
