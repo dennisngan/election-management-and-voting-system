@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from election.server.configuration_models import Constituency, Election
+from election.server.constituency_results import constituency_result
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, LoginSession
 from election.server.polling import record_view
@@ -24,7 +25,7 @@ def _completion_context(
     identity: tuple[Account, LoginSession],
     election_id: int,
     timestamp: Callable[[], datetime],
-) -> tuple[Election, ActiveElection | None, list[PollingStation]]:
+) -> tuple[Election, ActiveElection | None, list[PollingStation], Account]:
     actor_id, actor_revision = identity[0].id, identity[0].revision
     session_digest = identity[1].token_hash
     # Authentication is read-only, but starts a repeatable-read snapshot. Copy
@@ -65,7 +66,7 @@ def _completion_context(
     ))
     if not stations or not {row.id for row in stations} <= assigned:
         raise HTTPException(403, detail={"code": "full_election_access_required"})
-    return election, active, stations
+    return election, active, stations, actor
 
 
 def election_completion_router(
@@ -81,7 +82,9 @@ def election_completion_router(
 
     @router.get("/completion")
     def assessment(election_id: int, db: Database, identity: Identity) -> dict[str, Any]:
-        election, active, stations = _completion_context(db, identity, election_id, timestamp)
+        election, active, stations, actor = _completion_context(
+            db, identity, election_id, timestamp
+        )
         blockers: list[dict[str, Any]] = []
         sources: list[dict[str, Any]] = []
         for station in stations:
@@ -111,18 +114,28 @@ def election_completion_router(
                     "revision": row.revision,
                     "status": row.status,
                 })
+        results = [
+            constituency_result(db, actor, constituency_id)
+            for constituency_id in sorted({station.constituency_id for station in stations})
+        ]
+        for result in results:
+            constituency_id = result["context"]["constituency"]["id"]
+            blockers.extend(
+                {**pending, "constituency_id": constituency_id}
+                for pending in result["pending"]
+            )
         context = {
             "id": election.id, "name": election.name,
             "status": election.status, "revision": election.revision,
         }
-        basis = {"election": context, "polling_completion": sources}
+        basis = {"election": context, "polling_completion": sources, "constituencies": results}
         return {
             "election": context,
             "active_election_id": active.election_id if active is not None else None,
             # This first assessment slice cannot authorize finalization yet.
             "can_finalize": False,
             "blockers": blockers,
-            "sources": {"polling_completion": sources},
+            "sources": {"polling_completion": sources, "constituencies": results},
             "basis_digest": hashlib.sha256(json.dumps(
                 basis, sort_keys=True, ensure_ascii=False, separators=(",", ":")
             ).encode()).hexdigest(),
