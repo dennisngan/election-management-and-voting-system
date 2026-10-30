@@ -383,9 +383,9 @@ class DesktopController(QObject):
         self._turnout.set_context(context)
         self._complaints.set_context(context)
         self._complaint_periods.set_context(context)
-        election = context.get("election") or self._state["active_election"]
+        election = context.get("election")
         if election is not None or not self._retain_completion_context():
-            self._state["election"] = election
+            self._state["election"] = election or self._state["active_election"]
         self._state["constituency"] = context.get("constituency")
         self._state["station"] = context.get("station")
         self._state["capabilities"] = context.get("capabilities", {})
@@ -395,14 +395,15 @@ class DesktopController(QObject):
     def _retain_completion_context(self) -> bool:
         return bool(self._state["election"] and (
             self._state["election"].get("status") == "finalized"
-            or self._election_completion.property("state")["uncertain_save"]
+            or self._election_completion.property("state")["pending_request_id"]
             or self._recovery.election_context_locked()
         ))
 
     def _apply_active_election(self, election: dict[str, Any] | None) -> None:
         self._state["active_election"] = election
-        if not self._workspace.property("state")["selected"] and (
-            election is not None or not self._retain_completion_context()
+        if (
+            not self._workspace.property("state")["selected"]
+            and not self._retain_completion_context()
         ):
             self._state["election"] = election
         self._configuration.sync_active_election(election)
