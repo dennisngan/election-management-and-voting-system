@@ -998,6 +998,11 @@ def test_recovered_original_finalization_keeps_same_elections_reopened_current_a
             assert settled["pending_request_id"] == "" and settled["error"] == ""
             assert_public_business_fields(settled["receipt"], receipt)
             assert client.property("state")["active_election"] == live_active
+            root_election = client.property("state")["election"]
+            assert {key: root_election[key] for key in reopened["election"]} == reopened["election"]
+            assert {
+                key: settled["election"][key] for key in reopened["election"]
+            } == reopened["election"]
             assert workspace.property("state")["selected"] == {}
             # The old ACK must not replace the actual newer reopened assessment.
             assert settled["assessment"] == live_assessment
