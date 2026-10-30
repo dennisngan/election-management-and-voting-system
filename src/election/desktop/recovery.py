@@ -193,6 +193,10 @@ class RecoveryController(QObject):
             for row in self._state["commands"]
         )
 
+    def command_records(self) -> list[dict[str, Any]]:
+        """Return scoped business records without QVariant display conversion."""
+        return deepcopy(self._state["commands"])
+
     def election_context_locked(self) -> bool:
         return any(
             row.get("workflow") == "election_completion"

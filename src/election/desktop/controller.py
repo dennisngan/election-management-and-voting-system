@@ -104,7 +104,9 @@ class DesktopController(QObject):
         )
         self._configuration = ConfigurationController(self._authorized_request, self)
         self._server_backups = ServerBackupsController(self._authorized_request, self)
-        self._election_completion = ElectionCompletionController(self._authorized_request, self)
+        self._election_completion = ElectionCompletionController(
+            self._authorized_request, self, recovery=self._recovery,
+        )
         self._election_completion.finalized.connect(self._completion_finalized)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
@@ -382,7 +384,7 @@ class DesktopController(QObject):
         self._complaints.set_context(context)
         self._complaint_periods.set_context(context)
         election = context.get("election") or self._state["active_election"]
-        if election is not None or (self._state["election"] or {}).get("status") != "finalized":
+        if election is not None or not self._retain_completion_context():
             self._state["election"] = election
         self._state["constituency"] = context.get("constituency")
         self._state["station"] = context.get("station")
@@ -390,10 +392,17 @@ class DesktopController(QObject):
         self._sync_completion_context()
         self.stateChanged.emit()
 
+    def _retain_completion_context(self) -> bool:
+        return bool(self._state["election"] and (
+            self._state["election"].get("status") == "finalized"
+            or self._election_completion.property("state")["uncertain_save"]
+            or self._recovery.election_context_locked()
+        ))
+
     def _apply_active_election(self, election: dict[str, Any] | None) -> None:
         self._state["active_election"] = election
         if not self._workspace.property("state")["selected"] and (
-            election is not None or (self._state["election"] or {}).get("status") != "finalized"
+            election is not None or not self._retain_completion_context()
         ):
             self._state["election"] = election
         self._configuration.sync_active_election(election)

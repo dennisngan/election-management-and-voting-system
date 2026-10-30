@@ -9,21 +9,26 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 from election.desktop.configuration import AuthorizedRequest
 from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.operational_receipts import valid_operational_receipt
-from election.desktop.recovery import NETWORK_ERRORS
+from election.desktop.recovery import NETWORK_ERRORS, RecoveryController
 
 
 class ElectionCompletionController(QObject):
     stateChanged = Signal()
     finalized = Signal(object)
 
-    def __init__(self, request: AuthorizedRequest, parent: QObject | None = None) -> None:
+    def __init__(
+        self, request: AuthorizedRequest, parent: QObject | None = None, *,
+        recovery: RecoveryController | None = None,
+    ) -> None:
         super().__init__(parent)
-        self._request = request
+        self._request, self._recovery = request, recovery
         self._generation = 0
         self._opened = False
         self._scope: tuple[Any, ...] | None = None
         self._state: dict[str, Any] = {}
         self.reset()
+        if recovery is not None:
+            recovery.stateChanged.connect(self._sync_recovery)
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
@@ -57,6 +62,7 @@ class ElectionCompletionController(QObject):
             election_id=election_id, actor_id=account.get("id"),
             role=account.get("role", ""), election=deepcopy(target),
         )
+        self._sync_recovery()
         self.stateChanged.emit()
         if changed and self._opened:
             self.refresh()
@@ -106,6 +112,59 @@ class ElectionCompletionController(QObject):
             f"/api/workspace/elections/{election_id}/completion", "GET", None, loaded, failed
         )
 
+    def _settled(self, body: dict[str, Any]) -> None:
+        self._generation += 1
+        self._command = None
+        self._state.update(
+            busy=False, refreshing=False, receipt=deepcopy(body), pending_request_id="",
+            uncertain_save=False, election=deepcopy(body["election"]), error="",
+            assessment={
+                **self._state["assessment"], "election": deepcopy(body["election"]),
+                "active_election_id": body["active_election_id"], "can_finalize": False,
+            },
+        )
+        self.stateChanged.emit()
+        self.finalized.emit(body)
+
+    def _sync_recovery(self) -> None:
+        if self._recovery is None or self._state["role"] != "supervisor" or not self._scope:
+            return
+        pending_id = self._state["pending_request_id"]
+        command = next((row for row in self._recovery.command_records() if (
+            row.get("namespace") == "election" and row.get("workflow") == "election_completion"
+            and row.get("election_id") == self._state["election_id"]
+            and row.get("actor_id") == self._state["actor_id"]
+            and row.get("server_url") == self._scope[0]
+            and row.get("path") == (
+                f"/api/workspace/elections/{self._state['election_id']}/finalizations"
+            )
+            and (row.get("request_id") == pending_id if pending_id
+                 else row.get("status") in {"pending", "uncertain"})
+        )), None)
+        if command is None:
+            return
+        if command.get("status") in {"pending", "uncertain"}:
+            if self._command is None:
+                self._command = deepcopy(command)
+            self._state.update(
+                uncertain_save=True, pending_request_id=command["request_id"],
+                error=command.get("error") or "",
+            )
+            self.stateChanged.emit()
+        elif command.get("status") == "committed":
+            receipt = (command.get("receipt") or {}).get("record")
+            if isinstance(receipt, dict) and valid_operational_receipt(
+                self._command or command, receipt,
+            ):
+                self._settled(receipt)
+        elif command.get("status") == "rejected":
+            self._command = None
+            self._state.update(
+                uncertain_save=False, pending_request_id="",
+                error=command.get("error") or "election_completion_not_ready",
+            )
+            self.stateChanged.emit()
+
     @Slot(str)
     def finalize(self, password: str) -> None:
         assessment = self._state["assessment"]
@@ -149,17 +208,7 @@ class ElectionCompletionController(QObject):
                 self._state.update(busy=False, uncertain_save=True, error="invalid_response")
                 self.stateChanged.emit()
                 return
-            self._command = None
-            self._state.update(
-                busy=False, receipt=deepcopy(body), pending_request_id="", uncertain_save=False,
-                election=deepcopy(body["election"]), error="",
-                assessment={
-                    **self._state["assessment"], "election": deepcopy(body["election"]),
-                    "active_election_id": None, "can_finalize": False,
-                },
-            )
-            self.stateChanged.emit()
-            self.finalized.emit(body)
+            self._settled(body)
 
         def failed(code: str) -> None:
             if generation != self._generation:
