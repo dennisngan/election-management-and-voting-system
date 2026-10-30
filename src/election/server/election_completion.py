@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from election.server.accounting import accounting_record
+from election.server.accounting import record_view as accounting_view
 from election.server.complaints import complaint_snapshot
 from election.server.configuration_models import Constituency, Election
 from election.server.constituency_results import constituency_result
@@ -115,6 +117,14 @@ def election_completion_router(
                     "revision": row.revision,
                     "status": row.status,
                 })
+        accounting_sources: list[dict[str, Any]] = []
+        for station in stations:
+            accounting = accounting_record(db, station.id)
+            accounting_sources.append({
+                "station_id": station.id,
+                "record": accounting_view(db, accounting) if accounting is not None else None,
+            })
+        current_accounting = {row["station_id"]: row["record"] for row in accounting_sources}
         results = [
             constituency_result(db, actor, constituency_id)
             for constituency_id in sorted({station.constituency_id for station in stations})
@@ -134,6 +144,20 @@ def election_completion_router(
                     "constituency_id": constituency_id,
                     "candidate_ids": result["tie_candidate_ids"],
                 })
+        for blocker in blockers:
+            if "source_accounting_revisions" not in blocker:
+                continue
+            references = []
+            for frozen in blocker["source_accounting_revisions"]:
+                current = current_accounting.get(frozen["station_id"])
+                references.append({
+                    "station_id": frozen["station_id"],
+                    "record_id": current["id"] if current else None,
+                    **{key: current[key] if current else None for key in (
+                        "revision", "status", "source_current", "approval_valid",
+                    )},
+                })
+            blocker["current_source_accounting_revisions"] = references
         complaints = [
             {
                 "station_id": station.id,
@@ -147,6 +171,7 @@ def election_completion_router(
         }
         source_records = {
             "polling_completion": sources, "constituencies": results, "complaints": complaints,
+            "accounting": accounting_sources,
         }
         basis = {"election": context, "sources": source_records}
         return {
