@@ -38,6 +38,7 @@ from election.server.counting_scope_reports import counting_scope_reports_router
 from election.server.counting_scopes import counting_scopes_router
 from election.server.counting_workflow import counting_workflow_router
 from election.server.db import make_engine
+from election.server.election_completion import election_completion_router
 from election.server.f1_reports import f1_reports_router
 from election.server.fallback import fallback_router
 from election.server.invalid_ballot_reasons import invalid_ballot_reasons_router
@@ -154,6 +155,7 @@ def create_app(
         return account
 
     app.include_router(configuration_router(database, administrator, timestamp))
+    app.include_router(election_completion_router(database, authenticated, timestamp))
     app.include_router(constituency_results_router(database, ready_account, timestamp))
     app.include_router(constituency_recounts_router(database, ready_account, timestamp))
     app.include_router(constituency_reports_router(database, ready_account, timestamp))
