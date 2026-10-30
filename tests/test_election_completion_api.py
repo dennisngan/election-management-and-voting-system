@@ -248,3 +248,38 @@ def test_completion_retains_unresolved_complaint_status_without_inventing_resolu
         )
         assert current.status_code == 200, current.text
         assert current.json() == complaint
+
+
+def test_latest_instructed_constituency_recount_blocks_election_readiness(
+    admin: TestClient, database_url: str
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        before = supervisor.get(setup["completion_path"])
+        assert before.status_code == 200, before.text
+        assert before.json()["can_finalize"] is True
+        path = f"/api/workspace/constituencies/{setup['constituency_id']}/recounts"
+        options = supervisor.get(path)
+        assert options.status_code == 200, options.text
+        current = options.json()
+        created = supervisor.post(path, json={
+            "request_id": str(uuid4()), "basis_digest": current["basis_digest"],
+            "scope_sources": current["scope_sources"],
+            "event_at": "2026-11-16T00:00:00+08:00",
+            "reason": "Require a fresh constituency count before finalization.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert created.status_code == 201, created.text
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        assessment = response.json()
+        assert assessment["can_finalize"] is False
+        pending = [row for row in assessment["blockers"] if row["code"] == "recount_pending"]
+        assert {row["scope_id"] for row in pending} == {
+            setup["scope"]["id"], setup["n3_scope"]["id"],
+        }
+        assert {row["new_round_id"] for row in pending} == {
+            member["round"]["id"] for member in created.json()["members"]
+        }
+        assert all(row["constituency_id"] == setup["constituency_id"] for row in pending)
+        assert assessment["basis_digest"] != before.json()["basis_digest"]
