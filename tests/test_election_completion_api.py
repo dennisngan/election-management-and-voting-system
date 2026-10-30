@@ -917,3 +917,83 @@ def test_fully_assigned_supervisor_reads_exact_finalization_and_reopening_histor
         assert after.status_code == 200, after.text
         assert after.json()["election"] == current["election"]
         assert after.json()["active_election_id"] == election_id
+
+
+def test_assigned_polling_staff_retain_finalized_context_while_another_election_is_active(
+    admin: TestClient, database_url: str,
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        officer = setup["clients"]["polling"]
+        election_id = setup["election"]["id"]
+        station_id = setup["stations"]["N1"]["id"]
+        station_ids = {row["id"] for row in setup["stations"].values()}
+        station_path = f"/api/workspace/stations/{station_id}"
+        original_completion = setup["polling_completion_records"]["N1"]
+        assert original_completion["status"] == "approved"
+        before = officer.get(station_path + "/polling")
+        assert before.status_code == 200, before.text
+        assert [
+            row for row in before.json()["items"] if row["kind"] == "service_completion"
+        ] == [original_completion]
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        reviewed = response.json()
+        assert reviewed["can_finalize"] is True
+        finalized = supervisor.post(
+            f"/api/workspace/elections/{election_id}/finalizations", json={
+                "request_id": str(uuid4()),
+                "expected_election_revision": reviewed["election"]["revision"],
+                "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+            },
+        )
+        assert finalized.status_code == 201, finalized.text
+        assert finalized.json()["election"]["status"] == "finalized"
+        assert finalized.json()["active_election_id"] is None
+        different = polling_scope(admin)
+        assert different.election["id"] != election_id
+        active = officer.get("/api/active-election")
+        assert active.status_code == 200, active.text
+        assert active.json()["election"]["id"] == different.election["id"]
+        listed = officer.get("/api/workspace/stations")
+        assert listed.status_code == 200, listed.text
+        contexts = listed.json()["items"]
+        assert len(contexts) == len(station_ids)
+        assert {row["station"]["id"] for row in contexts} == station_ids
+        for row in contexts:
+            assert row["election"]["id"] == election_id
+            assert row["election"]["status"] == "finalized"
+            assert row["capabilities"] == {
+                "prepare_polling": False, "prepare_counting": False, "approve": False,
+            }
+        selected = officer.get(station_path)
+        assert selected.status_code == 200, selected.text
+        assert selected.json() == next(
+            row for row in contexts if row["station"]["id"] == station_id
+        )
+        retained = officer.get(station_path + "/polling")
+        assert retained.status_code == 200, retained.text
+        assert retained.json()["context"]["election"]["id"] == election_id
+        assert retained.json()["context"]["election"]["status"] == "finalized"
+        assert [
+            row for row in retained.json()["items"] if row["kind"] == "service_completion"
+        ] == [original_completion]
+        rejected = officer.post(station_path + "/polling/service_completion/amend", json=(
+            draft_payload(
+                original_completion["revision"], event_at=original_completion["event_at"],
+                reason="A new amendment must not edit the retained finalized election.",
+            )
+        ))
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json() == {"detail": {"code": "active_election_required"}}
+        unchanged = officer.get(station_path + "/polling")
+        assert unchanged.status_code == 200, unchanged.text
+        assert unchanged.json() == retained.json()
+        unassigned = officer.get(
+            f"/api/workspace/stations/{different.stations[0]['id']}"
+        )
+        assert unassigned.status_code == 403, unassigned.text
+        assert unassigned.json() == {"detail": {"code": "station_access_denied"}}
+        still_active = officer.get("/api/active-election")
+        assert still_active.status_code == 200, still_active.text
+        assert still_active.json() == active.json()
