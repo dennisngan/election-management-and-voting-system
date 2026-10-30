@@ -12,6 +12,7 @@ from election.desktop.counter_return_translations import COUNTER_RETURN_TRANSLAT
 from election.desktop.counting_outcome_translations import COUNT_OUTCOME_TRANSLATIONS
 from election.desktop.counting_round_translations import COUNTING_ROUND_TRANSLATIONS
 from election.desktop.counting_scope_translations import COUNTING_SCOPE_TRANSLATIONS
+from election.desktop.election_completion_translations import ELECTION_COMPLETION_TRANSLATIONS
 from election.desktop.fallback_translations import FALLBACK_TRANSLATIONS
 from election.desktop.fallback_turnout_translations import FALLBACK_TURNOUT_TRANSLATIONS
 from election.desktop.invalid_reason_translations import INVALID_REASON_TRANSLATIONS
@@ -2014,3 +2015,6 @@ for language, recount_labels in LOCAL_RECOUNT_TRANSLATIONS.items():
 
 for language, labels in CONSTITUENCY_RECOUNT_TRANSLATIONS.items():
     TRANSLATIONS[language].update(labels)
+
+for language, completion_labels in ELECTION_COMPLETION_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(completion_labels)

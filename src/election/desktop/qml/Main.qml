@@ -715,7 +715,31 @@ ApplicationWindow {
                         controller.constituencyResults.open()
                     }
                 }
-                Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
+                Button {
+                    id: electionCompletionNavigation
+                    objectName: "electionCompletionNavigation"
+                    text: window.t("election_completion_navigation")
+                    Layout.fillWidth: true
+                    flat: true
+                    visible: window.state.account.role === "supervisor"
+                    highlighted: window.currentPage === "election_completion"
+                    Material.background: window.currentPage === "election_completion" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: electionCompletionNavigation.text
+                        textFormat: Text.PlainText
+                        font: electionCompletionNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "election_completion"
+                        controller.electionCompletion.open()
+                    }
+                }
                 Item { Layout.fillHeight: true }
                 Caption { text: window.t("role") + " · " + window.t(window.state.account.role || ""); Layout.fillWidth: true }
                 Button { text: window.t("logout"); flat: true; Layout.fillWidth: true; onClicked: controller.signOut() }
@@ -966,6 +990,18 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.leftMargin: 28; Layout.rightMargin: 28; Layout.bottomMargin: 28
                     lifecycle: controller.lifecycle
+                    words: window.words
+                    onReveal: control => window.revealField(control)
+                }
+                ElectionCompletionPage {
+                    visible: window.state.phase === "workspace"
+                        && window.currentPage === "election_completion"
+                        && window.state.account.role === "supervisor"
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28
+                    Layout.rightMargin: 28
+                    Layout.bottomMargin: 28
+                    completion: controller.electionCompletion
                     words: window.words
                     onReveal: control => window.revealField(control)
                 }

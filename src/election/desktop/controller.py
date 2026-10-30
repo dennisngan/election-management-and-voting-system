@@ -36,6 +36,7 @@ from election.desktop.constituency_results import ConstituencyResultsController
 from election.desktop.counter_returns import CounterReturnsController
 from election.desktop.counting_rounds import CountingRoundsController
 from election.desktop.counting_scopes import CountingScopesController
+from election.desktop.election_completion import ElectionCompletionController
 from election.desktop.fallback import FallbackController
 from election.desktop.invalid_reasons import InvalidReasonsController
 from election.desktop.lifecycle import LifecycleController
@@ -98,6 +99,7 @@ class DesktopController(QObject):
         )
         self._configuration = ConfigurationController(self._authorized_request, self)
         self._server_backups = ServerBackupsController(self._authorized_request, self)
+        self._election_completion = ElectionCompletionController(self._authorized_request, self)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
         self._staff = StaffController(self._authorized_request, self)
@@ -326,6 +328,10 @@ class DesktopController(QObject):
         return self._constituency_results
 
     @Property(QObject, constant=True)
+    def electionCompletion(self) -> ElectionCompletionController:
+        return self._election_completion
+
+    @Property(QObject, constant=True)
     def fallback(self) -> FallbackController:
         return self._fallback
 
@@ -375,6 +381,7 @@ class DesktopController(QObject):
         self._state["constituency"] = context.get("constituency")
         self._state["station"] = context.get("station")
         self._state["capabilities"] = context.get("capabilities", {})
+        self._sync_completion_context()
         self.stateChanged.emit()
 
     def _apply_active_election(self, election: dict[str, Any] | None) -> None:
@@ -382,7 +389,15 @@ class DesktopController(QObject):
         if not self._workspace.property("state")["selected"]:
             self._state["election"] = election
         self._configuration.sync_active_election(election)
+        self._sync_completion_context()
         self.stateChanged.emit()
+
+    def _sync_completion_context(self) -> None:
+        self._election_completion.set_context(
+            self._state["account"],
+            self._state["election"] or self._state["active_election"],
+            self._state["server_url"],
+        )
 
     def _lifecycle_changed(self) -> None:
         if self._state["phase"] == "workspace":
@@ -557,6 +572,7 @@ class DesktopController(QObject):
             and not account.get("must_change_password", True)
             and account.get("role") in ("polling_officer", "counting_officer", "supervisor")
         )
+        self._sync_completion_context()
 
     def _tick(self) -> None:
         self._state["clock"] = datetime.now(HKT).strftime("%Y-%m-%d %H:%M:%S HKT")
@@ -835,6 +851,7 @@ class DesktopController(QObject):
             self._counting_rounds.refresh()
             self._outages.refresh()
             self._constituency_results.refresh()
+            self._election_completion.refresh()
             self._fallback.refresh()
             self._turnout.refresh()
             self._complaints.refresh()
@@ -878,6 +895,7 @@ class DesktopController(QObject):
         self._counting_rounds.reset()
         self._outages.reset()
         self._constituency_results.reset()
+        self._election_completion.reset()
         self._fallback.reset()
         self._turnout.reset()
         self._complaints.reset()
