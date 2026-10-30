@@ -5,6 +5,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.election_completion_support import reviewed_election_setup
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.polling_support import (
     READY_PASSWORD,
@@ -155,3 +156,24 @@ def test_approved_polling_still_requires_each_stations_box_handover(
             }
             for station_id in station_ids
         ]
+
+
+def test_fully_reviewed_active_election_is_ready_despite_provisional_display(
+    admin: TestClient, database_url: str
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        response = setup["clients"]["supervisor"].get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        assessment = response.json()
+        assert assessment["election"]["status"] == "active"
+        assert assessment["active_election_id"] == setup["election"]["id"]
+        assert assessment["blockers"] == []
+        results = assessment["sources"]["constituencies"]
+        assert len(results) == 2
+        assert all(result["complete"] for result in results)
+        assert all(result["provisional"] for result in results)
+        assert [
+            [candidate["quantity"] for candidate in result["candidate_totals"]]
+            for result in results
+        ] == [[6, 4], [4, 1]]
+        assert assessment["can_finalize"] is True
