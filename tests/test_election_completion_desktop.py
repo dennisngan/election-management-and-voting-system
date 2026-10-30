@@ -428,7 +428,18 @@ def test_lost_finalization_survives_refresh_restart_and_explicit_original_outcom
             workspace.selectStation(station_id)
             wait_for_editor_idle(qt_app, workspace)
             selected = workspace.property("state")["selected"]
-            assert selected["station"]["id"] == station_id
+            assert selected.get("station", {}).get("id") == station_id, {
+                "workspace_error": workspace.property("state")["error"],
+                "context_count": len(workspace.property("state")["contexts"]),
+                "unresolved": workspace.property("unresolvedRequest"),
+                "guarded": workspace.property("selectionGuarded"),
+                "completion_pending": fresh.property("electionCompletion").property("state")[
+                    "pending_request_id"
+                ],
+                "target_context_reads": endpoint.request_count(
+                    "GET", f"/api/workspace/stations/{station_id}",
+                ),
+            }
             assert selected["election"]["id"] == election_id
             assert selected["election"]["status"] == "finalized"
             completion = fresh.property("electionCompletion")

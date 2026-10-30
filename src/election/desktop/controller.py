@@ -161,7 +161,6 @@ class DesktopController(QObject):
                 or self._accounting.property("state")["dirty"]
                 or self._accounting.property("state")["busy"]
                 or self._election_completion.property("state")["busy"]
-                or self._election_completion.property("state")["uncertain_save"]
                 or self._polling.property("state")["dirty"]
                 or self._polling.property("state")["busy"]
                 or self._stock.property("state")["dirty"]
@@ -196,20 +195,8 @@ class DesktopController(QObject):
                 or self._complaint_periods.property("state")["dirty"]
                 or self._complaint_periods.property("state")["busy"]
             ),
-            unresolved_guard=lambda: bool(
-                self._context_writes
-                or self._recovery.recount_context_locked()
-                or self._recovery.election_context_locked()
-                or self._election_completion.property("state")["uncertain_save"]
-                or self._counting_rounds.recount_context_locked()
-                or self._constituency_results.recount_context_locked()
-                or self._allocations.property("state").get("paper_uncertain", False)
-                or self._counting_rounds.property("state").get("uncertain_save", False)
-                or self._turnout.property("state").get("uncertain_save", False)
-                or self._turnout.property("state").get("paper_pending_request_id")
-                or self._outages.property("state").get("uncertain_save", False)
-                or self._constituency_results.property("state").get("uncertain_save", False)
-            ),
+            unresolved_guard=self._unresolved_station_selection,
+            unresolved_target_guard=self._unresolved_station_selection,
         )
         self._election_completion.stateChanged.connect(self._workspace.stateChanged.emit)
         self._accounting.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -363,6 +350,37 @@ class DesktopController(QObject):
     @Property(QObject, constant=True)
     def accounting(self) -> AccountingController:
         return self._accounting
+
+    def _unresolved_station_selection(
+        self, station_id: int | None = None, context: dict[str, Any] | None = None,
+    ) -> bool:
+        if (
+            self._context_writes or self._recovery.recount_context_locked()
+            or self._counting_rounds.recount_context_locked()
+            or self._constituency_results.recount_context_locked()
+            or self._allocations.property("state").get("paper_uncertain", False)
+            or self._counting_rounds.property("state").get("uncertain_save", False)
+            or self._turnout.property("state").get("uncertain_save", False)
+            or self._turnout.property("state").get("paper_pending_request_id")
+            or self._outages.property("state").get("uncertain_save", False)
+            or self._constituency_results.property("state").get("uncertain_save", False)
+        ):
+            return True
+        completion = self._election_completion.property("state")
+        if station_id is None:
+            return bool(completion["uncertain_save"] or self._recovery.election_context_locked())
+        target = context or next((
+            row for row in self._workspace.property("state")["contexts"]
+            if row["station"]["id"] == station_id
+        ), None)
+        if target is None:
+            # Discover the authorized context before deciding an election-only lock.
+            return False
+        election_id = target["election"]["id"]
+        return bool(
+            completion["uncertain_save"] and completion["election_id"] != election_id
+            or self._recovery.election_context_locked(election_id)
+        )
 
     def _workspace_changed(self) -> None:
         context = self._workspace.property("state")["selected"]
