@@ -253,6 +253,23 @@ def election_completion_router(
         )
         return _assess_completion(db, election, active, stations, actor, timestamp)
 
+    @router.get("/completion/history")
+    def history(election_id: int, db: Database, identity: Identity) -> dict[str, Any]:
+        election, active, _, _ = _completion_context(db, identity, election_id, timestamp)
+        events = db.scalars(
+            select(ElectionCompletionEvent)
+            .where(ElectionCompletionEvent.election_id == election_id)
+            .order_by(ElectionCompletionEvent.election_revision.desc())
+        )
+        return {
+            "election": {
+                "id": election.id, "name": election.name,
+                "status": election.status, "revision": election.revision,
+            },
+            "active_election_id": active.election_id if active is not None else None,
+            "events": [_completion_event_view(event) for event in events],
+        }
+
     @router.get("/request-outcomes/{request_id}")
     def outcome(
         election_id: int, request_id: UUID, workflow: Literal["election_completion"],
