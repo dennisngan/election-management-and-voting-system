@@ -103,6 +103,14 @@ def election_completion_router(
                     "station_id": station.id,
                     "constituency_id": station.constituency_id,
                 })
+            elif row.status != "approved":
+                blockers.append({
+                    "code": "polling_completion_approval_required",
+                    "station_id": station.id,
+                    "constituency_id": station.constituency_id,
+                    "revision": row.revision,
+                    "status": row.status,
+                })
         context = {
             "id": election.id, "name": election.name,
             "status": election.status, "revision": election.revision,
