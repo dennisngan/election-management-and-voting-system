@@ -2,11 +2,13 @@
 
 from collections.abc import Iterator
 from textwrap import dedent
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
+from tests.box_support import prepared_box
 from tests.desktop_support import HttpsServer
 from tests.election_completion_support import reviewed_election_setup
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
@@ -249,5 +251,110 @@ def test_material_identifies_unresolved_tie_and_its_constituency(
             assert notice.property('text') == (
                 setup['reason'] + ' · ' + setup['constituency_caption']
                 + ' #' + str(setup['constituency_id']))
+            """,
+        )
+
+
+@pytest.mark.parametrize("locale", ["en", "tc", "sc"])
+@pytest.mark.parametrize("case", ["missing_selection", "changed_boxes", "recount"])
+def test_material_explains_count_prerequisites_with_scope_and_box_references(
+    admin: TestClient, database_url: str, https_server: HttpsServer, locale: str, case: str,
+) -> None:
+    copy = {
+        "en": {
+            "station": "Polling station", "scope": "Counting scope", "boxes": "Ballot-box IDs",
+            "selected_count_missing": "No approved count is selected",
+            "scope_not_ready": "Counting scope is not ready",
+            "selected_count_stale": "Selected count is stale",
+            "box_unscoped": "Ballot box is not in a counting scope",
+            "recount_pending": "The required recount round has not been approved and selected",
+        },
+        "tc": {
+            "station": "投票站", "scope": "點票範圍", "boxes": "選票箱編號",
+            "selected_count_missing": "未有選定核准點票",
+            "scope_not_ready": "點票範圍未就緒",
+            "selected_count_stale": "選定點票已過時",
+            "box_unscoped": "選票箱未納入點票範圍",
+            "recount_pending": "所需重新點票輪次尚未獲批核並選用",
+        },
+        "sc": {
+            "station": "投票站", "scope": "点票范围", "boxes": "选票箱编号",
+            "selected_count_missing": "未有选定核准点票",
+            "scope_not_ready": "点票范围未就绪",
+            "selected_count_stale": "选定点票已过时",
+            "box_unscoped": "选票箱未纳入点票范围",
+            "recount_pending": "所需重新点票轮次尚未获批核并选用",
+        },
+    }[locale]
+    with reviewed_election_setup(
+        admin, database_url, n1_selected=case != "missing_selection"
+    ) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        expected_codes = {"selected_count_missing"}
+        if case == "changed_boxes":
+            changed = setup["clients"]["polling"].post(
+                setup["paths"]["n1_boxes"],
+                json=prepared_box(box_reference="Additional box needs current scope review"),
+            )
+            assert changed.status_code == 201, changed.text
+            expected_codes = {"box_unscoped", "scope_not_ready", "selected_count_stale"}
+        elif case == "recount":
+            options = supervisor.get(
+                f"/api/workspace/constituencies/{setup['constituency_id']}/recounts"
+            )
+            assert options.status_code == 200, options.text
+            source = next(
+                row for row in options.json()["scope_sources"]
+                if row["scope_id"] == setup["n3_scope"]["id"]
+            )
+            changed = supervisor.post(
+                f"/api/workspace/stations/{source['station_id']}"
+                f"/counting-scopes/{source['scope_id']}/recounts",
+                json={
+                    "request_id": str(uuid4()), "scope_revision": source["scope_revision"],
+                    "expected_selection_revision": source["expected_selection_revision"],
+                    "source_round_id": source["source_round_id"],
+                    "source_round_revision": source["source_round_revision"],
+                    "event_at": "2026-11-16T00:00:00+08:00",
+                    "reason": "Complete the required count before finalization.",
+                    "password": BOX_READY_PASSWORD,
+                },
+            )
+            assert changed.status_code == 201, changed.text
+            expected_codes = {"recount_pending"}
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        blockers = response.json()["blockers"]
+        assert {row["code"] for row in blockers} == expected_codes
+        expected = []
+        for row in blockers:
+            text = copy[row["code"]] + " · " + copy["station"] + f" #{row['station_id']}"
+            if "scope_id" in row:
+                text += " · " + copy["scope"] + f" #{row['scope_id']}"
+            if row.get("box_ids"):
+                text += " · " + copy["boxes"] + " " + ", ".join(map(str, row["box_ids"]))
+            expected.append({"station_id": row["station_id"], "text": text})
+        https_server.clock.value = setup["clock"].value
+        run_completion_material(
+            {
+                "server": https_server.url, "locale": locale, "expected": expected,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": BOX_READY_PASSWORD,
+                "station_id": setup["stations"]["N1"]["id"],
+            },
+            """
+            click('electionCompletionNavigation')
+            completion = controller.property('electionCompletion')
+            wait(lambda: not completion.property('state')['refreshing'])
+            assert completion.property('state')['error'] == ''
+            assert completion.property('state')['assessment']['can_finalize'] is False
+            frame()
+            for expected in setup['expected']:
+                labels = completion_blocker_labels(expected['station_id'])
+                texts = [item.property('text') for item in labels]
+                assert expected['text'] in texts, (expected['text'], texts)
+                label = next(item for item in labels if item.property('text') == expected['text'])
+                assert label.property('visible')
+                assert _pointer_geometry(label) is not None
             """,
         )
