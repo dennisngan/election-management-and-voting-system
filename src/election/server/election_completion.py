@@ -15,6 +15,8 @@ from election.server.accounting import record_view as accounting_view
 from election.server.complaints import complaint_snapshot
 from election.server.configuration_models import Constituency, Election
 from election.server.constituency_results import constituency_result
+from election.server.counting_round_models import CountRoundRevision
+from election.server.counting_rounds import round_at, round_context, round_view
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, LoginSession
 from election.server.polling import record_view
@@ -129,7 +131,18 @@ def election_completion_router(
             constituency_result(db, actor, constituency_id)
             for constituency_id in sorted({station.constituency_id for station in stations})
         ]
+        selected_counts = []
         for result in results:
+            for contribution in result["contributions"]:
+                scope_id = contribution["scope_id"]
+                options = round_context(db, actor, contribution["station_id"], scope_id)
+                count_round = round_at(db, scope_id, contribution["round_id"])
+                revision = db.get(CountRoundRevision, contribution["round_revision_id"])
+                assert revision is not None
+                selected_counts.append({
+                    "station_id": contribution["station_id"], "scope_id": scope_id,
+                    "record": round_view(db, count_round, revision, options),
+                })
             constituency_id = result["context"]["constituency"]["id"]
             blockers.extend(
                 {**pending, "constituency_id": constituency_id}
@@ -171,7 +184,7 @@ def election_completion_router(
         }
         source_records = {
             "polling_completion": sources, "constituencies": results, "complaints": complaints,
-            "accounting": accounting_sources,
+            "accounting": accounting_sources, "selected_counts": selected_counts,
         }
         basis = {"election": context, "sources": source_records}
         return {
