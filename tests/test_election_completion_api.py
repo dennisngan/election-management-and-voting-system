@@ -1,6 +1,7 @@
 """Election completion is assessed through authenticated HTTP and real MySQL."""
 
 from collections.abc import Iterator
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -19,6 +20,7 @@ from tests.polling_support import (
     transition_payload,
 )
 from tests.stock_support import stock_payload
+from tests.test_local_recount_exports_history_api import complete_required_round
 
 
 @pytest.fixture(scope="module")
@@ -737,3 +739,118 @@ def test_authorized_reopening_waits_for_active_slot_and_preserves_original_outco
         assert still_reopened.status_code == 200, still_reopened.text
         assert still_reopened.json()["election"] == receipt["election"]
         assert still_reopened.json()["active_election_id"] == election_id
+
+
+def test_reopened_recount_refinalization_preserves_the_original_finalized_outcome(
+    admin: TestClient, database_url: str,
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        counter = setup["clients"]["receiveronly"]
+        election_id = setup["election"]["id"]
+        constituency_id = setup["constituency_id"]
+        base = f"/api/workspace/elections/{election_id}"
+        before_response = supervisor.get(setup["completion_path"])
+        assert before_response.status_code == 200, before_response.text
+        before = before_response.json()
+        assert before["can_finalize"] is True
+        original_command = {
+            "request_id": str(uuid4()),
+            "expected_election_revision": before["election"]["revision"],
+            "basis_digest": before["basis_digest"], "password": BOX_READY_PASSWORD,
+        }
+        first_response = supervisor.post(base + "/finalizations", json=original_command)
+        assert first_response.status_code == 201, first_response.text
+        first = first_response.json()
+        first_north = next(
+            row for row in first["event"]["outcome"]["results"]
+            if row["constituency"]["id"] == constituency_id
+        )
+        assert [row["quantity"] for row in first_north["candidate_totals"]] == [6, 4]
+        assert first["event"]["outcome"]["sources"] == before["sources"]
+        reopened_response = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": first["election"]["revision"],
+            "previous_finalization_id": first["event"]["id"],
+            "reason": "Reopen to recount the N1 received-box scope after signed review.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened_response.status_code == 201, reopened_response.text
+        reopened = reopened_response.json()
+        assert reopened["active_election_id"] == election_id
+        prior = setup["n1_round"]["selected"]
+        setup["clock"].value += timedelta(minutes=10)
+        recount_path = (
+            f"/api/workspace/stations/{setup['stations']['N1']['id']}"
+            f"/counting-scopes/{setup['scope']['id']}/recounts"
+        )
+        instructed_response = supervisor.post(recount_path, json={
+            "request_id": str(uuid4()), "scope_revision": setup["scope"]["revision"],
+            "expected_selection_revision": prior["selection"]["revision"],
+            "source_round_id": prior["id"], "source_round_revision": prior["revision"],
+            "event_at": "2026-11-16T00:05:42.123456+08:00",
+            "reason": "Retally the same received boxes while retaining the signed first tally.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert instructed_response.status_code == 201, instructed_response.text
+        blank = instructed_response.json()["round"]
+        pending_response = supervisor.get(setup["completion_path"])
+        assert pending_response.status_code == 200, pending_response.text
+        assert pending_response.json()["can_finalize"] is False
+        assert any(
+            row["code"] == "recount_pending" and row["scope_id"] == setup["scope"]["id"]
+            for row in pending_response.json()["blockers"]
+        )
+        replacement = complete_required_round(setup, blank, prior["selection"]["revision"])
+        assert replacement["id"] != prior["id"]
+        assert replacement["round_number"] == 2 and replacement["approval_valid"] is True
+        assert [row["quantity"] for row in replacement["final_candidate_votes"]] == [8, 2]
+        assert replacement["scope_basis"] == prior["scope_basis"]
+        reviewed_response = supervisor.get(setup["completion_path"])
+        assert reviewed_response.status_code == 200, reviewed_response.text
+        reviewed = reviewed_response.json()
+        assert reviewed["election"] == reopened["election"]
+        assert reviewed["can_finalize"] is True
+        assert reviewed["basis_digest"] != before["basis_digest"]
+        second_response = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert second_response.status_code == 201, second_response.text
+        second = second_response.json()
+        assert second["event"]["id"] not in {first["event"]["id"], reopened["event"]["id"]}
+        assert second["event"]["kind"] == "finalization"
+        assert second["election"]["revision"] == reopened["election"]["revision"] + 1
+        assert second["active_election_id"] is None
+        assert second["event"]["outcome"]["sources"] == reviewed["sources"]
+        second_north = next(
+            row for row in second["event"]["outcome"]["results"]
+            if row["constituency"]["id"] == constituency_id
+        )
+        assert [row["quantity"] for row in second_north["candidate_totals"]] == [8, 2]
+        assert any(
+            row["scope_id"] == setup["scope"]["id"] and row["round_id"] == replacement["id"]
+            for row in second_north["contributions"]
+        )
+        for receipt in (first, second):
+            recovered = supervisor.get(
+                base + f"/request-outcomes/{receipt['request_id']}?workflow=election_completion"
+            )
+            assert recovered.status_code == 200, recovered.text
+            assert recovered.json() == {
+                "request_id": receipt["request_id"], "workflow": "election_completion",
+                "status": "committed", "record": receipt,
+            }
+        original_replay = supervisor.post(base + "/finalizations", json=original_command)
+        assert original_replay.status_code == 201, original_replay.text
+        assert original_replay.json() == first
+        current = supervisor.get(setup["completion_path"])
+        assert current.status_code == 200, current.text
+        assert current.json()["election"] == second["election"]
+        assert current.json()["active_election_id"] is None
+        old_round = counter.get(f"{setup['rounds_path']}/{prior['id']}")
+        assert old_round.status_code == 200, old_round.text
+        old_votes = old_round.json()["record"]["final_candidate_votes"]
+        assert [row["quantity"] for row in old_votes] == [6, 4]
+        assert old_round.json()["record"]["approved_at"] == prior["approved_at"]
