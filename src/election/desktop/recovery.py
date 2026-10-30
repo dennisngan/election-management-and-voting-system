@@ -26,7 +26,7 @@ class CommandJournal(Protocol):
     def commands(self, server_url: str, actor_id: int, station_id: int) -> list[dict[str, Any]]: ...
 
     def election_commands(
-        self, server_url: str, actor_id: int, election_id: int,
+        self, server_url: str, actor_id: int, election_id: int | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def record_outcome(
@@ -63,17 +63,32 @@ class RecoveryController(QObject):
     def state(self) -> dict[str, Any]:
         # Keep original command payloads intact while adding receipt display text.
         view = {**self._state, "commands": [
-            {**row, "receipt": quantity_display(row["receipt"])
-             if isinstance(row.get("receipt"), dict) else row.get("receipt")}
+            {**row, "receipt": (
+                quantity_display(row["receipt"])
+                if isinstance(row.get("receipt"), dict) else row.get("receipt")
+            ) if self._receipt_visible(row) else None}
             for row in self._state["commands"]
         ]}
         return qt_state(view)
+
+    def _receipt_visible(self, command: dict[str, Any]) -> bool:
+        if command.get("workflow") != "election_completion":
+            return True
+        request_id = command.get("request_id")
+        return bool(
+            request_id in self._verified_election_receipts
+            or request_id not in self._inspected_election_requests
+            and command.get("election_id") == self._state["election_id"]
+        )
 
     def reset(self) -> None:
         self._generation += 1
         self._opened = False
         self._server_url = ""
         self._account_id = 0
+        self._inspected_election_requests: set[str] = set()
+        self._checked_election_requests: set[str] = set()
+        self._verified_election_receipts: set[str] = set()
         self._state = {
             "station_id": 0,
             "election_id": 0,
@@ -124,9 +139,20 @@ class RecoveryController(QObject):
             or self._account_id != normalized_account_id
         )
         opened = self._opened
+        same_authority = (
+            self._server_url == origin and self._account_id == normalized_account_id
+            and self._state["role"] == values["role"]
+        )
+        grants = (
+            set(self._inspected_election_requests), set(self._checked_election_requests),
+            set(self._verified_election_receipts),
+        )
         if changed:
             self.reset()
             self._opened = opened
+            if same_authority:
+                (self._inspected_election_requests, self._checked_election_requests,
+                 self._verified_election_receipts) = grants
         self._state.update(values)
         self._server_url = origin
         self._account_id = normalized_account_id
@@ -136,8 +162,7 @@ class RecoveryController(QObject):
 
     def _context_ready(self) -> bool:
         return bool(
-            (self._state["station_id"]
-             or self._state["role"] == "supervisor" and self._state["election_id"])
+            (self._state["station_id"] or self._state["role"] == "supervisor")
             and self._account_id
             and self._state["role"] in ROLES
             and self._server_url
@@ -159,10 +184,8 @@ class RecoveryController(QObject):
             self._journal.commands(self._server_url, self._account_id, station_id)
             if station_id else []
         )
-        if self._state["role"] == "supervisor" and election_id:
-            rows.extend(self._journal.election_commands(
-                self._server_url, self._account_id, election_id,
-            ))
+        if self._state["role"] == "supervisor":
+            rows.extend(self._journal.election_commands(self._server_url, self._account_id))
         constituency_id = self._state.get("constituency_id", 0)
         return [
             deepcopy(row)
@@ -171,7 +194,11 @@ class RecoveryController(QObject):
             and row.get("actor_id") == self._account_id
             and (
                 row.get("namespace") == "election" and "station_id" not in row
-                and row.get("election_id") == election_id
+                and (
+                    row.get("election_id") == election_id
+                    or row.get("status") in {"pending", "uncertain"}
+                    or row.get("request_id") in self._inspected_election_requests
+                )
                 or row.get("namespace") != "election" and row.get("station_id") == station_id
             )
             and self._workflow_allowed(row.get("workflow"))
@@ -303,10 +330,16 @@ class RecoveryController(QObject):
             else path.startswith(f"/api/workspace/stations/{self._state['station_id']}/")
         )
         if command["workflow"] == "election_completion":
-            valid_path = path in {
-                f"/api/workspace/elections/{self._state['election_id']}/finalizations",
-                f"/api/workspace/elections/{self._state['election_id']}/reopenings",
-            } and command.get("election_id") == self._state["election_id"]
+            election_id = command.get("election_id")
+            valid_path = (
+                type(election_id) is int and election_id > 0
+                and path in {
+                    f"/api/workspace/elections/{election_id}/finalizations",
+                    f"/api/workspace/elections/{election_id}/reopenings",
+                }
+                and (election_id == self._state["election_id"]
+                     or request_id in self._checked_election_requests)
+            )
         if (
             not isinstance(path, str) or not valid_path
             or method not in ("POST", "PUT")
@@ -334,6 +367,10 @@ class RecoveryController(QObject):
         generation = self._generation
         server_url = self._server_url
         account_id = self._account_id
+        if command.get("workflow") == "election_completion":
+            self._inspected_election_requests.add(request_id)
+            self._checked_election_requests.discard(request_id)
+            self._verified_election_receipts.discard(request_id)
         self._state.update(busy=True, refreshing=False, error="", notice="")
         self.stateChanged.emit()
 
@@ -379,6 +416,10 @@ class RecoveryController(QObject):
                             record=body.get("record"),
                             error=("" if status == "committed" else "request_not_found"),
                         )
+                        if command.get("workflow") == "election_completion":
+                            self._checked_election_requests.add(request_id)
+                            if status == "committed":
+                                self._verified_election_receipts.add(request_id)
                     except OSError, ValueError, RuntimeError:
                         self._state.update(busy=False, error="recovery_journal_unavailable")
                 self.stateChanged.emit()
@@ -386,6 +427,9 @@ class RecoveryController(QObject):
             try:
                 if valid_operational_receipt(command, body):
                     finish("committed", record=body)
+                    if command.get("workflow") == "election_completion":
+                        self._checked_election_requests.add(request_id)
+                        self._verified_election_receipts.add(request_id)
                 else:
                     finish("uncertain", error="recovery_outcome_invalid")
             except OSError, ValueError, RuntimeError:

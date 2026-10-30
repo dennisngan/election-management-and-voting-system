@@ -212,8 +212,10 @@ class CommandJournal:
         return deepcopy(row)
 
     def election_commands(
-        self, server_url: str, actor_id: int, election_id: int,
+        self, server_url: str, actor_id: int, election_id: int | None = None,
     ) -> list[dict[str, Any]]:
+        if election_id is not None and (type(election_id) is not int or election_id <= 0):
+            raise JournalError("recovery_command_invalid")
         if not self._directory(create=False):
             return []
         origin = _origin(server_url)
@@ -222,15 +224,19 @@ class CommandJournal:
             if not private_file(path):
                 raise JournalError("recovery_journal_unavailable")
             row = json.loads(path.read_text(encoding="utf-8"))
-            if (
-                row.get("server_url"), row.get("actor_id"), row.get("namespace"),
-                row.get("election_id"),
-            ) != (origin, actor_id, "election", election_id):
+            if not isinstance(row, dict):
+                raise JournalError("recovery_journal_unavailable")
+            if (row.get("server_url"), row.get("actor_id"), row.get("namespace")) != (
+                origin, actor_id, "election",
+            ):
+                continue
+            target_id = row.get("election_id")
+            if election_id is not None and target_id != election_id:
                 continue
             if (
-                type(election_id) is not int or election_id <= 0 or "station_id" in row
+                type(target_id) is not int or target_id <= 0 or "station_id" in row
                 or path != self._path(origin, actor_id, row["request_id"])
-                or election_command_workflow(row["path"]) != (election_id, row["workflow"])
+                or election_command_workflow(row["path"]) != (target_id, row["workflow"])
                 or row["method"] != "POST"
                 or row["payload"].get("request_id") != row["request_id"]
                 or row["status"] not in {"pending", "uncertain", "committed", "rejected"}
