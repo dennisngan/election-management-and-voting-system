@@ -1,10 +1,12 @@
 """Election completion is assessed through authenticated HTTP and real MySQL."""
 
 from collections.abc import Iterator
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
 from tests.election_completion_support import reviewed_election_setup
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.polling_support import (
@@ -177,3 +179,40 @@ def test_fully_reviewed_active_election_is_ready_despite_provisional_display(
             for result in results
         ] == [[6, 4], [4, 1]]
         assert assessment["can_finalize"] is True
+
+
+def test_result_affecting_tie_requires_current_supervisor_resolution(
+    admin: TestClient, database_url: str
+) -> None:
+    with reviewed_election_setup(admin, database_url, n1_quantities=(5, 5)) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        assessment = response.json()
+        north = assessment["sources"]["constituencies"][0]
+        assert north["complete"] is True
+        assert [row["quantity"] for row in north["candidate_totals"]] == [5, 5]
+        assert north["resolved_candidate_id"] is None
+        assert assessment["can_finalize"] is False
+        assert {
+            "code": "result_tie_resolution_required",
+            "constituency_id": setup["constituency_id"],
+            "candidate_ids": north["tie_candidate_ids"],
+        } in assessment["blockers"]
+        resolved = supervisor.post(
+            f"/api/workspace/constituencies/{setup['constituency_id']}"
+            "/results/tie-resolutions",
+            json={
+                "request_id": str(uuid4()), "expected_resolution_revision": 0,
+                "basis_digest": north["basis_digest"],
+                "candidate_id": north["tie_candidate_ids"][0],
+                "reason": "Record the authorized tie outcome before finalization.",
+                "password": BOX_READY_PASSWORD,
+            },
+        )
+        assert resolved.status_code == 200, resolved.text
+        current = supervisor.get(setup["completion_path"])
+        assert current.status_code == 200, current.text
+        assert current.json()["blockers"] == []
+        assert current.json()["can_finalize"] is True
+        assert current.json()["basis_digest"] != assessment["basis_digest"]

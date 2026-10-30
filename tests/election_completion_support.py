@@ -17,11 +17,11 @@ from tests.test_constituency_tie_api import complete_tie_setup
 
 @contextmanager
 def reviewed_election_setup(
-    admin: TestClient, database_url: str,
+    admin: TestClient, database_url: str, *, n1_quantities: tuple[int, int] = (6, 4),
 ) -> Iterator[dict[str, Any]]:
     """Complete one two-constituency/four-station source arrangement, without finalizing."""
     with complete_tie_setup(admin, database_url, candidate_count=2) as setup:
-        n1_round = save_result_round(setup, [6, 4], approve_and_select=True)
+        n1_round = save_result_round(setup, list(n1_quantities), approve_and_select=True)
         station = setup["stations"]["S1"]
         station_id = station["id"]
         polling = setup["clients"]["polling"]
