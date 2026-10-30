@@ -290,6 +290,46 @@ def _constituency_recount_receipt(command: dict[str, Any], record: Any) -> bool:
     return True
 
 
+def _finalization_results_match(outcome: dict[str, Any]) -> bool:
+    reviewed = outcome["sources"].get("constituencies")
+    if not isinstance(reviewed, list) or not reviewed:
+        return False
+    expected = []
+    for result in reviewed:
+        if not isinstance(result, dict) or result.get("complete") is not True:
+            return False
+        context = result.get("context")
+        if (
+            not isinstance(context, dict) or not isinstance(context.get("constituency"), dict)
+            or not _positive(context["constituency"].get("id"))
+            or not isinstance(result.get("candidate_totals"), list)
+            or not result["candidate_totals"] or not isinstance(result.get("contributions"), list)
+            or not isinstance(result.get("basis_digest"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", result["basis_digest"]) is None
+        ):
+            return False
+        winner = result.get("resolved_candidate_id")
+        if winner is None:
+            leaders = result.get("leader_candidate_ids")
+            if not isinstance(leaders, list) or len(leaders) != 1:
+                return False
+            winner = leaders[0]
+        if not _positive(winner):
+            return False
+        decision = result.get("tie_resolution")
+        if decision is not None and not isinstance(decision, dict):
+            return False
+        expected.append({
+            "constituency": context["constituency"],
+            "candidate_totals": result["candidate_totals"],
+            "contributions": result["contributions"],
+            "winner_candidate_id": winner, "status": "finalized", "provisional": False,
+            "tie_resolution": decision if decision and decision.get("valid") else None,
+            "basis_digest": result["basis_digest"],
+        })
+    return outcome.get("results") == expected
+
+
 def _election_completion_receipt(command: dict[str, Any], record: Any) -> bool:
     target = re.fullmatch(
         r"/api/workspace/elections/([1-9][0-9]*)/(finalizations|reopenings)", command["path"],
@@ -343,9 +383,7 @@ def _election_completion_receipt(command: dict[str, Any], record: Any) -> bool:
                 "sources": outcome["sources"],
             }, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
             == payload.get("basis_digest")
-            and isinstance(outcome.get("results"), list) and outcome["results"]
-            and all(isinstance(result, dict) and result.get("status") == "finalized"
-                    and result.get("provisional") is False for result in outcome["results"])
+            and _finalization_results_match(outcome)
         )
     return bool(
         _positive(payload.get("previous_finalization_id"))
