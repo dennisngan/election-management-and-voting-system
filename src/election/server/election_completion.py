@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from election.server.complaints import complaint_snapshot
 from election.server.configuration_models import Constituency, Election
 from election.server.constituency_results import constituency_result
 from election.server.lifecycle_models import ActiveElection
@@ -130,11 +131,21 @@ def election_completion_router(
                     "constituency_id": constituency_id,
                     "candidate_ids": result["tie_candidate_ids"],
                 })
+        complaints = [
+            {
+                "station_id": station.id,
+                "records": complaint_snapshot(db, actor, station.id, timestamp())["items"],
+            }
+            for station in stations
+        ]
         context = {
             "id": election.id, "name": election.name,
             "status": election.status, "revision": election.revision,
         }
-        basis = {"election": context, "polling_completion": sources, "constituencies": results}
+        source_records = {
+            "polling_completion": sources, "constituencies": results, "complaints": complaints,
+        }
+        basis = {"election": context, "sources": source_records}
         return {
             "election": context,
             "active_election_id": active.election_id if active is not None else None,
@@ -144,7 +155,7 @@ def election_completion_router(
                 and all(result["complete"] for result in results)
             ),
             "blockers": blockers,
-            "sources": {"polling_completion": sources, "constituencies": results},
+            "sources": source_records,
             "basis_digest": hashlib.sha256(json.dumps(
                 basis, sort_keys=True, ensure_ascii=False, separators=(",", ":")
             ).encode()).hexdigest(),
