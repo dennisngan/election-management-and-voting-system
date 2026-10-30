@@ -17,6 +17,7 @@ from tests.polling_support import (
     ready_polling_staff,
     transition_payload,
 )
+from tests.stock_support import stock_payload
 
 
 @pytest.fixture(scope="module")
@@ -323,3 +324,61 @@ def test_partial_tied_totals_do_not_demand_premature_tie_resolution(
             row["code"] == "result_tie_resolution_required"
             for row in assessment["blockers"]
         )
+
+
+def test_later_stock_receipt_invalidates_reviewed_accounting_and_selected_count(
+    admin: TestClient, database_url: str
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        before = supervisor.get(setup["completion_path"])
+        assert before.status_code == 200, before.text
+        assert before.json()["can_finalize"] is True
+        station_id = setup["stations"]["N1"]["id"]
+        changed = setup["clients"]["polling"].post(
+            f"/api/workspace/stations/{station_id}/stock",
+            json=stock_payload(
+                event_at="2026-11-15T10:00:00+08:00", ordinary_quantity=5,
+                replacement_quantity=0, tendered_quantity=0,
+                ranges=[
+                    {"pool": "ordinary", "serial_from": "000100", "serial_to": "000104"}
+                ],
+            ),
+        )
+        assert changed.status_code == 201, changed.text
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        assessment = response.json()
+        assert assessment["can_finalize"] is False
+        scope_blockers = [
+            row for row in assessment["blockers"]
+            if row.get("scope_id") == setup["scope"]["id"]
+        ]
+        assert {row["code"] for row in scope_blockers} == {
+            "scope_not_ready", "selected_count_stale",
+        }
+        for blocker in scope_blockers:
+            source = next(
+                row for row in blocker["source_accounting_revisions"]
+                if row["station_id"] == station_id
+            )
+            assert source["record_id"] == setup["accounting"]["N1"]["record"]["id"]
+            assert source["revision"] == 1 and source["status"] == "approved"
+            # These are the preserved scope's original approved source facts.
+            assert source["source_current"] is True
+            assert source["approval_valid"] is True
+            current = next(
+                row for row in blocker["current_source_accounting_revisions"]
+                if row["station_id"] == station_id
+            )
+            assert current["record_id"] == source["record_id"]
+            assert current["revision"] == 1 and current["status"] == "approved"
+            assert current["source_current"] is False
+            assert current["approval_valid"] is False
+        current_accounting = next(
+            row["record"] for row in assessment["sources"]["accounting"]
+            if row["station_id"] == station_id
+        )
+        assert current_accounting["id"] == setup["accounting"]["N1"]["record"]["id"]
+        assert current_accounting["source_current"] is False
+        assert assessment["basis_digest"] != before.json()["basis_digest"]
