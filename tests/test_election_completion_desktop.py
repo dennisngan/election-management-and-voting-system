@@ -1,24 +1,39 @@
 """Election completion changes reach public Qt lifecycle state through real HTTPS."""
 
+import hashlib
 import json
 import os
+import socket
 import ssl
 import stat
-from collections.abc import Iterator
+import threading
+from collections.abc import Awaitable, Callable, Iterator
+from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
+import uvicorn
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtTest import QSignalSpy
 
 from election.desktop.controller import DesktopController
 from election.private_paths import private_directory, private_file
+from election.server.app import create_app
 from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
 from tests.configuration_desktop_support import ready_setup, setup_idle
-from tests.desktop_support import TLS_DIRECTORY, HttpsServer, wait_for, wait_for_editor_idle
+from tests.desktop_support import (
+    TLS_DIRECTORY,
+    ControlledClock,
+    HttpsServer,
+    wait_for,
+    wait_for_editor_idle,
+)
 from tests.election_completion_support import reviewed_election_setup
 from tests.lifecycle_support import (
     lifecycle_database_url,
@@ -580,6 +595,246 @@ def test_late_original_finalization_ack_preserves_an_already_observed_active_ele
             _assert_completion_credential_free(settled)
         finally:
             endpoint.release.set()
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
+
+
+@dataclass
+class IncompleteFinalizationReceiptBoundary(HttpsServer):
+    alter_next_post_path: str = ""
+    altered_response_count: int = 0
+    evidence_directory: Path | None = None
+
+
+def _write_incomplete_receipt_evidence(path: Path, body: bytes) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as output:
+        output.write(body)
+        output.flush()
+        os.fsync(output.fileno())
+
+
+@pytest.fixture
+def incomplete_finalization_receipt_boundary(
+    database_url: str, qt_app: QCoreApplication, tmp_path: Path,
+) -> Iterator[IncompleteFinalizationReceiptBoundary]:
+    for name in ("server.pem", "server-key.pem", "ca.pem"):
+        assert (TLS_DIRECTORY / name).is_file(), "Prepare the existing local TLS fixture first"
+    directory = tmp_path / "incomplete-finalization-wire"
+    directory.mkdir(mode=0o700)
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    endpoint = IncompleteFinalizationReceiptBoundary(
+        f"https://localhost:{port}", ControlledClock(), evidence_directory=directory,
+    )
+    application = create_app(database_url, now=endpoint.clock)
+
+    @application.middleware("http")
+    async def alter_only_actual_committed_finalization(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        with endpoint.lock:
+            endpoint.requests.append((request.method, request.url.path))
+        response = await call_next(request)
+        with endpoint.lock:
+            alter = (
+                request.method == "POST" and request.url.path == endpoint.alter_next_post_path
+                and response.status_code == 201
+            )
+            if alter:
+                endpoint.alter_next_post_path = ""
+        if not alter:
+            return response
+        # The actual route has committed; alter only its delivered protocol body.
+        chunks = [chunk async for chunk in response.body_iterator]
+        original_body = b"".join(
+            chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks
+        )
+        payload = json.loads(original_body)
+        assert payload["event"]["kind"] == "finalization"
+        assert payload["event"]["outcome"]["sources"]
+        assert payload["event"]["outcome"]["results"]
+        payload["event"]["outcome"]["sources"] = {}
+        payload["event"]["outcome"]["results"] = [{"status": "finalized", "provisional": False}]
+        headers = {
+            name: value for name, value in response.headers.items()
+            if name.lower() not in {"content-length", "content-type", "transfer-encoding"}
+        }
+        delivered = JSONResponse(
+            payload, status_code=response.status_code, headers=headers,
+            background=response.background,
+        )
+        # Capture both exact application bodies BEFORE delivering the faulty one.
+        _write_incomplete_receipt_evidence(directory / "original-response201.json", original_body)
+        _write_incomplete_receipt_evidence(directory / "delivered-response201.json", delivered.body)
+        _write_incomplete_receipt_evidence(directory / "wire-fault-proof.json", json.dumps({
+            "method": request.method, "path": request.url.path,
+            "actual_handler_status": response.status_code,
+            "delivered_status": delivered.status_code,
+            "original_sha256": hashlib.sha256(original_body).hexdigest(),
+            "delivered_sha256": hashlib.sha256(delivered.body).hexdigest(),
+            "changed_fields": ["event.outcome.sources", "event.outcome.results"],
+            "actual_handler_ran_first": True, "SQL_or_business_commit_replaced": False,
+        }, indent=2).encode())
+        with endpoint.lock:
+            endpoint.altered_response_count += 1
+        return delivered
+
+    server = uvicorn.Server(uvicorn.Config(
+        application, host="127.0.0.1", port=port, loop="asyncio", ws="none",
+        ssl_certfile=str(TLS_DIRECTORY / "server.pem"),
+        ssl_keyfile=str(TLS_DIRECTORY / "server-key.pem"),
+        log_level="warning", access_log=False,
+        timeout_keep_alive=5, timeout_graceful_shutdown=1,
+    ))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+    thread.start()
+    try:
+        wait_for(qt_app, lambda: server.started)
+        yield endpoint
+    finally:
+        server.should_exit = True
+        wait_for(qt_app, lambda: not thread.is_alive())
+        thread.join(timeout=0)
+        listener.close()
+        assert not thread.is_alive(), "The owned finalization-receipt TLS server did not stop"
+
+
+def test_incomplete_finalization_receipt_stays_unknown_and_retains_actual_bad_body(
+    admin: TestClient,
+    database_url: str,
+    incomplete_finalization_receipt_boundary: IncompleteFinalizationReceiptBoundary,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "incomplete-finalization-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        endpoint = incomplete_finalization_receipt_boundary
+        endpoint.clock.value = setup["clock"].value
+        election_id = setup["election"]["id"]
+        actor = setup["accounts"]["supervisor"]
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        directory = endpoint.evidence_directory
+        assert isinstance(directory, Path)
+        client = DesktopController(endpoint.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(endpoint.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            reviewed = completion.property("state")["assessment"]
+            assert reviewed["can_finalize"] is True
+            finalized = QSignalSpy(completion.finalized)
+            assert finalized.isValid()
+            with endpoint.lock:
+                endpoint.alter_next_post_path = target
+            completion.finalize(BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, completion)
+            unknown = deepcopy(completion.property("state"))
+            assert endpoint.altered_response_count == 1
+            assert endpoint.alter_next_post_path == ""
+            original_bytes = (directory / "original-response201.json").read_bytes()
+            delivered_bytes = (directory / "delivered-response201.json").read_bytes()
+            original_receipt = json.loads(original_bytes)
+            delivered_receipt = json.loads(delivered_bytes)
+            expected_fault = deepcopy(original_receipt)
+            expected_fault["event"]["outcome"]["sources"] = {}
+            expected_fault["event"]["outcome"]["results"] = [
+                {"status": "finalized", "provisional": False},
+            ]
+            assert delivered_receipt == expected_fault
+            assert len(original_receipt["event"]["outcome"]["results"]) == 2
+            assert len(original_receipt["event"]["outcome"]["sources"]["polling_completion"]) == 4
+            request_id = original_receipt["request_id"]
+            assert str(UUID(request_id)) == request_id
+            outcome_path = (
+                f"/api/workspace/elections/{election_id}/request-outcomes/{request_id}"
+                "?workflow=election_completion"
+            )
+            canonical_response = setup["clients"]["supervisor"].get(outcome_path)
+            assert canonical_response.status_code == 200, canonical_response.text
+            canonical = canonical_response.json()
+            assert canonical == {
+                "request_id": request_id, "workflow": "election_completion",
+                "status": "committed", "record": original_receipt,
+            }
+            active = setup["clients"]["supervisor"].get("/api/active-election")
+            assert active.status_code == 200, active.text
+            assert active.json()["election"] is None
+            recovery = client.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            commands = recovery.property("state")["commands"]
+            assert len(commands) == 1
+            command = commands[0]
+            files = list(journal_directory.glob("*.json"))
+            assert len(files) == 1
+            journal_file = files[0]
+            durable_bytes = journal_file.read_bytes()
+            durable = json.loads(durable_bytes)
+            # Preserve the real first verdict even if this case is still RED.
+            _write_incomplete_receipt_evidence(directory / "observed-verdict.json", json.dumps({
+                "request_id": request_id, "actual_server_outcome": canonical["status"],
+                "client_uncertain_save": unknown["uncertain_save"],
+                "client_error": unknown["error"], "journal_status": durable["status"],
+                "finalized_signal_count": finalized.count(),
+                "post_count": endpoint.request_count("POST", target),
+                "original_sha256": hashlib.sha256(original_bytes).hexdigest(),
+                "delivered_sha256": hashlib.sha256(delivered_bytes).hexdigest(),
+            }, indent=2).encode())
+            # Intended RED: c525 accepts the incomplete outcome as a terminal receipt.
+            assert unknown["uncertain_save"] is True, {
+                "error": unknown["error"], "journal_status": durable["status"],
+                "finalized_signal_count": finalized.count(),
+            }
+            assert unknown["pending_request_id"] == request_id and unknown["receipt"] == {}
+            assert unknown["error"] in {"request_failed", "invalid_response"}
+            assert finalized.count() == 0
+            assert command["namespace"] == "election" and command["election_id"] == election_id
+            assert command["actor_id"] == actor["id"] and command["server_url"] == endpoint.url
+            assert command["status"] == durable["status"] == "uncertain"
+            assert command["error"] == durable["error"] == "invalid_response"
+            expected_payload = {
+                "request_id": request_id,
+                "expected_election_revision": reviewed["election"]["revision"],
+                "basis_digest": reviewed["basis_digest"],
+            }
+            assert command["payload"] == durable["payload"] == expected_payload
+            assert "station_id" not in command and "station_id" not in durable
+            assert_public_business_fields(command["receipt"]["record"], delivered_receipt)
+            assert durable["receipt"]["record"] == delivered_receipt
+            assert workspace.property("unresolvedRequest") is True
+            _assert_completion_credential_free(durable)
+            _assert_completion_credential_free(unknown)
+            assert endpoint.request_count("POST", target) == 1
+            assert endpoint.request_count("GET", outcome_path.split("?", 1)[0]) == 0
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            recovery.reload()
+            wait_for_editor_idle(qt_app, recovery)
+            assert completion.property("state")["uncertain_save"] is True
+            assert completion.property("state")["pending_request_id"] == request_id
+            assert completion.property("state")["receipt"] == {} and finalized.count() == 0
+            assert endpoint.request_count("POST", target) == 1
+            assert endpoint.request_count("GET", outcome_path.split("?", 1)[0]) == 0
+            assert journal_file.read_bytes() == durable_bytes
+            assert (directory / "original-response201.json").read_bytes() == original_bytes
+            assert (directory / "delivered-response201.json").read_bytes() == delivered_bytes
+        finally:
             client.shutdown()
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
