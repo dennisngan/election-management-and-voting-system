@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
+from tests.complaint_support import complaint_payload, station_categories
 from tests.election_completion_support import reviewed_election_setup
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.polling_support import (
@@ -216,3 +217,34 @@ def test_result_affecting_tie_requires_current_supervisor_resolution(
         assert current.json()["blockers"] == []
         assert current.json()["can_finalize"] is True
         assert current.json()["basis_digest"] != assessment["basis_digest"]
+
+
+def test_completion_retains_unresolved_complaint_status_without_inventing_resolution(
+    admin: TestClient, database_url: str
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        officer = setup["clients"]["polling"]
+        supervisor = setup["clients"]["supervisor"]
+        station_id = setup["stations"]["N1"]["id"]
+        category = station_categories(officer, station_id)[0]
+        created = officer.post(
+            f"/api/workspace/stations/{station_id}/complaints",
+            json=complaint_payload(category),
+        )
+        assert created.status_code == 201, created.text
+        complaint = created.json()
+        assert complaint["work_status"] == "in_progress"
+        assert complaint["completed_at"] is None
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        assessment = response.json()
+        assert assessment["can_finalize"] is True
+        assert assessment["blockers"] == []
+        assert {
+            "station_id": station_id, "records": [complaint],
+        } in assessment["sources"]["complaints"]
+        current = officer.get(
+            f"/api/workspace/stations/{station_id}/complaints/{complaint['id']}"
+        )
+        assert current.status_code == 200, current.text
+        assert current.json() == complaint
