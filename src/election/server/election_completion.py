@@ -132,8 +132,11 @@ def election_completion_router(
         return {
             "election": context,
             "active_election_id": active.election_id if active is not None else None,
-            # This first assessment slice cannot authorize finalization yet.
-            "can_finalize": False,
+            "can_finalize": bool(
+                active is not None and active.election_id == election.id
+                and election.status == "active" and results and not blockers
+                and all(result["complete"] for result in results)
+            ),
             "blockers": blockers,
             "sources": {"polling_completion": sources, "constituencies": results},
             "basis_digest": hashlib.sha256(json.dumps(
