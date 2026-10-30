@@ -616,3 +616,124 @@ def test_original_completion_outcome_and_replay_survive_cleared_active_election(
         active = supervisor.get("/api/active-election")
         assert active.status_code == 200, active.text
         assert active.json()["election"] is None
+
+
+def test_authorized_reopening_waits_for_active_slot_and_preserves_original_outcome(
+    admin: TestClient, database_url: str,
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        reviewed_response = supervisor.get(setup["completion_path"])
+        assert reviewed_response.status_code == 200, reviewed_response.text
+        reviewed = reviewed_response.json()
+        assert reviewed["can_finalize"] is True
+        finalization_command = {
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        }
+        finalized = supervisor.post(base + "/finalizations", json=finalization_command)
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        original_outcome_path = (
+            base + f"/request-outcomes/{original['request_id']}?workflow=election_completion"
+        )
+        original_recovery = {
+            "request_id": original["request_id"], "workflow": "election_completion",
+            "status": "committed", "record": original,
+        }
+        recovered = supervisor.get(original_outcome_path)
+        assert recovered.status_code == 200, recovered.text
+        assert recovered.json() == original_recovery
+        active = supervisor.get("/api/active-election")
+        assert active.status_code == 200, active.text
+        assert active.json()["election"] is None
+        reason = "Reopen for an authorized review while preserving the signed result."
+        reopening_command = {
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": original["event"]["id"],
+            "reason": reason, "password": BOX_READY_PASSWORD,
+        }
+        wrong_password = supervisor.post(base + "/reopenings", json={
+            **reopening_command, "password": "Wrong-Reopening-Test-42!",
+        })
+        assert wrong_password.status_code == 401, wrong_password.text
+        assert wrong_password.json() == {"detail": {"code": "invalid_credentials"}}
+        blank_reason = supervisor.post(base + "/reopenings", json={
+            **reopening_command, "reason": "   ",
+        })
+        assert blank_reason.status_code == 422, blank_reason.text
+        unchanged = supervisor.get(setup["completion_path"])
+        assert unchanged.status_code == 200, unchanged.text
+        assert unchanged.json()["election"] == original["election"]
+        assert unchanged.json()["active_election_id"] is None
+        with reviewed_election_setup(admin, database_url) as competing:
+            other_supervisor = competing["clients"]["supervisor"]
+            other_id = competing["election"]["id"]
+            assert other_id != election_id
+            active = supervisor.get("/api/active-election")
+            assert active.status_code == 200, active.text
+            assert active.json()["election"]["id"] == other_id
+            conflict = supervisor.post(base + "/reopenings", json=reopening_command)
+            assert conflict.status_code == 409, conflict.text
+            assert conflict.json() == {"detail": {"code": "active_election_conflict"}}
+            unchanged = supervisor.get(setup["completion_path"])
+            assert unchanged.status_code == 200, unchanged.text
+            assert unchanged.json()["election"] == original["election"]
+            assert unchanged.json()["active_election_id"] == other_id
+            retained = supervisor.get(original_outcome_path)
+            assert retained.status_code == 200, retained.text
+            assert retained.json() == original_recovery
+            other_review_response = other_supervisor.get(competing["completion_path"])
+            assert other_review_response.status_code == 200, other_review_response.text
+            other_review = other_review_response.json()
+            assert other_review["can_finalize"] is True
+            other_finalized = other_supervisor.post(
+                f"/api/workspace/elections/{other_id}/finalizations", json={
+                    "request_id": str(uuid4()),
+                    "expected_election_revision": other_review["election"]["revision"],
+                    "basis_digest": other_review["basis_digest"],
+                    "password": BOX_READY_PASSWORD,
+                },
+            )
+            assert other_finalized.status_code == 201, other_finalized.text
+            assert other_finalized.json()["active_election_id"] is None
+        reopened = supervisor.post(base + "/reopenings", json=reopening_command)
+        assert reopened.status_code == 201, reopened.text
+        receipt = reopened.json()
+        assert receipt["request_id"] == reopening_command["request_id"]
+        assert receipt["active_election_id"] == election_id
+        assert receipt["election"] == {
+            **original["election"], "status": "active",
+            "revision": original["election"]["revision"] + 1,
+        }
+        event = receipt["event"]
+        assert event["id"] != original["event"]["id"]
+        assert event["election_id"] == election_id and event["kind"] == "reopening"
+        assert event["election_revision"] == receipt["election"]["revision"]
+        assert event["previous_finalization_id"] == original["event"]["id"]
+        assert event["reason"] == reason
+        assert event["actor_id"] == setup["accounts"]["supervisor"]["id"]
+        assert event["accepted_at"] == "2026-11-15T16:00:00Z"
+        active = supervisor.get("/api/active-election")
+        assert active.status_code == 200, active.text
+        assert active.json()["election"]["id"] == election_id
+        assert active.json()["election"]["status"] == "active"
+        assert active.json()["election"]["revision"] == receipt["election"]["revision"]
+        current = supervisor.get(setup["completion_path"])
+        assert current.status_code == 200, current.text
+        assert current.json()["election"] == receipt["election"]
+        assert current.json()["active_election_id"] == election_id
+        retained = supervisor.get(original_outcome_path)
+        assert retained.status_code == 200, retained.text
+        assert retained.json() == original_recovery
+        original_replay = supervisor.post(base + "/finalizations", json=finalization_command)
+        assert original_replay.status_code == 201, original_replay.text
+        assert original_replay.json() == original
+        still_reopened = supervisor.get(setup["completion_path"])
+        assert still_reopened.status_code == 200, still_reopened.text
+        assert still_reopened.json()["election"] == receipt["election"]
+        assert still_reopened.json()["active_election_id"] == election_id
