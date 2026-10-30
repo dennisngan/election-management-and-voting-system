@@ -9,7 +9,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -209,6 +209,22 @@ class FinalizationInput(BaseModel):
     password: str = Field(min_length=1, max_length=128, repr=False)
 
 
+class ReopeningInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+    expected_election_revision: int = Field(strict=True, ge=1)
+    previous_finalization_id: int = Field(strict=True, ge=1)
+    reason: str = Field(min_length=1, max_length=2000)
+    password: str = Field(min_length=1, max_length=128, repr=False)
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank_reason(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A reopening reason is required")
+        return value
+
+
 def _completion_event_view(event: ElectionCompletionEvent) -> dict[str, Any]:
     return {
         "id": event.id, "election_id": event.election_id, "kind": event.kind,
@@ -349,6 +365,96 @@ def election_completion_router(
                     "request_id": str(data.request_id), "basis_digest": reviewed["basis_digest"],
                     "before": {**reviewed["election"], "active_election_id": old_active},
                     "after": {**final_election, "active_election_id": None},
+                },
+            ))
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, detail={"code": "request_conflict"}) from None
+        return response
+
+    @router.post("/reopenings", status_code=201)
+    def reopen(
+        election_id: int, data: ReopeningInput, db: Database, identity: Identity,
+    ) -> dict[str, Any]:
+        election, active, _, actor = _completion_context(db, identity, election_id, timestamp)
+        if not verify_password(actor.password_hash, data.password):
+            raise HTTPException(401, detail={"code": "invalid_credentials"})
+        digest = hashlib.sha256(json.dumps({
+            "actor_id": actor.id, "election_id": election_id, "action": "reopening",
+            "command": data.model_dump(mode="json", exclude={"request_id", "password"}),
+        }, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+        previous = db.scalar(
+            select(ElectionCompletionRequest)
+            .where(ElectionCompletionRequest.request_id == str(data.request_id))
+            .with_for_update().execution_options(populate_existing=True)
+        )
+        if previous is not None:
+            if previous.actor_id != actor.id:
+                raise HTTPException(404, detail={"code": "request_not_found"})
+            if (
+                previous.election_id != election_id or previous.action != "reopening"
+                or previous.digest != digest
+            ):
+                raise HTTPException(409, detail={"code": "request_conflict"})
+            return deepcopy(previous.response)
+        if active is None:
+            raise HTTPException(503, detail={"code": "database_unavailable"})
+        if active.election_id is not None:
+            raise HTTPException(409, detail={"code": "active_election_conflict"})
+        if election.status != "finalized":
+            raise HTTPException(409, detail={"code": "finalized_election_required"})
+        if election.revision != data.expected_election_revision:
+            raise HTTPException(409, detail={"code": "revision_conflict"})
+        finalized = db.scalar(
+            select(ElectionCompletionEvent).where(
+                ElectionCompletionEvent.election_id == election_id,
+                ElectionCompletionEvent.kind == "finalization",
+            ).order_by(ElectionCompletionEvent.election_revision.desc()).limit(1)
+        )
+        if (
+            finalized is None or finalized.id != data.previous_finalization_id
+            or finalized.election_revision != election.revision
+        ):
+            raise HTTPException(409, detail={"code": "previous_finalization_conflict"})
+        now = timestamp()
+        before = {
+            "id": election.id, "name": election.name,
+            "status": election.status, "revision": election.revision,
+        }
+        reopened_revision = election.revision + 1
+        reopened = {**before, "status": "active", "revision": reopened_revision}
+        event = ElectionCompletionEvent(
+            election_id=election_id, kind="reopening", election_revision=reopened_revision,
+            actor_id=actor.id, accepted_at=now, reason=data.reason,
+            previous_finalization_id=finalized.id, basis_digest=finalized.basis_digest,
+            data={"election": reopened, "previous_finalization_id": finalized.id},
+        )
+        election.status, election.revision, election.updated_at = (
+            "active", reopened_revision, now,
+        )
+        active.election_id = election_id
+        active.revision, active.updated_at = active.revision + 1, now
+        db.add(event)
+        try:
+            db.flush()
+            response = {
+                "request_id": str(data.request_id), "election": reopened,
+                "active_election_id": election_id, "event": _completion_event_view(event),
+            }
+            db.add(ElectionCompletionRequest(
+                request_id=str(data.request_id), election_id=election_id, actor_id=actor.id,
+                event_id=event.id, action="reopening", digest=digest,
+                response=response, accepted_at=now,
+            ))
+            db.add(AuditEvent(
+                actor_id=actor.id, action="election_reopened", occurred_at=now,
+                details={
+                    "election_id": election_id, "event_id": event.id,
+                    "request_id": str(data.request_id), "reason": data.reason,
+                    "previous_finalization_id": finalized.id,
+                    "before": {**before, "active_election_id": None},
+                    "after": {**reopened, "active_election_id": election_id},
                 },
             ))
             db.commit()
