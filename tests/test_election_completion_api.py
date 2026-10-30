@@ -283,3 +283,43 @@ def test_latest_instructed_constituency_recount_blocks_election_readiness(
         }
         assert all(row["constituency_id"] == setup["constituency_id"] for row in pending)
         assert assessment["basis_digest"] != before.json()["basis_digest"]
+
+
+def test_partial_tied_totals_do_not_demand_premature_tie_resolution(
+    admin: TestClient, database_url: str
+) -> None:
+    with reviewed_election_setup(admin, database_url, n1_quantities=(5, 5)) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        base = f"/api/workspace/constituencies/{setup['constituency_id']}/recounts"
+        options = supervisor.get(base)
+        assert options.status_code == 200, options.text
+        source = next(
+            row for row in options.json()["scope_sources"]
+            if row["scope_id"] == setup["n3_scope"]["id"]
+        )
+        instructed = supervisor.post(
+            f"/api/workspace/stations/{source['station_id']}"
+            f"/counting-scopes/{source['scope_id']}/recounts",
+            json={
+                "request_id": str(uuid4()), "scope_revision": source["scope_revision"],
+                "expected_selection_revision": source["expected_selection_revision"],
+                "source_round_id": source["source_round_id"],
+                "source_round_revision": source["source_round_revision"],
+                "event_at": "2026-11-16T00:00:00+08:00",
+                "reason": "Finish the instructed count before deciding the final tie.",
+                "password": BOX_READY_PASSWORD,
+            },
+        )
+        assert instructed.status_code == 201, instructed.text
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        assessment = response.json()
+        assert assessment["can_finalize"] is False
+        north = assessment["sources"]["constituencies"][0]
+        assert north["complete"] is False
+        assert [row["quantity"] for row in north["candidate_totals"]] == [5, 5]
+        assert any(row["code"] == "recount_pending" for row in assessment["blockers"])
+        assert not any(
+            row["code"] == "result_tie_resolution_required"
+            for row in assessment["blockers"]
+        )
