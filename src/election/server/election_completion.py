@@ -5,7 +5,7 @@ import json
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -236,6 +236,24 @@ def election_completion_router(
             db, identity, election_id, timestamp
         )
         return _assess_completion(db, election, active, stations, actor, timestamp)
+
+    @router.get("/request-outcomes/{request_id}")
+    def outcome(
+        election_id: int, request_id: UUID, workflow: Literal["election_completion"],
+        db: Database, identity: Identity,
+    ) -> dict[str, Any]:
+        _, _, _, actor = _completion_context(db, identity, election_id, timestamp)
+        cached = db.scalar(select(ElectionCompletionRequest).where(
+            ElectionCompletionRequest.request_id == str(request_id),
+            ElectionCompletionRequest.election_id == election_id,
+            ElectionCompletionRequest.actor_id == actor.id,
+        ))
+        if cached is None:
+            return {"request_id": str(request_id), "workflow": workflow, "status": "not_found"}
+        return {
+            "request_id": str(request_id), "workflow": workflow,
+            "status": "committed", "record": deepcopy(cached.response),
+        }
 
     @router.post("/finalizations", status_code=201)
     def finalize(
