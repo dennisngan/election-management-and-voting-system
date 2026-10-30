@@ -431,7 +431,7 @@ class DesktopController(QObject):
         ):
             self._active_generation += 1
             active = None
-        self._state["election"] = dict(receipt["election"])
+        self._state["election"] = dict(self._election_completion.property("state")["election"])
         self._apply_active_election(active)
         self._workspace.refresh()
 
