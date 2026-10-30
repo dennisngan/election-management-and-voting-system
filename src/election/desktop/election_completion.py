@@ -115,13 +115,23 @@ class ElectionCompletionController(QObject):
     def _settled(self, body: dict[str, Any]) -> None:
         self._generation += 1
         self._command = None
+        assessment = self._state["assessment"]
+        election = assessment.get("election")
+        # A recovered receipt must not replace an already observed live revision.
+        if (
+            not isinstance(election, dict) or election.get("id") != body["election"]["id"]
+            or type(election.get("revision")) is not int
+            or election["revision"] < body["election"]["revision"]
+        ):
+            election = body["election"]
+            assessment = {
+                **assessment, "election": deepcopy(election),
+                "active_election_id": body["active_election_id"], "can_finalize": False,
+            }
         self._state.update(
             busy=False, refreshing=False, receipt=deepcopy(body), pending_request_id="",
-            uncertain_save=False, election=deepcopy(body["election"]), error="",
-            assessment={
-                **self._state["assessment"], "election": deepcopy(body["election"]),
-                "active_election_id": body["active_election_id"], "can_finalize": False,
-            },
+            uncertain_save=False, election=deepcopy(election), error="",
+            assessment=deepcopy(assessment),
         )
         self.stateChanged.emit()
         self.finalized.emit(body)
