@@ -1190,3 +1190,182 @@ def test_unknown_finalization_keeps_original_election_context_when_another_elect
         assert json.loads(unknown_bytes)["status"] == "uncertain"
         assert endpoint.request_count("POST", target) == 1
         assert endpoint.request_count("GET", outcome_path) == 0
+
+
+def test_large_finalized_quantities_round_trip_through_event_cache_and_public_qt(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quantity = 900719925474099312345
+    quantity_text = "900719925474099312345"
+    actual = 900719925474099312349
+    actual_text = "900719925474099312349"
+    difference = 900719925474099312339
+    difference_text = "900719925474099312339"
+    assert quantity > 2**64 and difference > 2**64
+    journal_directory = tmp_path / "large-finalized-quantity-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(
+        admin, database_url, n1_quantities=(quantity, 4), n1_selected=False,
+    ) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        n1 = setup["n1_round"]
+        submitted = n1["submitted"]
+        target = n1["round_path"]
+        scope_id = setup["scope"]["id"]
+        scope_revision = n1["options"]["scope"]["revision"]
+        constituency_id = setup["constituency_id"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        assert submitted["status"] == "submitted" and submitted["revision"] == 3
+        assert submitted["f1_complete"] is True and submitted["count_inputs_complete"] is True
+        assert type(submitted["actual_counted_quantity"]) is int
+        assert submitted["actual_counted_quantity"] == actual
+        comparison = next(
+            row for row in submitted["physical_comparisons"] if row["source"] == "stock"
+        )
+        assert comparison["expected_quantity"] == 10
+        assert comparison["actual_quantity"] == actual
+        assert comparison["difference_quantity"] == difference
+        assert comparison["status"] == "pending"
+        reason = "Signed synthetic tally confirms the exact large quantity; retain the stock gap."
+        accepted_response = supervisor.post(target + "/physical-differences/stock/accept", json={
+            "request_id": str(uuid4()), "expected_revision": 3,
+            "scope_revision": scope_revision, "expected_decision_revision": 0,
+            "reason": reason, "password": BOX_READY_PASSWORD,
+        })
+        assert accepted_response.status_code == 200, accepted_response.text
+        accepted = accepted_response.json()
+        accepted_stock = next(
+            row for row in accepted["physical_comparisons"] if row["source"] == "stock"
+        )
+        assert accepted_stock["status"] == "accepted"
+        assert accepted_stock["acceptance"]["difference_quantity"] == difference
+        approved_response = supervisor.post(target + "/approve", json={
+            "request_id": str(uuid4()), "expected_revision": 3,
+            "scope_revision": scope_revision, "password": BOX_READY_PASSWORD,
+        })
+        assert approved_response.status_code == 200, approved_response.text
+        assert approved_response.json()["approval_valid"] is True
+        selected_response = supervisor.post(target + "/select", json={
+            "request_id": str(uuid4()), "expected_revision": 4,
+            "scope_revision": scope_revision, "expected_selection_revision": 0,
+            "password": BOX_READY_PASSWORD,
+        })
+        assert selected_response.status_code == 200, selected_response.text
+        assert selected_response.json()["selected"] is True
+        https_server.clock.value = setup["clock"].value
+        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(https_server.url, setup["accounts"]["supervisor"]["username"],
+                          BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            reviewed = completion.property("state")["assessment"]
+            assert reviewed["can_finalize"] is True and reviewed["blockers"] == []
+            qt_before = next(
+                row for row in reviewed["sources"]["constituencies"]
+                if row["context"]["constituency"]["id"] == constituency_id
+            )
+            assert qt_before["candidate_totals"][0]["quantity"] == quantity_text
+            assert qt_before["candidate_totals"][0]["quantity_display"] == quantity_text
+            completion.finalize(BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, completion)
+            state = completion.property("state")
+            assert state["error"] == "" and state["uncertain_save"] is False
+            qt_receipt = state["receipt"]
+            request_id = qt_receipt["request_id"]
+            assert str(UUID(request_id)) == request_id
+            outcome_path = base + f"/request-outcomes/{request_id}?workflow=election_completion"
+            cached_response = supervisor.get(outcome_path)
+            assert cached_response.status_code == 200, cached_response.text
+            cached = cached_response.json()
+            assert cached["status"] == "committed" and cached["request_id"] == request_id
+            canonical = cached["record"]
+            history_response = supervisor.get(base + "/completion/history")
+            assert history_response.status_code == 200, history_response.text
+            events = history_response.json()["events"]
+            assert events == [canonical["event"]]
+            # These are independent public reads of the MySQL cache and event rows.
+            for outcome in (canonical["event"]["outcome"], events[0]["outcome"]):
+                north = next(
+                    row for row in outcome["results"]
+                    if row["constituency"]["id"] == constituency_id
+                )
+                first_quantity = north["candidate_totals"][0]["quantity"]
+                assert type(first_quantity) is int and first_quantity == quantity
+                assert north["candidate_totals"][1]["quantity"] == 4
+                chosen = next(
+                    row["record"] for row in outcome["sources"]["selected_counts"]
+                    if row["scope_id"] == scope_id
+                )
+                assert type(chosen["actual_counted_quantity"]) is int
+                assert chosen["actual_counted_quantity"] == actual
+                stock = next(
+                    row for row in chosen["physical_comparisons"] if row["source"] == "stock"
+                )
+                assert type(stock["difference_quantity"]) is int
+                assert stock["difference_quantity"] == difference and stock["status"] == "accepted"
+                assert stock["acceptance"]["reason"] == reason
+                assert stock["acceptance"]["actual_quantity"] == actual
+                assert stock["acceptance"]["difference_quantity"] == difference
+            qt_north = next(
+                row for row in qt_receipt["event"]["outcome"]["results"]
+                if row["constituency"]["id"] == constituency_id
+            )
+            assert qt_north["candidate_totals"][0]["quantity"] == quantity_text
+            assert qt_north["candidate_totals"][0]["quantity_display"] == quantity_text
+            qt_count = next(
+                row["record"]
+                for row in qt_receipt["event"]["outcome"]["sources"]["selected_counts"]
+                if row["scope_id"] == scope_id
+            )
+            assert qt_count["actual_counted_quantity"] == actual_text
+            assert qt_count["actual_counted_quantity_display"] == actual_text
+            qt_stock = next(
+                row for row in qt_count["physical_comparisons"] if row["source"] == "stock"
+            )
+            assert qt_stock["difference_quantity"] == difference_text
+            assert qt_stock["difference_quantity_display"] == difference_text
+            recovery = client.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            commands = recovery.property("state")["commands"]
+            assert len(commands) == 1 and commands[0]["status"] == "committed"
+            recovered_north = next(
+                row for row in commands[0]["receipt"]["record"]["event"]["outcome"]["results"]
+                if row["constituency"]["id"] == constituency_id
+            )
+            assert recovered_north["candidate_totals"][0]["quantity_display"] == quantity_text
+            files = list(journal_directory.glob("*.json"))
+            assert len(files) == 1
+            durable_bytes = files[0].read_bytes()
+            durable = json.loads(durable_bytes)
+            assert durable["receipt"]["record"] == canonical
+            _assert_completion_credential_free(durable)
+            assert https_server.request_count("POST", base + "/finalizations") == 1
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            recovery.reload()
+            wait_for_editor_idle(qt_app, recovery)
+            assert files[0].read_bytes() == durable_bytes
+            cached_again = supervisor.get(outcome_path)
+            assert cached_again.status_code == 200 and cached_again.json() == cached
+            assert https_server.request_count("POST", base + "/finalizations") == 1
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
