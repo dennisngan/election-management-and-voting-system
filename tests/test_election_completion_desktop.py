@@ -12,6 +12,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtTest import QSignalSpy
 
 from election.desktop.controller import DesktopController
 from election.private_paths import private_directory, private_file
@@ -20,7 +21,11 @@ from tests.configuration_desktop_support import ready_setup, setup_idle
 from tests.desktop_support import TLS_DIRECTORY, HttpsServer, wait_for, wait_for_editor_idle
 from tests.election_completion_support import reviewed_election_setup
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
+from tests.test_counting_workflow_retry_desktop import LostSelectionResponse
 from tests.test_physical_acceptance_recovery_desktop import assert_public_business_fields
+from tests.test_recount_instruction_restart_desktop import (
+    lost_recount_response as lost_recount_response,
+)
 
 
 @pytest.fixture(scope="module")
@@ -248,3 +253,215 @@ def test_supervisor_finalizes_without_station_and_keeps_true_election_recovery_c
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             qt_app.processEvents()
+
+
+def test_lost_finalization_survives_refresh_restart_and_explicit_original_outcome_check(
+    admin: TestClient,
+    database_url: str,
+    lost_recount_response: LostSelectionResponse,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "election-lost201-restart-journal"
+    assert not journal_directory.exists()
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        endpoint = lost_recount_response
+        endpoint.clock.value = setup["clock"].value
+        actor = setup["accounts"]["supervisor"]
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        station_id = setup["stations"]["N1"]["id"]
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        first = DesktopController(endpoint.url, str(TLS_DIRECTORY / "ca.pem"))
+        first_destroyed = QSignalSpy(first.destroyed)
+        try:
+            first.signIn(endpoint.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: first.property("state")["phase"] == "workspace")
+            workspace = first.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (first.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            completion = first.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            reviewed = completion.property("state")["assessment"]
+            assert reviewed["can_finalize"] is True
+            endpoint.drop_path = target
+            completion.finalize(BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, completion)
+            assert endpoint.response_tagged.is_set() and endpoint.response_dropped.is_set()
+            unknown = completion.property("state")
+            assert unknown["uncertain_save"] is True
+            assert unknown["receipt"] == {}
+            request_id = unknown["pending_request_id"]
+            assert str(UUID(request_id)) == request_id
+            outcome_path = (
+                f"/api/workspace/elections/{election_id}/request-outcomes/{request_id}"
+            )
+            query_path = outcome_path + "?workflow=election_completion"
+            expected_identity = {
+                "namespace": "election", "election_id": election_id,
+                "request_id": request_id, "server_url": endpoint.url,
+                "actor_id": actor["id"], "workflow": "election_completion",
+                "path": target, "method": "POST", "confirmation_required": True,
+                "payload": {
+                    "request_id": request_id,
+                    "expected_election_revision": reviewed["election"]["revision"],
+                    "basis_digest": reviewed["basis_digest"],
+                },
+            }
+
+            def assert_original_identity(row: dict) -> None:
+                for key, value in expected_identity.items():
+                    assert row[key] == value
+                assert "station_id" not in row and "station_id" not in row["payload"]
+                _assert_completion_credential_free(row)
+
+            def assert_client_outcome_reads(expected: int) -> None:
+                assert endpoint.request_count("POST", target) == 1
+                assert endpoint.request_count("GET", outcome_path) == expected
+                with endpoint.lock:
+                    station_outcomes = [
+                        path for method, path in endpoint.requests
+                        if method == "GET" and path.startswith("/api/workspace/stations/")
+                        and "/request-outcomes/" in path
+                    ]
+                assert station_outcomes == []
+
+            # Independent public oracle; this is not a client-origin outcome request.
+            persisted_response = supervisor.get(query_path)
+            assert persisted_response.status_code == 200, persisted_response.text
+            canonical = persisted_response.json()
+            assert canonical["request_id"] == request_id
+            assert canonical["workflow"] == "election_completion"
+            assert canonical["status"] == "committed"
+            receipt = canonical["record"]
+            assert receipt["election"]["id"] == election_id
+            assert receipt["election"]["status"] == "finalized"
+            assert receipt["election"]["revision"] == reviewed["election"]["revision"] + 1
+            assert receipt["active_election_id"] is None
+            assert receipt["event"]["basis_digest"] == reviewed["basis_digest"]
+            recovery = first.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            commands = recovery.property("state")["commands"]
+            assert len(commands) == 1
+            assert_original_identity(commands[0])
+            assert commands[0]["status"] == "uncertain" and commands[0]["receipt"] is None
+            assert private_directory(journal_directory)
+            files = list(journal_directory.rglob("*.json"))
+            assert len(files) == 1 and private_file(files[0])
+            journal_file = files[0]
+            unknown_bytes = journal_file.read_bytes()
+            durable_unknown = json.loads(unknown_bytes)
+            assert_original_identity(durable_unknown)
+            assert durable_unknown["status"] == "uncertain"
+            assert durable_unknown["receipt"] is None
+            assert_client_outcome_reads(0)
+
+            first.refresh()
+            wait_for(qt_app, lambda: first.property("state")["active_election"] is None)
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for_editor_idle(qt_app, completion)
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            refreshed = completion.property("state")
+            assert refreshed["uncertain_save"] is True
+            assert refreshed["pending_request_id"] == request_id
+            assert refreshed["receipt"] == {}
+            recovery.reload()
+            wait_for_editor_idle(qt_app, recovery)
+            retained = recovery.property("state")["commands"]
+            assert len(retained) == 1
+            assert_original_identity(retained[0])
+            assert retained[0]["status"] == "uncertain" and retained[0]["receipt"] is None
+            assert journal_file.read_bytes() == unknown_bytes
+            assert_client_outcome_reads(0)
+        finally:
+            first.shutdown()
+            first.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
+        assert first_destroyed.count() == 1
+        assert journal_file.read_bytes() == unknown_bytes
+        assert_client_outcome_reads(0)
+
+        fresh = DesktopController(endpoint.url, str(TLS_DIRECTORY / "ca.pem"))
+        fresh_destroyed = QSignalSpy(fresh.destroyed)
+        try:
+            fresh.signIn(endpoint.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: fresh.property("state")["phase"] == "workspace")
+            workspace = fresh.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            workspace.selectStation(station_id)
+            wait_for_editor_idle(qt_app, workspace)
+            selected = workspace.property("state")["selected"]
+            assert selected["station"]["id"] == station_id
+            assert selected["election"]["id"] == election_id
+            assert selected["election"]["status"] == "finalized"
+            completion = fresh.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            restored = completion.property("state")
+            assert restored["election_id"] == election_id
+            assert restored["uncertain_save"] is True
+            assert restored["pending_request_id"] == request_id
+            assert restored["receipt"] == {}
+            recovery = fresh.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            restored_commands = recovery.property("state")["commands"]
+            assert len(restored_commands) == 1
+            assert_original_identity(restored_commands[0])
+            assert restored_commands[0]["status"] == "uncertain"
+            assert restored_commands[0]["receipt"] is None
+            assert journal_file.read_bytes() == unknown_bytes
+            assert_client_outcome_reads(0)
+
+            recovery.checkOutcome(request_id)
+            wait_for_editor_idle(qt_app, recovery)
+            wait_for_editor_idle(qt_app, completion)
+            checked_commands = recovery.property("state")["commands"]
+            assert len(checked_commands) == 1
+            checked = checked_commands[0]
+            assert_original_identity(checked)
+            assert checked["status"] == "committed" and checked["error"] == ""
+            assert recovery.property("state")["error"] == ""
+            assert_public_business_fields(checked["receipt"]["record"], receipt)
+            settled = completion.property("state")
+            assert settled["uncertain_save"] is False
+            assert settled["pending_request_id"] == "" and settled["error"] == ""
+            assert_public_business_fields(settled["receipt"], receipt)
+            assert fresh.property("state")["active_election"] is None
+            assert_client_outcome_reads(1)
+            assert private_file(journal_file)
+            durable_committed = json.loads(journal_file.read_text(encoding="utf-8"))
+            assert_original_identity(durable_committed)
+            assert durable_committed["status"] == "committed"
+            assert durable_committed["receipt"]["record"] == receipt
+            committed_bytes = journal_file.read_bytes()
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            recovery.reload()
+            wait_for_editor_idle(qt_app, recovery)
+            assert_client_outcome_reads(1)
+            assert journal_file.read_bytes() == committed_bytes
+        finally:
+            fresh.shutdown()
+            fresh.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
+        assert fresh_destroyed.count() == 1
+        assert journal_file.read_bytes() == committed_bytes
+        assert_client_outcome_reads(1)
+        current = supervisor.get(setup["completion_path"])
+        assert current.status_code == 200, current.text
+        assert current.json()["election"] == receipt["election"]
+        assert current.json()["active_election_id"] is None
+        final_outcome = supervisor.get(query_path)
+        assert final_outcome.status_code == 200, final_outcome.text
+        assert final_outcome.json() == canonical
