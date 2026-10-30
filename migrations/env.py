@@ -18,6 +18,7 @@ from election.server import (  # noqa: F401 -- register tables with Base.metadat
     counting_discrepancy_models,
     counting_round_models,
     counting_scope_models,
+    election_completion_models,
     fallback_models,
     invalid_ballot_models,
     lifecycle_models,
