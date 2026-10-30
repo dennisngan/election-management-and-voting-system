@@ -854,3 +854,66 @@ def test_reopened_recount_refinalization_preserves_the_original_finalized_outcom
         old_votes = old_round.json()["record"]["final_candidate_votes"]
         assert [row["quantity"] for row in old_votes] == [6, 4]
         assert old_round.json()["record"]["approved_at"] == prior["approved_at"]
+
+
+def test_fully_assigned_supervisor_reads_exact_finalization_and_reopening_history(
+    admin: TestClient, database_url: str,
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        assessment_response = supervisor.get(setup["completion_path"])
+        assert assessment_response.status_code == 200, assessment_response.text
+        assessment = assessment_response.json()
+        assert assessment["can_finalize"] is True
+        empty = supervisor.get(base + "/completion/history")
+        assert empty.status_code == 200, empty.text
+        assert empty.json() == {
+            "election": assessment["election"], "active_election_id": election_id, "events": [],
+        }
+        finalized = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": assessment["election"]["revision"],
+            "basis_digest": assessment["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        history = supervisor.get(base + "/completion/history")
+        assert history.status_code == 200, history.text
+        assert history.json() == {
+            "election": original["election"], "active_election_id": None,
+            "events": [original["event"]],
+        }
+        reopened = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": original["event"]["id"],
+            "reason": "Review a later report without replacing the original finalized outcome.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened.status_code == 201, reopened.text
+        current = reopened.json()
+        expected = {
+            "election": current["election"], "active_election_id": election_id,
+            "events": [current["event"], original["event"]],
+        }
+        history = supervisor.get(base + "/completion/history")
+        assert history.status_code == 200, history.text
+        assert history.json() == expected
+        station_ids = [row["id"] for row in setup["stations"].values()]
+        with box_staff(
+            admin, database_url, setup["clock"], "supervisor", station_ids,
+        ) as (reviewer, _):
+            original_request = reviewer.get(
+                base + f"/request-outcomes/{original['request_id']}?workflow=election_completion"
+            )
+            assert original_request.status_code == 200, original_request.text
+            assert original_request.json()["status"] == "not_found"
+            shared_history = reviewer.get(base + "/completion/history")
+            assert shared_history.status_code == 200, shared_history.text
+            assert shared_history.json() == expected
+        after = supervisor.get(setup["completion_path"])
+        assert after.status_code == 200, after.text
+        assert after.json()["election"] == current["election"]
+        assert after.json()["active_election_id"] == election_id
