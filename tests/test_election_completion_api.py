@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
+from tests.box_support import box_staff
 from tests.complaint_support import complaint_payload, station_categories
 from tests.election_completion_support import reviewed_election_setup
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
@@ -540,3 +541,78 @@ def test_supervisor_finalizes_reviewed_election_and_clears_active_pointer_atomic
         assert current.json()["election"] == receipt["election"]
         assert current.json()["active_election_id"] is None
         assert current.json()["can_finalize"] is False
+
+
+def test_original_completion_outcome_and_replay_survive_cleared_active_election(
+    admin: TestClient, database_url: str,
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        request_id = str(uuid4())
+        outcome_path = base + f"/request-outcomes/{request_id}?workflow=election_completion"
+        missing = supervisor.get(outcome_path)
+        assert missing.status_code == 200, missing.text
+        not_found = {
+            "request_id": request_id, "workflow": "election_completion", "status": "not_found",
+        }
+        assert missing.json() == not_found
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        reviewed = response.json()
+        assert reviewed["can_finalize"] is True
+        original = {
+            "request_id": request_id,
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        }
+        finalized = supervisor.post(base + "/finalizations", json=original)
+        assert finalized.status_code == 201, finalized.text
+        receipt = finalized.json()
+        assert receipt["request_id"] == request_id
+        assert receipt["election"]["id"] == election_id
+        assert receipt["election"]["status"] == "finalized"
+        assert receipt["election"]["revision"] == reviewed["election"]["revision"] + 1
+        assert receipt["active_election_id"] is None
+        committed = {
+            "request_id": request_id, "workflow": "election_completion",
+            "status": "committed", "record": receipt,
+        }
+        recovered = supervisor.get(outcome_path)
+        assert recovered.status_code == 200, recovered.text
+        assert recovered.json() == committed
+        wrong_password = supervisor.post(base + "/finalizations", json={
+            **original, "password": "Wrong-Completion-Replay-42!",
+        })
+        assert wrong_password.status_code == 401, wrong_password.text
+        assert wrong_password.json() == {"detail": {"code": "invalid_credentials"}}
+        replay = supervisor.post(base + "/finalizations", json=original)
+        assert replay.status_code == 201, replay.text
+        assert replay.json() == receipt
+        changed = supervisor.post(base + "/finalizations", json={
+            **original, "expected_election_revision": receipt["election"]["revision"],
+        })
+        assert changed.status_code == 409, changed.text
+        assert changed.json() == {"detail": {"code": "request_conflict"}}
+        station_ids = [row["id"] for row in setup["stations"].values()]
+        with box_staff(
+            admin, database_url, setup["clock"], "supervisor", station_ids,
+        ) as (other_supervisor, _):
+            authorized = other_supervisor.get(setup["completion_path"])
+            assert authorized.status_code == 200, authorized.text
+            assert authorized.json()["election"] == receipt["election"]
+            private = other_supervisor.get(outcome_path)
+            assert private.status_code == 200, private.text
+            assert private.json() == not_found
+        retained = supervisor.get(outcome_path)
+        assert retained.status_code == 200, retained.text
+        assert retained.json() == committed
+        current = supervisor.get(setup["completion_path"])
+        assert current.status_code == 200, current.text
+        assert current.json()["election"] == receipt["election"]
+        assert current.json()["active_election_id"] is None
+        assert current.json()["can_finalize"] is False
+        active = supervisor.get("/api/active-election")
+        assert active.status_code == 200, active.text
+        assert active.json()["election"] is None
