@@ -20,8 +20,16 @@ from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
 from tests.configuration_desktop_support import ready_setup, setup_idle
 from tests.desktop_support import TLS_DIRECTORY, HttpsServer, wait_for, wait_for_editor_idle
 from tests.election_completion_support import reviewed_election_setup
-from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
+from tests.lifecycle_support import (
+    lifecycle_database_url,
+    lifecycle_test_state,
+    prepared_election,
+)
 from tests.test_counting_workflow_retry_desktop import LostSelectionResponse
+from tests.test_paper_journal_failure_desktop import CompletedWriteServer
+from tests.test_paper_journal_failure_desktop import (
+    completed_write_server as completed_write_server,
+)
 from tests.test_physical_acceptance_recovery_desktop import assert_public_business_fields
 from tests.test_recount_instruction_restart_desktop import (
     lost_recount_response as lost_recount_response,
@@ -465,3 +473,114 @@ def test_lost_finalization_survives_refresh_restart_and_explicit_original_outcom
         final_outcome = supervisor.get(query_path)
         assert final_outcome.status_code == 200, final_outcome.text
         assert final_outcome.json() == canonical
+
+
+def test_late_original_finalization_ack_preserves_an_already_observed_active_election(
+    admin: TestClient,
+    database_url: str,
+    completed_write_server: CompletedWriteServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "late-finalization-ack-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        # Prepare the competing draft before holding the real command's response.
+        competing, planned = prepared_election(admin)
+        election_id = setup["election"]["id"]
+        assert competing["id"] != election_id
+        station_id = setup["stations"]["N1"]["id"]
+        actor = setup["accounts"]["supervisor"]
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        endpoint = completed_write_server
+        endpoint.clock.value = setup["clock"].value
+        client = DesktopController(endpoint.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(endpoint.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            workspace.selectStation(station_id)
+            wait_for_editor_idle(qt_app, workspace)
+            assert workspace.property("state")["selected"]["station"]["id"] == station_id
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            assert completion.property("state")["assessment"]["can_finalize"] is True
+            assert endpoint.request_count("POST", target) == 0
+            with endpoint.lock:
+                endpoint.hold_path = target
+            completion.finalize(BOX_READY_PASSWORD)
+            try:
+                wait_for(qt_app, endpoint.entered.is_set)
+                pending = completion.property("state")
+                request_id = pending["pending_request_id"]
+                assert str(UUID(request_id)) == request_id
+                assert pending["busy"] is True and pending["uncertain_save"] is False
+                assert endpoint.release.is_set() is False
+                assert endpoint.request_count("POST", target) == 1
+                outcome_path = (
+                    f"/api/workspace/elections/{election_id}/request-outcomes/{request_id}"
+                    "?workflow=election_completion"
+                )
+                original_response = setup["clients"]["supervisor"].get(outcome_path)
+                assert original_response.status_code == 200, original_response.text
+                original = original_response.json()
+                assert original["status"] == "committed"
+                receipt = original["record"]
+                assert receipt["election"]["id"] == election_id
+                assert receipt["election"]["status"] == "finalized"
+                assert receipt["active_election_id"] is None
+                active_before = admin.get("/api/active-election")
+                assert active_before.status_code == 200, active_before.text
+                assert active_before.json()["election"] is None
+                activated_response = admin.post(
+                    f"/api/elections/{competing['id']}/activate", json={
+                        "election_revision": competing["revision"],
+                        "schedule_revision": planned["revision"],
+                    },
+                )
+                assert activated_response.status_code == 200, activated_response.text
+                active_election = activated_response.json()["election"]
+                assert active_election["id"] == competing["id"]
+                assert active_election["status"] == "active"
+                # Complete an actual public refresh while the unchanged ACK waits.
+                client.refresh()
+                wait_for(qt_app, lambda: (
+                    client.property("state")["active_election"] == active_election
+                ))
+                wait_for_editor_idle(qt_app, workspace)
+                assert workspace.property("state")["selected"]["station"]["id"] == station_id
+                still_pending = completion.property("state")
+                assert still_pending["election_id"] == election_id
+                assert still_pending["pending_request_id"] == request_id
+                assert still_pending["busy"] is True and still_pending["uncertain_save"] is False
+                assert endpoint.release.is_set() is False
+            finally:
+                endpoint.release.set()
+            wait_for_editor_idle(qt_app, completion)
+            settled = completion.property("state")
+            assert settled["error"] == "" and settled["uncertain_save"] is False
+            assert settled["pending_request_id"] == ""
+            assert_public_business_fields(settled["receipt"], receipt)
+            # Intended RED at c525: late ACK A clears this fresher observed B toNone.
+            assert client.property("state")["active_election"] == active_election
+            assert workspace.property("state")["selected"]["station"]["id"] == station_id
+            assert endpoint.request_count("POST", target) == 1
+            current = admin.get("/api/active-election")
+            assert current.status_code == 200, current.text
+            assert current.json() == activated_response.json()
+            retained = setup["clients"]["supervisor"].get(outcome_path)
+            assert retained.status_code == 200, retained.text
+            assert retained.json() == original
+            _assert_completion_credential_free(settled)
+        finally:
+            endpoint.release.set()
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
