@@ -6,7 +6,9 @@ from textwrap import dedent
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
 from tests.desktop_support import HttpsServer
+from tests.election_completion_support import reviewed_election_setup
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.polling_support import (
     READY_PASSWORD,
@@ -201,5 +203,51 @@ def test_material_displays_polling_and_box_blockers_for_the_same_station(
             assert {label.property('text') for label in labels} == expected
             assert all(label.property('visible') for label in labels)
             assert all(_pointer_geometry(label) is not None for label in labels)
+            """,
+        )
+
+
+@pytest.mark.parametrize(
+    ("locale", "reason", "constituency_caption"),
+    [
+        ("en", "Result-affecting tie requires an authorized resolution", "Constituency"),
+        ("tc", "影響結果的平票需要授權決定", "選區"),
+        ("sc", "影响结果的平票需要授权决定", "选区"),
+    ],
+)
+def test_material_identifies_unresolved_tie_and_its_constituency(
+    admin: TestClient, database_url: str, https_server: HttpsServer,
+    locale: str, reason: str, constituency_caption: str,
+) -> None:
+    with reviewed_election_setup(admin, database_url, n1_quantities=(5, 5)) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        assert [row["code"] for row in response.json()["blockers"]] == [
+            "result_tie_resolution_required",
+        ]
+        https_server.clock.value = setup["clock"].value
+        run_completion_material(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": BOX_READY_PASSWORD, "locale": locale,
+                "station_id": setup["stations"]["N1"]["id"],
+                "constituency_id": setup["constituency_id"],
+                "reason": reason, "constituency_caption": constituency_caption,
+            },
+            """
+            click('electionCompletionNavigation')
+            completion = controller.property('electionCompletion')
+            wait(lambda: not completion.property('state')['refreshing'])
+            assert completion.property('state')['error'] == ''
+            assert completion.property('state')['assessment']['can_finalize'] is False
+            frame()
+            notice = control('electionCompletionBlocker_global_0')
+            assert notice.property('visible')
+            assert _pointer_geometry(notice) is not None
+            assert notice.property('text') == (
+                setup['reason'] + ' · ' + setup['constituency_caption']
+                + ' #' + str(setup['constituency_id']))
             """,
         )
