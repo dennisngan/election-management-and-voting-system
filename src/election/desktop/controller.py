@@ -423,9 +423,15 @@ class DesktopController(QObject):
         )
 
     def _completion_finalized(self, receipt: dict[str, Any]) -> None:
-        self._active_generation += 1
+        active = self._state["active_election"]
+        if active is None or (
+            active.get("id") == receipt["election"]["id"]
+            and active.get("revision") == receipt["election"]["revision"] - 1
+        ):
+            self._active_generation += 1
+            active = None
         self._state["election"] = dict(receipt["election"])
-        self._apply_active_election(None)
+        self._apply_active_election(active)
         self._workspace.refresh()
 
     def _lifecycle_changed(self) -> None:
