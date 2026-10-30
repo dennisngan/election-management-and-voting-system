@@ -43,6 +43,8 @@ ColumnLayout {
         var text = messageText(String(row.code || ""))
         if (row.station_id !== undefined && row.station_id !== null)
             text += " · " + t("election_completion_station") + " #" + String(row.station_id)
+        else if (row.constituency_id !== undefined && row.constituency_id !== null)
+            text += " · " + t("recovery_constituency") + " #" + String(row.constituency_id)
         return text
     }
 

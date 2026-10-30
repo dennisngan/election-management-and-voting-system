@@ -9,6 +9,7 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         "election_completion_station": "投票站",
         "polling_completion_missing": "缺少投票服務完成記錄",
         "station_boxes_missing": "缺少所需票箱",
+        "result_tie_resolution_required": "影響結果的平票需要授權決定",
         "polling_completion_approval_required": "投票服務完成記錄需要有效批准",
         "full_election_access_required": (
             "主管必須獲指派本次選舉的所有投票站，才能查看完成確認。"
@@ -22,6 +23,7 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         "election_completion_station": "投票站",
         "polling_completion_missing": "缺少投票服务完成记录",
         "station_boxes_missing": "缺少所需票箱",
+        "result_tie_resolution_required": "影响结果的平票需要授权决定",
         "polling_completion_approval_required": "投票服务完成记录需要有效批准",
         "full_election_access_required": (
             "主管必须获指派本次选举的所有投票站，才能查看完成确认。"
@@ -35,6 +37,7 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         "election_completion_station": "Polling station",
         "polling_completion_missing": "Polling completion is missing",
         "station_boxes_missing": "Required ballot boxes are missing",
+        "result_tie_resolution_required": "Result-affecting tie requires an authorized resolution",
         "polling_completion_approval_required": "Polling completion requires current approval",
         "full_election_access_required": (
             "Supervisor access to every station in this election is required."
