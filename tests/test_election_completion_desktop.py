@@ -605,6 +605,7 @@ def test_late_original_finalization_ack_preserves_an_already_observed_active_ele
 class IncompleteFinalizationReceiptBoundary(HttpsServer):
     alter_next_post_path: str = ""
     altered_response_count: int = 0
+    omit_sources: bool = True
     evidence_directory: Path | None = None
 
 
@@ -648,6 +649,7 @@ def incomplete_finalization_receipt_boundary(
             )
             if alter:
                 endpoint.alter_next_post_path = ""
+            omit_sources = endpoint.omit_sources
         if not alter:
             return response
         # The actual route has committed; alter only its delivered protocol body.
@@ -659,7 +661,8 @@ def incomplete_finalization_receipt_boundary(
         assert payload["event"]["kind"] == "finalization"
         assert payload["event"]["outcome"]["sources"]
         assert payload["event"]["outcome"]["results"]
-        payload["event"]["outcome"]["sources"] = {}
+        if omit_sources:
+            payload["event"]["outcome"]["sources"] = {}
         payload["event"]["outcome"]["results"] = [{"status": "finalized", "provisional": False}]
         headers = {
             name: value for name, value in response.headers.items()
@@ -678,7 +681,8 @@ def incomplete_finalization_receipt_boundary(
             "delivered_status": delivered.status_code,
             "original_sha256": hashlib.sha256(original_body).hexdigest(),
             "delivered_sha256": hashlib.sha256(delivered.body).hexdigest(),
-            "changed_fields": ["event.outcome.sources", "event.outcome.results"],
+            "changed_fields": (["event.outcome.sources"] if omit_sources else [])
+            + ["event.outcome.results"],
             "actual_handler_ran_first": True, "SQL_or_business_commit_replaced": False,
         }, indent=2).encode())
         with endpoint.lock:
@@ -705,10 +709,14 @@ def incomplete_finalization_receipt_boundary(
         assert not thread.is_alive(), "The owned finalization-receipt TLS server did not stop"
 
 
+@pytest.mark.parametrize(
+    "omit_sources", [True, False], ids=["missing_sources_and_results", "missing_results_only"],
+)
 def test_incomplete_finalization_receipt_stays_unknown_and_retains_actual_bad_body(
     admin: TestClient,
     database_url: str,
     incomplete_finalization_receipt_boundary: IncompleteFinalizationReceiptBoundary,
+    omit_sources: bool,
     qt_app: QCoreApplication,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -742,6 +750,7 @@ def test_incomplete_finalization_receipt_stays_unknown_and_retains_actual_bad_bo
             assert finalized.isValid()
             with endpoint.lock:
                 endpoint.alter_next_post_path = target
+                endpoint.omit_sources = omit_sources
             completion.finalize(BOX_READY_PASSWORD)
             wait_for_editor_idle(qt_app, completion)
             unknown = deepcopy(completion.property("state"))
@@ -752,7 +761,8 @@ def test_incomplete_finalization_receipt_stays_unknown_and_retains_actual_bad_bo
             original_receipt = json.loads(original_bytes)
             delivered_receipt = json.loads(delivered_bytes)
             expected_fault = deepcopy(original_receipt)
-            expected_fault["event"]["outcome"]["sources"] = {}
+            if omit_sources:
+                expected_fault["event"]["outcome"]["sources"] = {}
             expected_fault["event"]["outcome"]["results"] = [
                 {"status": "finalized", "provisional": False},
             ]
