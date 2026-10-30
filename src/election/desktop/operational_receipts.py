@@ -1,5 +1,7 @@
 """Validate immutable operational receipts against their saved command target."""
 
+import hashlib
+import json
 import re
 from datetime import datetime
 from typing import Any
@@ -336,6 +338,11 @@ def _election_completion_receipt(command: dict[str, Any], record: Any) -> bool:
             event["basis_digest"] == payload.get("basis_digest")
             and event.get("previous_finalization_id") is None and event.get("reason") == ""
             and isinstance(outcome.get("sources"), dict)
+            and hashlib.sha256(json.dumps({
+                "election": {**election, "status": "active", "revision": expected},
+                "sources": outcome["sources"],
+            }, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+            == payload.get("basis_digest")
             and isinstance(outcome.get("results"), list) and outcome["results"]
             and all(isinstance(result, dict) and result.get("status") == "finalized"
                     and result.get("provisional") is False for result in outcome["results"])
