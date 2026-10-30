@@ -382,3 +382,106 @@ def test_later_stock_receipt_invalidates_reviewed_accounting_and_selected_count(
         assert current_accounting["id"] == setup["accounting"]["N1"]["record"]["id"]
         assert current_accounting["source_current"] is False
         assert assessment["basis_digest"] != before.json()["basis_digest"]
+
+
+def test_completion_preserves_selected_count_physical_disposition(
+    admin: TestClient, database_url: str,
+) -> None:
+    with reviewed_election_setup(
+        admin, database_url, n1_quantities=(5, 3), n1_selected=False,
+    ) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        n1 = setup["n1_round"]
+        target, submitted = n1["round_path"], n1["submitted"]
+        scope_id = setup["scope"]["id"]
+        scope_revision = n1["options"]["scope"]["revision"]
+        assert submitted["revision"] == 3 and submitted["status"] == "submitted"
+        stock = next(row for row in submitted["physical_comparisons"] if row["source"] == "stock")
+        assert submitted["actual_counted_quantity"] == 8
+        assert stock["expected_quantity"] == 10 and stock["actual_quantity"] == 8
+        assert stock["difference_quantity"] == -2 and stock["status"] == "pending"
+        before = supervisor.get(setup["completion_path"])
+        assert before.status_code == 200, before.text
+        assert before.json()["can_finalize"] is False
+        assert any(
+            row["code"] == "selected_count_missing" and row.get("scope_id") == scope_id
+            for row in before.json()["blockers"]
+        )
+        other_sources = {
+            row["scope_id"]: (row["round_id"], row["round_revision_id"])
+            for result in before.json()["sources"]["constituencies"]
+            for row in result["contributions"]
+        }
+        assert set(other_sources) == {setup["n3_scope"]["id"], setup["s1_scope"]["id"]}
+        denied = supervisor.post(target + "/approve", json={
+            "request_id": str(uuid4()), "expected_revision": 3,
+            "scope_revision": scope_revision, "password": BOX_READY_PASSWORD,
+        })
+        assert denied.status_code == 409, denied.text
+        assert denied.json() == {"detail": {"code": "count_physical_difference_unaccepted"}}
+        unchanged = supervisor.get(target)
+        assert unchanged.status_code == 200, unchanged.text
+        assert unchanged.json()["record"]["revision_id"] == submitted["revision_id"]
+        assert unchanged.json()["record"]["actual_counted_quantity"] == 8
+        reason = "Signed paper count confirms eight papers; accept the stock estimate difference."
+        accepted = supervisor.post(target + "/physical-differences/stock/accept", json={
+            "request_id": str(uuid4()), "expected_revision": 3,
+            "scope_revision": scope_revision, "expected_decision_revision": 0,
+            "reason": reason, "password": BOX_READY_PASSWORD,
+        })
+        assert accepted.status_code == 200, accepted.text
+        accepted_record = accepted.json()
+        assert accepted_record["revision"] == 3 and accepted_record["status"] == "submitted"
+        for field in (
+            "actual_counted_quantity", "candidate_votes", "invalid_papers", "f2", "scope_basis",
+        ):
+            assert accepted_record[field] == submitted[field]
+        stock = next(
+            row for row in accepted_record["physical_comparisons"] if row["source"] == "stock"
+        )
+        assert stock["expected_quantity"] == 10 and stock["actual_quantity"] == 8
+        assert stock["difference_quantity"] == -2 and stock["status"] == "accepted"
+        decision = stock["acceptance"]
+        assert decision["id"] > 0 and decision["reason"] == reason
+        assert decision["revision"] == 1 and decision["reviewed_revision"] == 3
+        assert decision["reviewed_revision_id"] == submitted["revision_id"]
+        assert decision["actor_id"] == setup["accounts"]["supervisor"]["id"]
+        assert decision["valid"] is True
+        approved = supervisor.post(target + "/approve", json={
+            "request_id": str(uuid4()), "expected_revision": 3,
+            "scope_revision": scope_revision, "password": BOX_READY_PASSWORD,
+        })
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["revision"] == 4 and approved.json()["approval_valid"] is True
+        assert approved.json()["actual_counted_quantity"] == 8
+        assert approved.json()["approved_physical_decisions"] == [decision]
+        selected = supervisor.post(target + "/select", json={
+            "request_id": str(uuid4()), "expected_revision": 4,
+            "scope_revision": scope_revision, "expected_selection_revision": 0,
+            "password": BOX_READY_PASSWORD,
+        })
+        assert selected.status_code == 200, selected.text
+        assert selected.json()["selected"] is True
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        assessment = response.json()
+        assert assessment["can_finalize"] is True and assessment["blockers"] == []
+        assert {
+            row["scope_id"]: (row["round_id"], row["round_revision_id"])
+            for result in assessment["sources"]["constituencies"]
+            for row in result["contributions"] if row["scope_id"] != scope_id
+        } == other_sources
+        chosen = next(
+            row["record"] for row in assessment["sources"]["selected_counts"]
+            if row["scope_id"] == scope_id
+        )
+        assert chosen == selected.json()
+        assert chosen["id"] == submitted["id"] and chosen["revision"] == 4
+        assert chosen["revision_id"] == approved.json()["revision_id"]
+        assert chosen["actual_counted_quantity"] == 8
+        stock = next(row for row in chosen["physical_comparisons"] if row["source"] == "stock")
+        assert stock["expected_quantity"] == 10 and stock["actual_quantity"] == 8
+        assert stock["difference_quantity"] == -2 and stock["status"] == "accepted"
+        assert stock["acceptance"]["id"] == decision["id"]
+        assert stock["acceptance"]["reason"] == reason
+        assert chosen["approved_physical_decisions"] == [decision]
