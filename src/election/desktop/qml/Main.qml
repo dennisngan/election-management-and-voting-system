@@ -60,7 +60,9 @@ ApplicationWindow {
         function onContentHeightChanged() {
             Qt.callLater(function() {
                 var control = window.activeFocusItem
-                if (control && control.cursorPosition !== undefined && control.readOnly !== true)
+                // Recovery card expansion can change the extent after a button gains focus.
+                if (control && ((control.cursorPosition !== undefined && control.readOnly !== true)
+                        || window.currentPage === "recovery"))
                     window.revealField(control)
             })
         }

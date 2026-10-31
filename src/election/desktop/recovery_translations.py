@@ -2,6 +2,11 @@
 
 RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "recovery_election": "選舉",
+        "recovery_event": "事件",
+        "recovery_election_receipt_hint": (
+            "已保留原有結果。目前選舉狀態會分開顯示。"
+        ),
         "recovery_recount_instruction": "重新點票指示",
         "recovery_recount_new_round": "新點票輪次",
         "recovery_original_receipt": "原伺服器收據",
@@ -80,6 +85,11 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "PATCH": "更新",
     },
     "sc": {
+        "recovery_election": "选举",
+        "recovery_event": "事件",
+        "recovery_election_receipt_hint": (
+            "已保留原有结果。目前选举状态会分开显示。"
+        ),
         "recovery_recount_instruction": "重新点票指示",
         "recovery_recount_new_round": "新点票轮次",
         "recovery_original_receipt": "原服务器收据",
@@ -158,6 +168,11 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "PATCH": "更新",
     },
     "en": {
+        "recovery_election": "Election",
+        "recovery_event": "Event",
+        "recovery_election_receipt_hint": (
+            "The saved outcome is preserved. Current election state is shown separately."
+        ),
         "recovery_recount_instruction": "Recount instruction",
         "recovery_recount_new_round": "New count round",
         "recovery_original_receipt": "Original server receipt",

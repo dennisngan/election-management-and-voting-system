@@ -32,6 +32,11 @@ ColumnLayout {
         return t(row.workflow || "") + " · " + page.targetLabel(row)
             + " · " + t("recovery_" + (row.status || "pending"))
     }
+    function electionPath(row) {
+        if (row.workflow !== "election_completion" || row.method !== "POST") return null
+        return /^\/api\/workspace\/elections\/([1-9][0-9]*)\/(finalizations|reopenings)$/.exec(
+            String(row.path || ""))
+    }
     function recountPath(row) {
         if (row.workflow !== "count" || row.method !== "POST") return null
         return /^\/api\/workspace\/stations\/([1-9][0-9]*)\/counting-scopes\/([1-9][0-9]*)\/recounts$/.exec(String(row.path || ""))
@@ -55,6 +60,11 @@ ColumnLayout {
         return page.recountPath(row) || page.wideRecountPath(row)
     }
     function targetLabel(row) {
+        var election = page.electionPath(row)
+        if (election)
+            return page.t("recovery_election") + " #" + election[1] + " · "
+                + page.t(election[2] === "finalizations"
+                    ? "election_completion_finalization" : "election_completion_reopening")
         var wide = page.wideRecountPath(row)
         if (wide) {
             var parent = page.wideRecountReceipt(row).instruction || ({})
@@ -119,6 +129,14 @@ ColumnLayout {
     function receiptSummary(row) {
         var record = page.receiptRecord(row)
         if (!Object.keys(record).length) return page.t("recovery_no_receipt")
+        if (page.electionPath(row) && record.event && record.election) {
+            var event = record.event
+            return page.t("election_completion_" + event.kind)
+                + " · " + page.t("recovery_event") + " #" + page.exact(event, "id")
+                + " · " + page.t("recovery_receipt_revision") + " "
+                    + page.exact(event, "election_revision")
+                + " · " + page.recovery.formatTime(String(event.accepted_at || ""))
+        }
         var wide = page.wideRecountReceipt(row)
         if (wide.instruction) {
             var parts = [page.t("recovery_constituency_member_count") + " "
@@ -343,6 +361,7 @@ ColumnLayout {
                 objectName: "recoveryReceiptSummary"
                 visible: !!page.selectedCommand.receipt
                 text: (page.instructionPath(page.selectedCommand)
+                    || page.electionPath(page.selectedCommand)
                     ? page.t("recovery_original_receipt") : page.t("recovery_receipt"))
                     + " · " + page.receiptSummary(page.selectedCommand)
             }
@@ -350,9 +369,13 @@ ColumnLayout {
                 objectName: "recoveryReceiptHistoryHint"
                 visible: !!page.recountReceipt(page.selectedCommand).round
                     || !!page.wideRecountReceipt(page.selectedCommand).instruction
-                text: page.wideRecountPath(page.selectedCommand)
-                    ? page.t("recovery_constituency_receipt_hint")
-                    : page.t("recovery_original_receipt_hint")
+                    || !!page.electionPath(page.selectedCommand)
+                        && !!page.receiptRecord(page.selectedCommand).event
+                text: page.electionPath(page.selectedCommand)
+                    ? page.t("recovery_election_receipt_hint")
+                    : page.wideRecountPath(page.selectedCommand)
+                        ? page.t("recovery_constituency_receipt_hint")
+                        : page.t("recovery_original_receipt_hint")
             }
             RowLayout {
                 Layout.fillWidth: true

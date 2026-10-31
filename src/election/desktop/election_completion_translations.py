@@ -2,6 +2,7 @@
 
 ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "election_completion": "選舉完成確認",
         "election_completion_export_changed": (
             "所選歷史記錄已變更。請重新開啟匯出。"
         ),
@@ -45,6 +46,7 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "sc": {
+        "election_completion": "选举完成确认",
         "election_completion_export_changed": (
             "所选历史记录已变更。请重新打开导出。"
         ),
@@ -88,6 +90,7 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "en": {
+        "election_completion": "Election completion",
         "election_completion_export_changed": (
             "The selected history event changed. Open the export again."
         ),
