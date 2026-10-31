@@ -13,7 +13,6 @@ from uuid import uuid4
 import pytest
 from alembic import command as alembic_command
 from alembic.config import Config
-from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import make_url
 
@@ -21,7 +20,7 @@ from election.manage import bootstrap_account
 from election.server.app import create_app
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 
-TARGET_SCHEMA = "election_t19_comparisons_test"
+TARGET_SCHEMA = "election_t17_reports_test"
 RESTORE_START_READINESS_SECONDS = 30
 
 
@@ -39,14 +38,15 @@ def reset_source_lifecycle_state(database_url: str) -> Iterator[None]:
 @pytest.fixture
 def restore_database_url(database_url: str, monkeypatch: pytest.MonkeyPatch) -> str:
     source_url = make_url(os.environ["ELECTION_DATABASE_URL"])
-    target = (
-        os.environ.get("ELECTION_RESTORE_DATABASE_URL")
-        or os.environ.get("ELECTION_TEST_DATABASE_URL")
-        or dotenv_values(".env").get("ELECTION_TEST_DATABASE_URL")
+    target = os.environ.get("ELECTION_RESTORE_DATABASE_URL")
+    assert target, "Set an explicit reserved ELECTION_RESTORE_DATABASE_URL for restore fixtures"
+    target_url = make_url(target)
+    ordinary = make_url(os.environ["ELECTION_TEST_DATABASE_URL"])
+    assert target_url.drivername == "mysql+pymysql"
+    assert target_url.database != ordinary.database, (
+        "Restore must not replace ordinary fixture state"
     )
-    if not target:
-        target = source_url.set(database=TARGET_SCHEMA).render_as_string(hide_password=False)
-    target_url = make_url(str(target))
+    assert (target_url.host, target_url.port) == (source_url.host, source_url.port)
     assert source_url.database == "election_t19_comparisons_lifecycle_test"
     assert target_url.database == TARGET_SCHEMA
     assert target_url.database != source_url.database

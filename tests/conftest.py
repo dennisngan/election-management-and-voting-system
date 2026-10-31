@@ -98,6 +98,9 @@ def database_url() -> Iterator[str]:
     parsed = make_url(url)
     assert parsed.drivername == "mysql+pymysql", "These checks require real MySQL"
     assert parsed.database and parsed.database.endswith("_test"), "Refusing non-test database"
+    assert parsed.database not in {
+        "election_t19_workflow_edges_test", "election_t19_comparisons_test",
+    }, "Protected observer schemas cannot be used by mutating ordinary fixtures"
     original = os.environ.get("ELECTION_DATABASE_URL")
     os.environ["ELECTION_DATABASE_URL"] = url
     try:
