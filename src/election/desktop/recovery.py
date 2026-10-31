@@ -89,6 +89,10 @@ class RecoveryController(QObject):
         )
 
     def reset(self) -> None:
+        self._reset_state()
+        self.stateChanged.emit()
+
+    def _reset_state(self) -> None:
         self._generation += 1
         self._opened = False
         self._server_url = ""
@@ -106,7 +110,6 @@ class RecoveryController(QObject):
             "error": "",
             "notice": "",
         }
-        self.stateChanged.emit()
 
     @staticmethod
     def _origin(server_url: str) -> str:
@@ -155,7 +158,7 @@ class RecoveryController(QObject):
             set(self._verified_election_receipts),
         )
         if changed:
-            self.reset()
+            self._reset_state()
             self._opened = opened
             if same_authority:
                 (self._inspected_election_requests, self._checked_election_requests,
