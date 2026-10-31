@@ -2587,6 +2587,100 @@ def test_observed_outcome_denial_hides_recovered_receipt_from_both_public_views(
             assert journal_file.read_bytes() == committed_bytes
             assert endpoint.request_count("POST", target) == 1
             assert endpoint.request_count("GET", outcome_path) == 2
+            navigation_station_id = setup["stations"]["N1"]["id"]
+            navigation_before_completion = completion.property("state")
+            navigation_before_recovery = recovery.property("state")
+            navigation_before_workspace = workspace.property("state")
+            navigation_before_bytes = journal_file.read_bytes()
+            navigation_before_posts = endpoint.request_count("POST", target)
+            navigation_before_outcomes = endpoint.request_count("GET", outcome_path)
+            _write_incomplete_receipt_evidence(
+                directory / "committed-command-before-navigation.json", navigation_before_bytes,
+            )
+            navigation_receipt_notifications: list[bool] = []
+
+
+            def observe_navigation_receipt() -> None:
+                navigation_receipt_notifications.append(
+                    bool(completion.property("state")["receipt"])
+                )
+
+
+            completion.stateChanged.connect(observe_navigation_receipt)
+            try:
+                workspace.selectStation(navigation_station_id)
+                wait_for_editor_idle(qt_app, workspace)
+                wait_for_editor_idle(qt_app, completion)
+            finally:
+                completion.stateChanged.disconnect(observe_navigation_receipt)
+                navigation_after_completion = completion.property("state")
+                navigation_after_recovery = recovery.property("state")
+                navigation_after_workspace = workspace.property("state")
+                navigation_after_bytes = journal_file.read_bytes()
+                navigation_after_posts = endpoint.request_count("POST", target)
+                navigation_after_outcomes = endpoint.request_count("GET", outcome_path)
+                _write_incomplete_receipt_evidence(
+                    directory / "committed-command-after-navigation.json", navigation_after_bytes,
+                )
+                navigation_observation = {
+                    "request_id": request_id,
+                    "target_station_id": navigation_station_id,
+                    "before": {
+                        "completion_receipt_visible": bool(navigation_before_completion["receipt"]),
+                        "recovery_receipts_visible": [
+                            bool(row.get("receipt"))
+                            for row in navigation_before_recovery["commands"]
+                        ],
+                        "selected_station_id": navigation_before_workspace.get("selected", {}).get(
+                            "station", {},
+                        ).get("id"),
+                        "journal_sha256": hashlib.sha256(navigation_before_bytes).hexdigest(),
+                        "finalization_post_count": navigation_before_posts,
+                        "outcome_get_count": navigation_before_outcomes,
+                    },
+                    "completion_receipt_visibility_at_each_notification": (
+                        navigation_receipt_notifications
+                    ),
+                    "after": {
+                        "completion_receipt_visible": bool(navigation_after_completion["receipt"]),
+                        "recovery_receipts_visible": [
+                            bool(row.get("receipt"))
+                            for row in navigation_after_recovery["commands"]
+                        ],
+                        "selected_station_id": navigation_after_workspace.get("selected", {}).get(
+                            "station", {},
+                        ).get("id"),
+                        "journal_sha256": hashlib.sha256(navigation_after_bytes).hexdigest(),
+                        "finalization_post_count": navigation_after_posts,
+                        "outcome_get_count": navigation_after_outcomes,
+                    },
+                    "committed_journal_bytes_unchanged": navigation_after_bytes == committed_bytes,
+                    "external_protocol_denial": True,
+                    "actual_permission_revocation": False,
+                    "uses_public_controller_signal_and_state_only": True,
+                }
+                _write_incomplete_receipt_evidence(
+                    directory / "denied-navigation-public-notifications.json",
+                    json.dumps(navigation_observation, indent=2).encode(),
+                )
+            assert navigation_after_workspace["selected"]["station"]["id"] == navigation_station_id
+            assert navigation_after_workspace["selected"]["election"]["id"] == election_id
+            assert navigation_after_workspace["selected"]["election"]["status"] == "finalized"
+            assert navigation_receipt_notifications, (
+                "Navigation emitted no public Completion observation"
+            )
+            assert not any(navigation_receipt_notifications), navigation_observation
+            assert navigation_after_completion["receipt"] == {}
+            assert len(navigation_after_recovery["commands"]) == 1
+            assert navigation_after_recovery["commands"][0]["request_id"] == request_id
+            assert navigation_after_recovery["commands"][0]["status"] == "committed"
+            assert navigation_after_recovery["commands"][0]["receipt"] is None
+            assert navigation_before_bytes == navigation_after_bytes == committed_bytes
+            assert json.loads(navigation_after_bytes)["receipt"]["record"] == receipt
+            assert navigation_before_posts == navigation_after_posts == 1
+            assert navigation_before_outcomes == navigation_after_outcomes == 2
+            _assert_completion_credential_free(navigation_after_completion)
+            _assert_completion_credential_free(navigation_after_recovery)
             _assert_completion_credential_free(denied_recovery)
             _assert_completion_credential_free(denied_completion)
         finally:
