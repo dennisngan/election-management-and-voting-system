@@ -1253,3 +1253,285 @@ def test_material_selects_old_completion_event_and_previews_its_localized_saved_
                 if "/completion/history/" in path and "/statement" in path] == [
                     ("GET", old_statement_path)]
         assert list(journal_directory.rglob("*")) == []
+
+
+@pytest.mark.parametrize("case", ["confirm"])
+@pytest.mark.parametrize("locale", ["en"])
+def test_material_reopening_uses_captured_history_before_password(
+    admin: TestClient, database_url: str, https_server: HttpsServer,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str, locale: str,
+) -> None:
+    journal_directory = tmp_path / "material-reopening-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    original_path = tmp_path / "canonical-original-finalization.json"
+    prepared_path = tmp_path / "material-reopening-prepared.json"
+    observation_path = tmp_path / "material-reopening-observation.json"
+    transport_path = tmp_path / "material-reopening-transport.json"
+    reason = "  Resume reviewed current work while retaining the signed first outcome.  "
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        target = base + "/reopenings"
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        reviewed = response.json()
+        assert reviewed["can_finalize"] is True
+        finalized = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        descriptor = os.open(original_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(finalized.content)
+            output.flush()
+            os.fsync(output.fileno())
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        assert original["election"]["status"] == "finalized"
+        assert original["election"]["revision"] == 3
+        assert original["active_election_id"] is None
+        https_server.clock.value = setup["clock"].value
+        try:
+            run_completion_material(
+                {
+                    "server": https_server.url,
+                    "username": setup["accounts"]["supervisor"]["username"],
+                    "password": BOX_READY_PASSWORD, "locale": locale, "case": case,
+                    "station_id": setup["stations"]["N1"]["id"], "election_id": election_id,
+                    "original_path": str(original_path), "reason": reason,
+                    "prepared_path": str(prepared_path),
+                    "observation_path": str(observation_path),
+                    "journal_directory": str(journal_directory),
+                },
+                """
+                import os
+                import ssl
+                from copy import deepcopy
+                from uuid import uuid4
+                import httpx
+                from tests.test_physical_acceptance_recovery_desktop import (
+                    assert_public_business_fields,
+                )
+
+                def write_evidence(path, value):
+                    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                        json.dump(value, output, ensure_ascii=False, indent=2)
+                        output.flush()
+                        os.fsync(output.fileno())
+
+                original = json.loads(Path(setup['original_path']).read_text('utf-8'))
+                target = '/api/workspace/elections/' + str(setup['election_id']) + '/reopenings'
+                assert workspace.property('state')['selected']['election'] == original['election']
+                assert controller.property('state')['active_election'] is None
+                click('electionCompletionNavigation')
+                completion = controller.property('electionCompletion')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                click('electionCompletionHistoryRefresh')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                loaded = completion.property('state')
+                assert loaded['error'] == ''
+                assert loaded['election'] == original['election']
+                assert_public_business_fields(loaded['history'], {
+                    'election': original['election'], 'active_election_id': None,
+                    'events': [original['event']],
+                })
+                assert list(Path(setup['journal_directory']).rglob('*')) == []
+                reopened_signal = QSignalSpy(completion.reopened)
+                finalized_signal = QSignalSpy(completion.finalized)
+                # First intended Material RED: the new reason/reopen controls are absent.
+                enter('electionCompletionReopenReason', setup['reason'])
+                reopen_button = focus('electionCompletionReopen')
+                assert reopen_button.property('visible') and reopen_button.property('enabled')
+                assert reopen_button.property('text').strip()
+                assert _pointer_geometry(reopen_button) is not None
+                assert completion.property('state')['can_reopen'] is True
+                click('electionCompletionReopen')
+                dialog = window.findChild(QObject, 'electionCompletionReopenPasswordDialog')
+                assert dialog is not None
+                wait(lambda: dialog.property('opened'))
+                captured = deepcopy(completion.property('state')['reopening_review'])
+                expected_review = {
+                    'election_id': setup['election_id'],
+                    'expected_election_revision': original['election']['revision'],
+                    'previous_finalization_id': original['event']['id'],
+                    'reason': setup['reason'].strip(),
+                }
+                write_evidence(setup['prepared_path'], {
+                    'captured': captured, 'expected': expected_review,
+                    'password_present': bool(
+                        control('electionCompletionReopenPassword').property('text')),
+                    'pending_request_id': completion.property('state')['pending_request_id'],
+                })
+                assert captured == expected_review
+                assert completion.property('state')['reopening_changed'] is False
+                assert completion.property('state')['pending_request_id'] == ''
+                assert control('electionCompletionReopenPassword').property('text') == ''
+                assert list(Path(setup['journal_directory']).rglob('*')) == []
+                enter('electionCompletionReopenPassword', setup['password'])
+                password = control('electionCompletionReopenPassword')
+                confirm = control('electionCompletionReopenConfirm')
+                assert confirm.property('enabled') is True and confirm.property('text').strip()
+                assert setup['password'] not in json.dumps(completion.property('state'))
+
+                if setup['case'] == 'confirm':
+                    # Ordinary current reads cannot replace a preparation during password entry.
+                    workspace.refresh()
+                    wait(lambda: not any(workspace.property('state')[key]
+                        for key in ('busy', 'refreshing')))
+                    completion.loadHistory()
+                    wait(lambda: not any(completion.property('state')[key]
+                        for key in ('busy', 'refreshing')))
+                    assert completion.property('state')['reopening_review'] == captured
+                    assert completion.property('state')['reopening_changed'] is False
+                    assert password.property('text') == setup['password']
+                    assert confirm.property('enabled') is True
+                    assert list(Path(setup['journal_directory']).rglob('*')) == []
+                    click('electionCompletionReopenConfirm')
+                    wait(lambda: not any(completion.property('state')[key]
+                        for key in ('busy', 'refreshing')))
+                    settled = completion.property('state')
+                    wait(lambda: not dialog.property('visible'))
+                    files = list(Path(setup['journal_directory']).rglob('*.json'))
+                    durable = json.loads(files[0].read_text('utf-8')) if len(files) == 1 else None
+                    write_evidence(setup['observation_path'], {
+                        'case': setup['case'], 'captured': captured, 'state': settled,
+                        'root_election': controller.property('state')['election'],
+                        'active_election': controller.property('state')['active_election'],
+                        'password_present': bool(password.property('text')),
+                        'dialog_visible': dialog.property('visible'),
+                        'reopened_signals': reopened_signal.count(),
+                        'finalized_signals': finalized_signal.count(),
+                        'durable_command': durable,
+                    })
+                    assert settled['error'] == ''
+                    assert settled['pending_request_id'] == ''
+                    assert settled['uncertain_save'] is False
+                    assert settled['reopening_review'] == {}
+                    assert settled['reopening_changed'] is False
+                    assert password.property('text') == '' and not dialog.property('visible')
+                    assert reopened_signal.count() == 1 and finalized_signal.count() == 0
+                    assert settled['receipt']['event']['kind'] == 'reopening'
+                    assert settled['receipt']['event']['previous_finalization_id'] == (
+                        captured['previous_finalization_id'])
+                    assert settled['receipt']['event']['reason'] == captured['reason']
+                    assert settled['election']['status'] == 'active'
+                    assert settled['election']['revision'] == (
+                        captured['expected_election_revision'] + 1)
+                    assert durable is not None
+                    assert durable['namespace'] == 'election' and 'station_id' not in durable
+                    assert durable['election_id'] == setup['election_id']
+                    assert durable['path'] == target and durable['status'] == 'committed'
+                    assert durable['payload'] == {
+                        'request_id': durable['request_id'],
+                        'expected_election_revision': captured['expected_election_revision'],
+                        'previous_finalization_id': captured['previous_finalization_id'],
+                        'reason': captured['reason'],
+                    }
+                    assert_public_business_fields(settled['receipt'], durable['receipt']['record'])
+                    assert setup['password'] not in json.dumps(durable)
+                else:
+                    trust = ssl.create_default_context(
+                        cafile=str(Path('.runtime/tls/ca.pem').resolve()))
+                    with httpx.Client(base_url=setup['server'], verify=trust) as peer:
+                        login = peer.post('/api/auth/login', json={
+                            'username': setup['username'], 'password': setup['password'],
+                        })
+                        assert login.status_code == 200, 'Synthetic Supervisor peer login failed'
+                        peer.headers['Authorization'] = 'Bearer ' + login.json()['token']
+                        try:
+                            peer_response = peer.post(target, json={
+                                'request_id': str(uuid4()),
+                                'expected_election_revision': original['election']['revision'],
+                                'previous_finalization_id': original['event']['id'],
+                                'reason': 'Independent peer resumed the finalized election first.',
+                                'password': setup['password'],
+                            })
+                            assert peer_response.status_code == 201, (
+                                'Expected genuine peer reopening201')
+                            peer_ack = peer_response.json()
+                        finally:
+                            logout = peer.delete('/api/auth/session')
+                            assert logout.status_code == 204, 'Synthetic peer logout failed'
+                    # Current entity metadata alone invalidates the old unsent review.
+                    workspace.refresh()
+                    wait(lambda: not any(workspace.property('state')[key]
+                        for key in ('busy', 'refreshing')))
+                    stale = completion.property('state')
+                    changed = control('electionCompletionReopenChanged')
+                    write_evidence(setup['observation_path'], {
+                        'case': setup['case'], 'captured': captured, 'peer_ack': peer_ack,
+                        'state': stale, 'root_election': controller.property('state')['election'],
+                        'active_election': controller.property('state')['active_election'],
+                        'password_present': bool(password.property('text')),
+                        'confirm_enabled': confirm.property('enabled'),
+                        'dialog_visible': dialog.property('visible'),
+                        'changed_visible': changed.property('visible'),
+                        'changed_text': changed.property('text'),
+                        'reopened_signals': reopened_signal.count(),
+                        'finalized_signals': finalized_signal.count(),
+                        'journal_files': [str(path) for path in
+                            Path(setup['journal_directory']).rglob('*')],
+                    })
+                    assert stale['reopening_review'] == captured
+                    assert stale['reopening_changed'] is True
+                    assert stale['election'] == peer_ack['election']
+                    root_election = controller.property('state')['election']
+                    assert {key: root_election[key] for key in peer_ack['election']} == (
+                        peer_ack['election'])
+                    assert password.property('text') == '' and confirm.property('enabled') is False
+                    if dialog.property('visible'):
+                        assert changed.property('visible') and changed.property('text').strip()
+                    assert stale['can_reopen'] is False
+                    assert stale['receipt'] == {} and stale['pending_request_id'] == ''
+                    assert stale['uncertain_save'] is False
+                    assert reopened_signal.count() == 0 and finalized_signal.count() == 0
+                    assert list(Path(setup['journal_directory']).rglob('*')) == []
+                """,
+            )
+        finally:
+            with https_server.lock:
+                transport = {"requests": list(https_server.requests),
+                             "request_timings": list(https_server.request_timings)}
+            descriptor = os.open(transport_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                json.dump(transport, output, ensure_ascii=False, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+        assert https_server.request_count("POST", target) == 1
+        assert [row["status"] for row in transport["request_timings"]
+                if row["method"] == "POST" and row["path"] == target] == [201]
+        assert not [path for method, path in transport["requests"]
+                    if method == "GET" and "/request-outcomes/" in path]
+        proof = json.loads(observation_path.read_text('utf-8'))
+        if case == "confirm":
+            command = proof["durable_command"]
+            outcome_response = supervisor.get(
+                base + f"/request-outcomes/{command['request_id']}?workflow=election_completion"
+            )
+            assert outcome_response.status_code == 200, outcome_response.text
+            canonical = outcome_response.json()["record"]
+            assert command["receipt"]["record"] == canonical
+            assert_public_business_fields(proof["state"]["receipt"], canonical)
+            assert canonical["event"]["previous_finalization_id"] == original["event"]["id"]
+            assert canonical["event"]["reason"] == reason.strip()
+            active_response = supervisor.get("/api/active-election")
+            assert active_response.status_code == 200, active_response.text
+            actual_active = active_response.json()["election"]
+            assert proof["active_election"] == actual_active
+            assert {key: proof["root_election"][key] for key in canonical["election"]} == (
+                canonical["election"])
+            post_index = transport["requests"].index(("POST", target))
+            assert ("GET", "/api/active-election") in transport["requests"][post_index + 1:]
+            assert len(list(journal_directory.rglob("*.json"))) == 1
+        else:
+            canonical = proof["peer_ack"]
+            assert proof["state"]["reopening_review"] == proof["captured"]
+            assert list(journal_directory.rglob("*")) == []
+        history_response = supervisor.get(base + "/completion/history")
+        assert history_response.status_code == 200, history_response.text
+        assert history_response.json()["events"] == [canonical["event"], original["event"]]
