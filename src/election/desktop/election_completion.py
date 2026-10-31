@@ -72,6 +72,11 @@ class ElectionCompletionController(QObject):
             election_id=election_id, actor_id=account.get("id"),
             role=account.get("role", ""), election=deepcopy(target),
         )
+        if (
+            self._state["reviewing"]
+            and target.get("revision") != self._state["review"]["election"].get("revision")
+        ):
+            self._state["newer_basis"] = True
         self._sync_recovery()
         self.stateChanged.emit()
         if changed and self._opened:
@@ -115,6 +120,13 @@ class ElectionCompletionController(QObject):
             ):
                 failed("request_failed")
                 return
+            review = self._state["review"]
+            if self._state["reviewing"] and (
+                data["election"] != review["election"]
+                or data.get("basis_digest") != review.get("basis_digest")
+                or data["can_finalize"] is not True
+            ):
+                self._state["newer_basis"] = True
             self._state.update(assessment=deepcopy(data), refreshing=False, error="")
             self.stateChanged.emit()
 
@@ -237,6 +249,10 @@ class ElectionCompletionController(QObject):
 
     @Slot(str)
     def finalize(self, password: str) -> None:
+        if self._state["newer_basis"]:
+            self._state["error"] = "election_completion_review_changed"
+            self.stateChanged.emit()
+            return
         assessment = (
             self._state["review"] if self._state["reviewing"] else self._state["assessment"]
         )

@@ -196,6 +196,12 @@ ColumnLayout {
         contentItem: ColumnLayout {
             spacing: 12
             FormCaption { text: page.t("election_completion_password_hint") }
+            FormCaption {
+                objectName: "electionCompletionReviewChanged"
+                visible: !!page.editorState.newer_basis
+                text: page.t("election_completion_review_changed")
+                color: "#a13b30"
+            }
             FormField {
                 id: passwordField
                 objectName: "electionCompletionPassword"
@@ -224,6 +230,7 @@ ColumnLayout {
     Connections {
         target: page.completion
         function onStateChanged() {
+            if (page.editorState.newer_basis) passwordField.clear()
             if (!page.editorState.reviewing) {
                 passwordField.clear()
                 passwordDialog.close()

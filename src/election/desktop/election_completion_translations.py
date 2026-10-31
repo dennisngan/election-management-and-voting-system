@@ -2,6 +2,9 @@
 
 ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "election_completion_review_changed": (
+            "選舉資料已更新。請取消並重新檢視後再確認。"
+        ),
         "election_completion_finalize": "確認選舉完成",
         "election_completion_finalized": "選舉已完成確認；已保留結果。",
         "election_completion_confirm_title": "確認選舉完成",
@@ -22,6 +25,9 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "sc": {
+        "election_completion_review_changed": (
+            "选举资料已更新。请取消并重新检视后再确认。"
+        ),
         "election_completion_finalize": "确认选举完成",
         "election_completion_finalized": "选举已完成确认；已保留结果。",
         "election_completion_confirm_title": "确认选举完成",
@@ -42,6 +48,9 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "en": {
+        "election_completion_review_changed": (
+            "Election data changed. Cancel and review the current facts before confirming."
+        ),
         "election_completion_finalize": "Finalize election",
         "election_completion_finalized": "Election finalized. Preserved outcome available.",
         "election_completion_confirm_title": "Confirm election finalization",

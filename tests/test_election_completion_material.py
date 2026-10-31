@@ -499,3 +499,104 @@ def test_material_reviews_and_finalizes_ready_election_with_own_password(
         assert current_response.status_code == 200, current_response.text
         assert current_response.json()["election"] == canonical["record"]["election"]
         assert current_response.json()["active_election_id"] is None
+
+
+@pytest.mark.parametrize("locale", ["en", "tc", "sc"])
+def test_material_cancels_unsent_finalization_and_erases_password_on_sign_out(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    locale: str,
+) -> None:
+    journal_directory = tmp_path / "material-finalization-cancel-and-scope-journal"
+    assert not journal_directory.exists()
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        before_response = supervisor.get(setup["completion_path"])
+        assert before_response.status_code == 200, before_response.text
+        before = before_response.json()
+        assert before["can_finalize"] is True and before["blockers"] == []
+        election_id = setup["election"]["id"]
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        https_server.clock.value = setup["clock"].value
+        run_completion_material(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": BOX_READY_PASSWORD,
+                "station_id": setup["stations"]["N1"]["id"],
+                "election_id": election_id,
+                "locale": locale,
+                "cancel_label": "Cancel" if locale == "en" else "取消",
+                "journal_directory": str(journal_directory),
+            },
+            """
+            click('electionCompletionNavigation')
+            completion = controller.property('electionCompletion')
+            wait(lambda: not any(completion.property('state')[key]
+                for key in ('busy', 'refreshing')))
+            initial_assessment = completion.property('state')['assessment']
+            assert initial_assessment['can_finalize'] is True
+            assert initial_assessment['election']['id'] == setup['election_id']
+            click('electionCompletionFinalize')
+            dialog = window.findChild(QObject, 'electionCompletionPasswordDialog')
+            assert dialog is not None
+            wait(lambda: dialog.property('opened'))
+            password = control('electionCompletionPassword')
+            assert password.property('text') == ''
+            assert completion.property('state')['reviewing'] is True
+            enter('electionCompletionPassword', setup['password'])
+            assert control('electionCompletionPasswordConfirm').property('enabled') is True
+            assert setup['password'] not in json.dumps(completion.property('state'))
+            assert control('electionCompletionPasswordCancel').property('text') == (
+                setup['cancel_label'])
+            click('electionCompletionPasswordCancel')
+            wait(lambda: not dialog.property('visible'))
+            cancelled = completion.property('state')
+            assert password.property('text') == ''
+            assert cancelled['review'] == {} and cancelled['reviewing'] is False
+            assert cancelled['assessment'] == initial_assessment
+            assert cancelled['pending_request_id'] == ''
+            assert cancelled['uncertain_save'] is False and cancelled['receipt'] == {}
+            assert list(Path(setup['journal_directory']).rglob('*')) == []
+
+            click('electionCompletionFinalize')
+            wait(lambda: dialog.property('opened'))
+            assert password.property('text') == ''
+            assert control('electionCompletionPasswordConfirm').property('enabled') is False
+            reopened_review = completion.property('state')
+            assert reopened_review['reviewing'] is True
+            assert reopened_review['review']['basis_digest'] == initial_assessment['basis_digest']
+            enter('electionCompletionPassword', setup['password'])
+            assert control('electionCompletionPasswordConfirm').property('enabled') is True
+            assert setup['password'] not in json.dumps(controller.property('state'))
+            assert setup['password'] not in json.dumps(completion.property('state'))
+            controller.signOut()
+            wait(lambda: controller.property('state')['phase'] == 'signed_out'
+                and not dialog.property('visible'))
+            assert password.property('text') == ''
+            cleared = completion.property('state')
+            assert cleared['review'] == {} and cleared['reviewing'] is False
+            assert cleared['pending_request_id'] == '' and cleared['uncertain_save'] is False
+            assert cleared['receipt'] == {}
+            assert controller.property('state')['account'] == {}
+            assert setup['password'] not in json.dumps(cleared)
+            assert setup['password'] not in json.dumps(controller.property('state'))
+            assert list(Path(setup['journal_directory']).rglob('*')) == []
+            """,
+        )
+        assert https_server.request_count("POST", target) == 0
+        with https_server.lock:
+            business_writes = [
+                (method, path) for method, path in https_server.requests
+                if method in {"POST", "PUT", "PATCH", "DELETE"}
+                and not path.startswith("/api/auth/")
+            ]
+        assert business_writes == []
+        assert list(journal_directory.rglob("*")) == []
+        after_response = supervisor.get(setup["completion_path"])
+        assert after_response.status_code == 200, after_response.text
+        assert after_response.json() == before
