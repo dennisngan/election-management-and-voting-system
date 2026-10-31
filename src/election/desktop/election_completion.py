@@ -60,6 +60,20 @@ class ElectionCompletionController(QObject):
                  or current["revision"] == reviewed["revision"])
         )
 
+    def _observe_election(self, election: dict[str, Any]) -> None:
+        """Keep the newest version observed within the current authenticated scope."""
+        if election.get("id") != self._state["election_id"]:
+            return
+        known_revision = self._state["election"].get("revision")
+        revision = election.get("revision")
+        if type(known_revision) is int and (
+            type(revision) is not int or revision < known_revision
+        ):
+            return
+        self._state["election"] = deepcopy(election)
+        if self._state["reviewing"] and not self._can_finalize(self._state["review"]):
+            self._state["newer_basis"] = True
+
     def reset(self) -> None:
         self._generation += 1
         self._opened = False
@@ -89,10 +103,9 @@ class ElectionCompletionController(QObject):
         self._scope = scope
         self._state.update(
             election_id=election_id, actor_id=account.get("id"),
-            role=account.get("role", ""), election=deepcopy(target),
+            role=account.get("role", ""),
         )
-        if self._state["reviewing"] and not self._can_finalize(self._state["review"]):
-            self._state["newer_basis"] = True
+        self._observe_election(target)
         self._sync_recovery()
         self.stateChanged.emit()
         if changed and self._opened:
@@ -136,13 +149,7 @@ class ElectionCompletionController(QObject):
             ):
                 failed("request_failed")
                 return
-            incoming = data["election"]
-            known = self._state["election"]
-            if type(incoming.get("revision")) is int and (
-                type(known.get("revision")) is not int
-                or incoming["revision"] >= known["revision"]
-            ):
-                self._state["election"] = deepcopy(incoming)
+            self._observe_election(data["election"])
             review = self._state["review"]
             if self._state["reviewing"] and (
                 data["election"] != review["election"]
@@ -193,6 +200,7 @@ class ElectionCompletionController(QObject):
             ):
                 failed("invalid_response")
                 return
+            self._observe_election(data["election"])
             self._state.update(history=deepcopy(data), refreshing=False, error="")
             self.stateChanged.emit()
 
@@ -231,9 +239,10 @@ class ElectionCompletionController(QObject):
                 **assessment, "election": deepcopy(election),
                 "active_election_id": body["active_election_id"], "can_finalize": False,
             }
+        self._observe_election(election)
         self._state.update(
             busy=False, refreshing=False, receipt=deepcopy(body), pending_request_id="",
-            uncertain_save=False, election=deepcopy(election), error="",
+            uncertain_save=False, error="",
             assessment=deepcopy(assessment), review={}, reviewing=False, newer_basis=False,
         )
         # Start authoritative reconciliation before observers can see settlement as idle.

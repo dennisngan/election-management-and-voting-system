@@ -447,7 +447,7 @@ class DesktopController(QObject):
     def _completion_context_changed(self) -> None:
         if self._state["phase"] != "workspace":
             return
-        current = self._election_completion.property("state").get("assessment", {}).get("election")
+        current = self._election_completion.property("state").get("election")
         selected = self._state["election"] or {}
         if (
             isinstance(current, dict) and current.get("id") == selected.get("id")
