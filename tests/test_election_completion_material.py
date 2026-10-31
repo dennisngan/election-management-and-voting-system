@@ -1045,3 +1045,211 @@ def test_material_peer_finalization_invalidates_review_from_workspace_context_re
         assert history.json() == proof["peer_history"]
         assert history.json()["election"]["status"] == "finalized"
         assert history.json()["election"]["revision"] == before["election"]["revision"] + 1
+
+
+@pytest.mark.parametrize(("locale", "words"), [
+    ("en", {"title": "Preserved election completion statement", "finalized": "Finalized",
+            "finalization": "Finalization", "reopening": "Reopening"}),
+    ("tc", {"title": "已保留選舉完成確認報表", "finalized": "已定案",
+            "finalization": "完成確認", "reopening": "重新開放"}),
+    ("sc", {"title": "已保留选举完成确认报表", "finalized": "已定案",
+            "finalization": "完成确认", "reopening": "重新开放"}),
+])
+def test_material_selects_old_completion_event_and_previews_its_localized_saved_statement(
+    admin: TestClient, database_url: str, https_server: HttpsServer,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, locale: str, words: dict[str, str],
+) -> None:
+    journal_directory = tmp_path / "material-selected-history-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    preview_path = tmp_path / "canonical-old-event-preview.json"
+    observation_path = tmp_path / "material-selected-history-observation.json"
+    transport_path = tmp_path / "material-selected-history-transport.json"
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        assessment_response = supervisor.get(setup["completion_path"])
+        assert assessment_response.status_code == 200, assessment_response.text
+        assessment = assessment_response.json()
+        assert assessment["can_finalize"] is True and assessment["election"]["revision"] == 2
+        finalized_response = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": assessment["election"]["revision"],
+            "basis_digest": assessment["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert finalized_response.status_code == 201, finalized_response.text
+        original = finalized_response.json()
+        assert original["election"]["status"] == "finalized"
+        assert original["election"]["revision"] == 3
+        reopened_response = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": original["event"]["id"],
+            "reason": "Read the first signed statement while current election work stays active.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened_response.status_code == 201, reopened_response.text
+        reopened = reopened_response.json()
+        assert reopened["election"]["status"] == "active"
+        assert reopened["election"]["revision"] == 4
+        old_statement_path = base + f"/completion/history/{original['event']['id']}/statement"
+        canonical_response = supervisor.get(old_statement_path, params={"locale": locale})
+        descriptor = os.open(preview_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(canonical_response.content)
+            output.flush()
+            os.fsync(output.fileno())
+        assert canonical_response.status_code == 200, canonical_response.text
+        canonical = canonical_response.json()
+        assert canonical["event"] == original["event"] and canonical["locale"] == locale
+        assert canonical["title"] == words["title"]
+        https_server.clock.value = setup["clock"].value
+        try:
+            run_completion_material(
+                {
+                    "server": https_server.url,
+                    "username": setup["accounts"]["supervisor"]["username"],
+                    "password": BOX_READY_PASSWORD, "locale": locale,
+                    "station_id": setup["stations"]["N1"]["id"], "election_id": election_id,
+                    "current_election": reopened["election"],
+                    "old_event_id": original["event"]["id"],
+                    "new_event_id": reopened["event"]["id"],
+                    "canonical_preview_path": str(preview_path), "words": words,
+                    "journal_directory": str(journal_directory),
+                    "observation_path": str(observation_path),
+                },
+                """
+                import os
+                from copy import deepcopy
+                from tests.test_physical_acceptance_recovery_desktop import (
+                    assert_public_business_fields,
+                )
+
+                canonical = json.loads(Path(setup['canonical_preview_path']).read_text('utf-8'))
+                wait(lambda: (controller.property('state')['active_election'] or {}).get('id')
+                    == setup['election_id'])
+                active_before = deepcopy(controller.property('state')['active_election'])
+                click('electionCompletionNavigation')
+                completion = controller.property('electionCompletion')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                assert completion.property('state')['error'] == ''
+                assert workspace.property('state')['selected']['station']['id'] == (
+                    setup['station_id'])
+                # Expected first actual Material RED: the explicit history control is absent.
+                refresh = focus('electionCompletionHistoryRefresh')
+                assert refresh.property('visible') and refresh.property('text').strip()
+                assert _pointer_geometry(refresh) is not None
+                click('electionCompletionHistoryRefresh')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                history_state = completion.property('state')
+                assert history_state['error'] == ''
+                assert history_state['history']['election'] == setup['current_election']
+                assert [event['id'] for event in history_state['history']['events']] == [
+                    setup['new_event_id'], setup['old_event_id']]
+                assert str(history_state['selected_event_id']) == str(setup['new_event_id'])
+                selector = focus('electionCompletionHistoryEvent')
+                assert _pointer_geometry(selector) is not None
+                assert selector.property('count') == 2 and selector.property('currentIndex') == 0
+                newest_text = selector.property('currentText')
+                assert setup['words']['reopening'] in newest_text
+                assert str(setup['new_event_id']) in newest_text and '4' in newest_text
+                assert 'HKT' in newest_text
+                current_label = control('electionCompletionHistoryCurrent')
+                assert current_label.property('visible')
+                current_text_before = current_label.property('text')
+                assert setup['current_election']['name'] in current_text_before
+                assert controller.texts['active'] in current_text_before
+                assert str(setup['current_election']['revision']) in current_text_before
+                choose('electionCompletionHistoryEvent', 1)
+                selected = completion.property('state')
+                assert str(selected['selected_event_id']) == str(setup['old_event_id'])
+                assert_public_business_fields(selected['selected_event'], canonical['event'])
+                assert selected['report'] == {} and selected['report_text'] == ''
+                oldest_text = control('electionCompletionHistoryEvent').property('currentText')
+                assert setup['words']['finalization'] in oldest_text
+                assert str(setup['old_event_id']) in oldest_text and '3' in oldest_text
+                assert 'HKT' in oldest_text
+                preview_button = focus('electionCompletionPreview')
+                assert preview_button.property('visible')
+                assert preview_button.property('text').strip()
+                assert _pointer_geometry(preview_button) is not None
+                click('electionCompletionPreview')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                shown = completion.property('state')
+                frame()
+                preview = control('electionCompletionReportPreview')
+                public_text = preview.property('text')
+                root_election = controller.property('state')['election'] or {}
+                observed = {
+                    'locale': controller.property('state')['locale'],
+                    'page_locale': control('electionCompletionPage').property('locale'),
+                    'selected_event_id': shown['selected_event_id'],
+                    'selected_event': shown['selected_event'], 'report': shown['report'],
+                    'preview_visible': preview.property('visible'), 'preview_text': public_text,
+                    'preview_width': preview.width(), 'preview_height': preview.height(),
+                    'newest_text': newest_text, 'oldest_text': oldest_text,
+                    'current_label_before': current_text_before,
+                    'current_label_after': current_label.property('text'),
+                    'root_election': root_election, 'completion_election': shown['election'],
+                    'active_before': active_before,
+                    'active_after': controller.property('state')['active_election'],
+                    'pending_request_id': shown['pending_request_id'],
+                    'uncertain_save': shown['uncertain_save'],
+                }
+                descriptor = os.open(setup['observation_path'],
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                    json.dump(observed, output, ensure_ascii=False, indent=2)
+                    output.flush()
+                    os.fsync(output.fileno())
+                assert observed['locale'] == setup['locale']
+                assert observed['page_locale'] == setup['locale']
+                assert shown['error'] == ''
+                assert_public_business_fields(shown['selected_event'], canonical['event'])
+                assert_public_business_fields(shown['report'], canonical)
+                assert shown['report']['locale'] == setup['locale']
+                assert shown['report']['rows'] == canonical['rows']
+                assert preview.property('visible') is True
+                assert preview.width() > 0 and preview.height() > 0
+                assert public_text == shown['report_text'] and public_text.strip()
+                assert setup['words']['title'] in public_text
+                assert setup['words']['finalized'] in public_text and 'HKT' in public_text
+                for result in canonical['event']['outcome']['results']:
+                    for candidate in result['candidate_totals']:
+                        assert candidate['name'] in public_text
+                        assert str(candidate['quantity']) in public_text
+                assert current_label.property('text') == current_text_before
+                known = setup['current_election']
+                assert {key: root_election[key] for key in known} == known
+                assert shown['election'] == known
+                assert controller.property('state')['active_election'] == active_before
+                assert shown['receipt'] == {} and shown['pending_request_id'] == ''
+                assert shown['uncertain_save'] is False
+                assert list(Path(setup['journal_directory']).rglob('*')) == []
+                """,
+            )
+        finally:
+            with https_server.lock:
+                transport = {"requests": list(https_server.requests),
+                             "request_timings": list(https_server.request_timings)}
+            descriptor = os.open(transport_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                json.dump(transport, output, ensure_ascii=False, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+        assert https_server.request_count("GET", base + "/completion/history") == 1
+        assert https_server.request_count("GET", old_statement_path) == 1
+        assert [row["status"] for row in transport["request_timings"]
+                if row["method"] == "GET" and row["path"] == old_statement_path] == [200]
+        assert not [(method, path) for method, path in transport["requests"]
+                    if method == "GET" and "/request-outcomes/" in path]
+        assert not [(method, path) for method, path in transport["requests"]
+                    if method in {"POST", "PUT", "PATCH", "DELETE"}
+                    and path.startswith("/api/workspace/")]
+        assert [(method, path) for method, path in transport["requests"]
+                if "/completion/history/" in path and "/statement" in path] == [
+                    ("GET", old_statement_path)]
+        assert list(journal_directory.rglob("*")) == []
