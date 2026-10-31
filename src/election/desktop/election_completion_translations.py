@@ -1,7 +1,13 @@
-"""Read-only election completion labels for the three supported languages."""
+"""Election completion labels for the three supported languages."""
 
 ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "election_completion_finalize": "確認選舉完成",
+        "election_completion_finalized": "選舉已完成確認；已保留結果。",
+        "election_completion_confirm_title": "確認選舉完成",
+        "election_completion_password_hint": "請輸入你自己的密碼，以確認已檢視的選舉結果。",
+        "election_completion_password": "你的密碼",
+        "election_completion_cancel": "取消",
         "election_completion_navigation": "選舉完成確認及歷史記錄",
         "election_completion_title": "選舉完成確認及歷史記錄",
         "election_completion_not_ready": "選舉尚未符合完成確認條件",
@@ -16,6 +22,12 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "sc": {
+        "election_completion_finalize": "确认选举完成",
+        "election_completion_finalized": "选举已完成确认；已保留结果。",
+        "election_completion_confirm_title": "确认选举完成",
+        "election_completion_password_hint": "请输入你自己的密码，以确认已检视的选举结果。",
+        "election_completion_password": "你的密码",
+        "election_completion_cancel": "取消",
         "election_completion_navigation": "选举完成确认及历史记录",
         "election_completion_title": "选举完成确认及历史记录",
         "election_completion_not_ready": "选举尚未符合完成确认条件",
@@ -30,6 +42,14 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "en": {
+        "election_completion_finalize": "Finalize election",
+        "election_completion_finalized": "Election finalized. Preserved outcome available.",
+        "election_completion_confirm_title": "Confirm election finalization",
+        "election_completion_password_hint": (
+            "Enter your own password to confirm the reviewed election outcome."
+        ),
+        "election_completion_password": "Your password",
+        "election_completion_cancel": "Cancel",
         "election_completion_navigation": "Election completion and history",
         "election_completion_title": "Election completion and history",
         "election_completion_not_ready": "Election cannot be finalized yet",

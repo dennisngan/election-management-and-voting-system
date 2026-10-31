@@ -41,6 +41,7 @@ ColumnLayout {
         if (!hasElection) return t("no_election")
         if (errorCode) return messageText(errorCode)
         if (!assessed) return t("loading")
+        if (election.status === "finalized") return t("election_completion_finalized")
         return t(ready ? "election_completion_ready" : "election_completion_not_ready")
     }
     function blockerText(row) {
@@ -148,6 +149,84 @@ ColumnLayout {
                     font.pixelSize: 14
                     Accessible.name: text
                 }
+            }
+        }
+    }
+
+    FormButton {
+        objectName: "electionCompletionFinalize"
+        text: page.t("election_completion_finalize")
+        enabled: page.ready && !page.working && !page.editorState.uncertain_save
+            && !page.editorState.reviewing
+        Accessible.name: text
+        onClicked: {
+            if (page.completion.prepareFinalization()) passwordDialog.open()
+        }
+        onReveal: control => page.reveal(control)
+    }
+
+    Dialog {
+        id: passwordDialog
+        objectName: "electionCompletionPasswordDialog"
+        modal: true
+        focus: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(460, Overlay.overlay.width - 40)
+        implicitWidth: Math.max(0, width)
+        title: page.t("election_completion_confirm_title")
+        header: Label {
+            text: passwordDialog.title
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            padding: 24
+            bottomPadding: 0
+            font.pixelSize: Material.dialogTitleFontPixelSize
+        }
+        onOpened: passwordField.forceActiveFocus()
+        onRejected: page.completion.cancelReview()
+        onAccepted: {
+            var value = passwordField.text
+            passwordField.clear()
+            page.completion.finalize(value)
+        }
+        onClosed: {
+            passwordField.clear()
+            page.completion.cancelReview()
+        }
+        contentItem: ColumnLayout {
+            spacing: 12
+            FormCaption { text: page.t("election_completion_password_hint") }
+            FormField {
+                id: passwordField
+                objectName: "electionCompletionPassword"
+                echoMode: TextInput.Password
+                maximumLength: 128
+                Accessible.name: page.t("election_completion_password")
+                onReveal: control => page.reveal(control)
+            }
+        }
+        footer: DialogButtonBox {
+            Button {
+                objectName: "electionCompletionPasswordCancel"
+                text: page.t("election_completion_cancel")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+            Button {
+                objectName: "electionCompletionPasswordConfirm"
+                text: page.t("election_completion_finalize")
+                enabled: passwordField.text.length > 0 && !!page.editorState.reviewing
+                    && !page.working && !page.editorState.newer_basis
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+        }
+    }
+
+    Connections {
+        target: page.completion
+        function onStateChanged() {
+            if (!page.editorState.reviewing) {
+                passwordField.clear()
+                passwordDialog.close()
             }
         }
     }

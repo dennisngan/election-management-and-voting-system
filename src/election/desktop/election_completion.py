@@ -52,7 +52,7 @@ class ElectionCompletionController(QObject):
             "election_id": None, "actor_id": None, "role": "", "election": {},
             "assessment": {}, "busy": False, "refreshing": False, "error": "",
             "receipt": {}, "pending_request_id": "", "uncertain_save": False,
-            "reconciling": False,
+            "reconciling": False, "review": {}, "reviewing": False, "newer_basis": False,
         }
         self.stateChanged.emit()
 
@@ -155,7 +155,7 @@ class ElectionCompletionController(QObject):
         self._state.update(
             busy=False, refreshing=False, receipt=deepcopy(body), pending_request_id="",
             uncertain_save=False, election=deepcopy(election), error="",
-            assessment=deepcopy(assessment),
+            assessment=deepcopy(assessment), review={}, reviewing=False, newer_basis=False,
         )
         # Start authoritative reconciliation before observers can see settlement as idle.
         self.finalized.emit(body)
@@ -207,9 +207,39 @@ class ElectionCompletionController(QObject):
             )
             self.stateChanged.emit()
 
+    @Slot(result=bool)
+    def prepareFinalization(self) -> bool:
+        assessment = self._state["assessment"]
+        if (
+            self._state["role"] != "supervisor" or self._state["busy"]
+            or self._state["refreshing"] or self._state["uncertain_save"]
+            or assessment.get("can_finalize") is not True
+            or (assessment.get("election") or {}).get("id") != self._state["election_id"]
+        ):
+            self._state["error"] = "election_completion_not_ready"
+            self.stateChanged.emit()
+            return False
+        self._state.update(
+            review=deepcopy(assessment), reviewing=True, newer_basis=False, error="",
+        )
+        self.stateChanged.emit()
+        return True
+
+    @Slot()
+    def cancelReview(self) -> None:
+        if (
+            self._state["busy"] or self._state["uncertain_save"]
+            or not self._state["reviewing"]
+        ):
+            return
+        self._state.update(review={}, reviewing=False, newer_basis=False, error="")
+        self.stateChanged.emit()
+
     @Slot(str)
     def finalize(self, password: str) -> None:
-        assessment = self._state["assessment"]
+        assessment = (
+            self._state["review"] if self._state["reviewing"] else self._state["assessment"]
+        )
         election_id = self._state["election_id"]
         if (
             self._state["role"] != "supervisor" or self._state["busy"]
@@ -240,7 +270,10 @@ class ElectionCompletionController(QObject):
         self._command = command
         self._generation += 1
         generation = self._generation
-        self._state.update(busy=True, error="", pending_request_id=payload["request_id"])
+        self._state.update(
+            busy=True, error="", pending_request_id=payload["request_id"],
+            review={}, reviewing=False, newer_basis=False,
+        )
         self.stateChanged.emit()
 
         def saved(body: dict[str, Any]) -> None:
