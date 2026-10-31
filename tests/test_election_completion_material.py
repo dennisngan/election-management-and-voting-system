@@ -442,6 +442,21 @@ def test_material_reviews_and_finalizes_ready_election_with_own_password(
             enter('electionCompletionPassword', setup['password'])
             assert setup['password'] not in json.dumps(completion.property('state'))
             assert confirm.property('enabled') is True
+            reviewed_before_refresh = completion.property('state')['review']
+            workspace = controller.property('workspace')
+            workspace.refresh()
+            wait(lambda: not any(workspace.property('state')[key]
+                for key in ('busy', 'refreshing')))
+            completion.refresh()
+            wait(lambda: not any(completion.property('state')[key]
+                for key in ('busy', 'refreshing')))
+            unchanged = completion.property('state')
+            assert unchanged['assessment']['basis_digest'] == (
+                reviewed_before_refresh['basis_digest'])
+            assert unchanged['review'] == reviewed_before_refresh
+            assert unchanged['newer_basis'] is False
+            assert password.property('text') == setup['password']
+            assert confirm.property('enabled') is True
             click('electionCompletionPasswordConfirm')
             wait(lambda: not any(completion.property('state')[key]
                 for key in ('busy', 'refreshing')))
@@ -600,3 +615,166 @@ def test_material_cancels_unsent_finalization_and_erases_password_on_sign_out(
         after_response = supervisor.get(setup["completion_path"])
         assert after_response.status_code == 200, after_response.text
         assert after_response.json() == before
+
+
+@pytest.mark.parametrize(
+    ("locale", "review_changed_text"),
+    [
+        ("en", "Election data changed. Cancel and review the current facts before confirming."),
+        ("tc", "選舉資料已更新。請取消並重新檢視後再確認。"),
+        ("sc", "选举资料已更新。请取消并重新检视后再确认。"),
+    ],
+)
+def test_material_source_change_keeps_review_and_clears_confirmation_password(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    locale: str,
+    review_changed_text: str,
+) -> None:
+    journal_directory = tmp_path / "material-stale-finalization-review-journal"
+    assert not journal_directory.exists()
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        station_id = setup["stations"]["N1"]["id"]
+        election_id = setup["election"]["id"]
+        complaints_path = f"/api/workspace/stations/{station_id}/complaints"
+        case_reference = "Material review case " + uuid4().hex[:12]
+        before_response = supervisor.get(setup["completion_path"])
+        assert before_response.status_code == 200, before_response.text
+        before = before_response.json()
+        assert before["can_finalize"] is True and before["blockers"] == []
+        assert next(
+            row["records"] for row in before["sources"]["complaints"]
+            if row["station_id"] == station_id
+        ) == []
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        https_server.clock.value = setup["clock"].value
+        run_completion_material(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": BOX_READY_PASSWORD,
+                "polling_username": setup["accounts"]["polling"]["username"],
+                "station_id": station_id,
+                "election_id": election_id,
+                "locale": locale,
+                "review_changed_text": review_changed_text,
+                "case_reference": case_reference,
+                "journal_directory": str(journal_directory),
+            },
+            """
+            import ssl
+            import httpx
+            from tests.complaint_support import complaint_payload, station_categories
+            from tests.test_physical_acceptance_recovery_desktop import (
+                assert_public_business_fields,
+            )
+
+            click('electionCompletionNavigation')
+            completion = controller.property('electionCompletion')
+            wait(lambda: not any(completion.property('state')[key]
+                for key in ('busy', 'refreshing')))
+            assert completion.property('state')['assessment']['can_finalize'] is True
+            click('electionCompletionFinalize')
+            dialog = window.findChild(QObject, 'electionCompletionPasswordDialog')
+            assert dialog is not None
+            wait(lambda: dialog.property('opened'))
+            reviewed = completion.property('state')['review']
+            assert reviewed['election']['id'] == setup['election_id']
+            assert reviewed['can_finalize'] is True
+            enter('electionCompletionPassword', setup['password'])
+            password = control('electionCompletionPassword')
+            assert password.property('text') == setup['password']
+            assert control('electionCompletionPasswordConfirm').property('enabled') is True
+            assert setup['password'] not in json.dumps(completion.property('state'))
+
+            trust = ssl.create_default_context(cafile=str(Path('.runtime/tls/ca.pem').resolve()))
+            with httpx.Client(base_url=setup['server'], verify=trust) as peer:
+                login = peer.post('/api/auth/login', json={
+                    'username': setup['polling_username'], 'password': setup['password'],
+                })
+                assert login.status_code == 200, 'Synthetic Polling Officer login failed'
+                peer.headers['Authorization'] = 'Bearer ' + login.json()['token']
+                try:
+                    categories = station_categories(peer, setup['station_id'])
+                    created = peer.post(
+                        '/api/workspace/stations/' + str(setup['station_id']) + '/complaints',
+                        json=complaint_payload(
+                            categories[0], case_reference=setup['case_reference'],
+                        ),
+                    )
+                    assert created.status_code == 201, 'Expected a genuine new complaint201'
+                    complaint = created.json()
+                    assert complaint['work_status'] == 'in_progress'
+                    assert complaint['completed_at'] is None
+                finally:
+                    logout = peer.delete('/api/auth/session')
+                    assert logout.status_code == 204, 'Normal peer logout did not complete'
+
+            completion.refresh()
+            wait(lambda: not any(completion.property('state')[key]
+                for key in ('busy', 'refreshing')))
+            stale = completion.property('state')
+            assert stale['newer_basis'] is True and stale['reviewing'] is True
+            assert stale['review'] == reviewed
+            assert stale['assessment']['election'] == reviewed['election']
+            assert stale['assessment']['can_finalize'] is True
+            assert stale['assessment']['basis_digest'] != reviewed['basis_digest']
+            records = next(row['records'] for row in stale['assessment']['sources']['complaints']
+                if row['station_id'] == setup['station_id'])
+            assert len(records) == 1
+            assert_public_business_fields(records[0], complaint)
+            assert dialog.property('visible') is True
+            notice = control('electionCompletionReviewChanged')
+            frame()
+            assert notice.property('visible') is True
+            assert notice.property('text') == setup['review_changed_text']
+            assert _pointer_geometry(notice) is not None
+            assert password.property('text') == ''
+            assert control('electionCompletionPasswordConfirm').property('enabled') is False
+            assert stale['pending_request_id'] == '' and stale['uncertain_save'] is False
+            assert stale['receipt'] == {}
+            assert list(Path(setup['journal_directory']).rglob('*')) == []
+            changed_assessment = stale['assessment']
+            click('electionCompletionPasswordCancel')
+            wait(lambda: not dialog.property('visible'))
+            cancelled = completion.property('state')
+            assert password.property('text') == ''
+            assert cancelled['review'] == {} and cancelled['reviewing'] is False
+            assert cancelled['assessment'] == changed_assessment
+            assert cancelled['pending_request_id'] == '' and cancelled['uncertain_save'] is False
+            assert cancelled['receipt'] == {}
+            assert setup['password'] not in json.dumps(cancelled)
+            assert list(Path(setup['journal_directory']).rglob('*')) == []
+            """,
+        )
+        assert https_server.request_count("POST", target) == 0
+        assert https_server.request_count("POST", complaints_path) == 1
+        assert list(journal_directory.rglob("*")) == []
+        with https_server.lock:
+            actual_complaint_statuses = [
+                row["status"] for row in https_server.request_timings
+                if row["method"] == "POST" and row["path"] == complaints_path
+            ]
+        assert actual_complaint_statuses == [201]
+        records_response = setup["clients"]["polling"].get(complaints_path)
+        assert records_response.status_code == 200, records_response.text
+        matches = [
+            row for row in records_response.json()["items"]
+            if row["case_reference"] == case_reference
+        ]
+        assert len(matches) == 1
+        complaint = matches[0]
+        assert complaint["work_status"] == "in_progress" and complaint["completed_at"] is None
+        after_response = supervisor.get(setup["completion_path"])
+        assert after_response.status_code == 200, after_response.text
+        after = after_response.json()
+        assert after["election"] == before["election"]
+        assert after["active_election_id"] == election_id
+        assert after["can_finalize"] is True and after["blockers"] == []
+        assert after["basis_digest"] != before["basis_digest"]
+        assert {"station_id": station_id, "records": [complaint]} in after["sources"]["complaints"]
