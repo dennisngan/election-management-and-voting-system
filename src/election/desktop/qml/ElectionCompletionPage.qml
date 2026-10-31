@@ -411,7 +411,7 @@ ColumnLayout {
                 id: reopenReviewScroll
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(reopenReviewDetails.implicitHeight,
-                    Math.max(80, Overlay.overlay.height - 400))
+                    Math.max(80, (Overlay.overlay ? Overlay.overlay.height : 0) - 400))
                 contentWidth: availableWidth
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
