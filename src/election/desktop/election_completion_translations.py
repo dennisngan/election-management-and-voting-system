@@ -2,6 +2,8 @@
 
 ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "election_completion_export_failed": "無法匯出已保留報表",
+        "election_completion_exported": "已匯出已保留報表",
         "election_completion_history": "已保留完成確認記錄",
         "election_completion_event": "選擇歷史記錄",
         "election_completion_finalization": "完成確認",
@@ -32,6 +34,8 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "sc": {
+        "election_completion_export_failed": "无法导出已保留报表",
+        "election_completion_exported": "已导出已保留报表",
         "election_completion_history": "已保留完成确认记录",
         "election_completion_event": "选择历史记录",
         "election_completion_finalization": "完成确认",
@@ -62,6 +66,8 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "en": {
+        "election_completion_export_failed": "Could not export the preserved statement",
+        "election_completion_exported": "Preserved statement exported",
         "election_completion_history": "Preserved completion history",
         "election_completion_event": "Select history event",
         "election_completion_finalization": "Finalization",

@@ -12,6 +12,7 @@ from election.desktop.event_times import format_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.operational_receipts import valid_operational_receipt
 from election.desktop.recovery import NETWORK_ERRORS, RecoveryController
+from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
 
 class ElectionCompletionController(QObject):
@@ -21,10 +22,11 @@ class ElectionCompletionController(QObject):
 
     def __init__(
         self, request: AuthorizedRequest, parent: QObject | None = None, *,
-        recovery: RecoveryController | None = None,
+        recovery: RecoveryController | None = None, download: DownloadRequest | None = None,
     ) -> None:
         super().__init__(parent)
         self._request, self._recovery = request, recovery
+        self._download = download
         self._generation = 0
         self._report_generation = 0
         self._opened = False
@@ -102,7 +104,7 @@ class ElectionCompletionController(QObject):
             "receipt": {}, "pending_request_id": "", "uncertain_save": False,
             "reconciling": False, "review": {}, "reviewing": False, "newer_basis": False,
             "history": {}, "selected_event_id": None,
-            "report": {}, "report_text": "", "export_path": "",
+            "report": {}, "report_text": "", "export_path": "", "notice": "",
         }
         self.stateChanged.emit()
 
@@ -301,6 +303,55 @@ class ElectionCompletionController(QObject):
             f"/api/workspace/elections/{self._state['election_id']}"
             f"/completion/history/{event['id']}/statement?locale={locale}",
             "GET", None, loaded, failed,
+        )
+
+    @Slot(str, str, str)
+    def exportReport(self, locale: str, format: str, filepath: str) -> None:
+        if self._state["busy"] or self._state["refreshing"]:
+            return
+        event = deepcopy(self._selected_event())
+        destination = report_destination(filepath)
+        if (
+            self._state["role"] != "supervisor" or not event
+            or locale not in {"tc", "sc", "en"} or format not in {"csv", "pdf"}
+            or self._download is None or destination is None
+        ):
+            self._state.update(error="election_completion_export_failed", notice="")
+            self.stateChanged.emit()
+            return
+        self._report_generation += 1
+        generation, report_generation = self._generation, self._report_generation
+        self._state.update(busy=True, error="", notice="", export_path="")
+        self.stateChanged.emit()
+
+        def current() -> bool:
+            return (
+                generation == self._generation
+                and report_generation == self._report_generation
+                and self._state["selected_event_id"] == event["id"]
+            )
+
+        def failed(code: str) -> None:
+            if current():
+                self._state.update(busy=False, error=code, notice="")
+                self.stateChanged.emit()
+
+        def loaded(body: dict[str, Any]) -> None:
+            if not current():
+                return
+            if not save_report(body, destination, format):
+                failed("election_completion_export_failed")
+                return
+            self._state.update(
+                busy=False, error="", notice="election_completion_exported",
+                export_path=destination,
+            )
+            self.stateChanged.emit()
+
+        self._download(
+            f"/api/workspace/elections/{self._state['election_id']}"
+            f"/completion/history/{event['id']}/statement.{format}?locale={locale}",
+            loaded, failed,
         )
 
     def wait_for_current_lifecycle(self) -> Callable[[str], None]:

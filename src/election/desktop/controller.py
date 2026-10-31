@@ -106,6 +106,7 @@ class DesktopController(QObject):
         self._server_backups = ServerBackupsController(self._authorized_request, self)
         self._election_completion = ElectionCompletionController(
             self._authorized_request, self, recovery=self._recovery,
+            download=self._authorized_download,
         )
         self._election_completion.finalized.connect(self._completion_saved)
         self._election_completion.reopened.connect(self._completion_saved)
