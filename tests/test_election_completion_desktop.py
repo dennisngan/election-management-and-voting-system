@@ -3798,3 +3798,183 @@ def test_supervisor_previews_selected_old_event_without_rebinding_reopened_curre
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             qt_app.processEvents()
+
+
+def test_supervisor_exports_selected_old_event_csv_without_rebinding_current_context(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import csv
+    from io import StringIO
+
+    journal_directory = tmp_path / "selected-completion-csv-export-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    destination = tmp_path / "saved-finalization-tc.csv"
+    assert destination.is_absolute() and not destination.exists()
+    evidence = tmp_path / "selected-completion-csv-export-evidence"
+    evidence.mkdir(mode=0o700)
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        actor = setup["accounts"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        assessment_response = supervisor.get(setup["completion_path"])
+        assert assessment_response.status_code == 200, assessment_response.text
+        assessment = assessment_response.json()
+        assert assessment["can_finalize"] is True and assessment["election"]["revision"] == 2
+        finalized_response = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": assessment["election"]["revision"],
+            "basis_digest": assessment["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert finalized_response.status_code == 201, finalized_response.text
+        original = finalized_response.json()
+        assert original["election"]["status"] == "finalized"
+        assert original["election"]["revision"] == 3
+        reopened_response = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": original["event"]["id"],
+            "reason": "Export the preserved first statement while current work remains active.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened_response.status_code == 201, reopened_response.text
+        reopened = reopened_response.json()
+        assert reopened["election"]["status"] == "active"
+        assert reopened["election"]["revision"] == 4
+        csv_path = base + f"/completion/history/{original['event']['id']}/statement.csv"
+        canonical_response = supervisor.get(csv_path, params={"locale": "tc"})
+        _write_incomplete_receipt_evidence(evidence / "canonical-old-statement.csv",
+                                           canonical_response.content)
+        assert canonical_response.status_code == 200, canonical_response.text
+        assert canonical_response.headers["content-type"].partition(";")[0] == "text/csv"
+        canonical_bytes = canonical_response.content
+        assert canonical_bytes.startswith(b"\xef\xbb\xbf")
+        https_server.clock.value = setup["clock"].value
+        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(https_server.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            assert client.property("state")["account"]["id"] == actor["id"]
+            assert client.property("state")["account"]["role"] == "supervisor"
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            completion.loadHistory()
+            wait_for_editor_idle(qt_app, completion)
+            completion.selectHistoryEvent(str(original["event"]["id"]))
+            assert_public_business_fields(
+                completion.property("state")["selected_event"], original["event"],
+            )
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            completion.loadHistory()
+            wait_for_editor_idle(qt_app, completion)
+            assert not destination.exists()
+            assert https_server.request_count("GET", csv_path) == 0
+            selected_before = completion.property("state")
+            assert selected_before["election"] == reopened["election"]
+            assert_public_business_fields(selected_before["selected_event"], original["event"])
+            active_before = deepcopy(client.property("state")["active_election"])
+            assert {key: active_before[key] for key in reopened["election"]} == reopened["election"]
+            try:
+                # Intended genuine Qt RED: missing public binary-export method.
+                completion.exportReport("tc", "csv", destination.as_uri())
+                wait_for_editor_idle(qt_app, completion)
+                exported = completion.property("state")
+            finally:
+                with https_server.lock:
+                    export_requests = list(https_server.requests)
+                _write_incomplete_receipt_evidence(
+                    evidence / "export-observation.json", json.dumps({
+                    "state": completion.property("state"),
+                    "destination": str(destination), "destination_exists": destination.is_file(),
+                    "root_election": client.property("state")["election"],
+                    "active_election": client.property("state")["active_election"],
+                    "requests": export_requests,
+                }, ensure_ascii=False, sort_keys=True).encode())
+                if destination.is_file():
+                    _write_incomplete_receipt_evidence(
+                        evidence / "actual-downloaded-statement.csv", destination.read_bytes(),
+                    )
+            assert exported["error"] == ""
+            assert exported["export_path"] == str(destination)
+            assert isinstance(exported["notice"], str) and exported["notice"]
+            assert destination.is_file()
+            delivered = destination.read_bytes()
+            assert delivered.startswith(b"\xef\xbb\xbf") and delivered == canonical_bytes
+            rows = list(csv.reader(StringIO(delivered.decode("utf-8-sig"))))
+            assert rows[0] == ["已保留選舉完成確認報表"]
+            metadata = rows[1:rows.index([])]
+            assert ["狀態", "已定案"] in metadata and ["修訂", "3"] in metadata
+            assert ["事件編號", str(original["event"]["id"])] in metadata
+            assert ["基礎摘要", original["event"]["basis_digest"]] in metadata
+            for source_kind in ("投票服務完成記錄", "P(18) 會計", "已選核准點票", "凍結票箱基礎"):
+                assert any(source_kind in row for row in rows), source_kind
+            polling_record = next(
+                row["record"]
+                for row in original["event"]["outcome"]["sources"]["polling_completion"]
+                if row["station_id"] == setup["stations"]["N1"]["id"]
+            )
+            count_record = next(
+                row["record"] for row in original["event"]["outcome"]["sources"]["selected_counts"]
+                if row["scope_id"] == setup["scope"]["id"]
+            )
+            pairs = {(row[index], row[index + 1]) for row in rows
+                     for index in range(len(row) - 1)}
+            assert ("記錄編號", str(polling_record["id"])) in pairs
+            assert ("版本記錄編號", str(count_record["revision_id"])) in pairs
+            assert_public_business_fields(exported["selected_event"], original["event"])
+            assert exported["election"] == reopened["election"]
+            assert {key: client.property("state")["election"][key]
+                    for key in reopened["election"]} == reopened["election"]
+            assert client.property("state")["active_election"] == active_before
+            assert exported["receipt"] == {} and exported["pending_request_id"] == ""
+            assert exported["uncertain_save"] is False
+            assert https_server.request_count("GET", csv_path) == 1
+            saved_stat = destination.stat()
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            completion.loadHistory()
+            wait_for_editor_idle(qt_app, completion)
+            after_reads = completion.property("state")
+            assert_public_business_fields(after_reads["selected_event"], original["event"])
+            assert after_reads["election"] == reopened["election"]
+            assert client.property("state")["active_election"] == active_before
+            assert destination.read_bytes() == delivered
+            after_stat = destination.stat()
+            assert (after_stat.st_ino, after_stat.st_mtime_ns, after_stat.st_size) == (
+                saved_stat.st_ino, saved_stat.st_mtime_ns, saved_stat.st_size,
+            )
+            assert https_server.request_count("GET", csv_path) == 1
+            with https_server.lock:
+                actual_requests = list(https_server.requests)
+                statuses = [row["status"] for row in https_server.request_timings
+                            if row["method"] == "GET" and row["path"] == csv_path]
+            assert statuses == [200]
+            assert not [(method, path) for method, path in actual_requests
+                        if method == "GET" and "/request-outcomes/" in path]
+            assert not [(method, path) for method, path in actual_requests
+                        if method in {"POST", "PUT", "PATCH", "DELETE"}
+                        and path.startswith("/api/workspace/")]
+            assert [(method, path) for method, path in actual_requests
+                    if "/completion/history/" in path and "/statement" in path] == [
+                        ("GET", csv_path)]
+            assert workspace.property("state")["selected"] == {}
+            assert list(journal_directory.rglob("*.json")) == []
+            _assert_completion_credential_free(after_reads)
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
