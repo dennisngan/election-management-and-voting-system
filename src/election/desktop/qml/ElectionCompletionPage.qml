@@ -19,6 +19,8 @@ ColumnLayout {
         && editorState.election.id === editorState.election_id
         ? editorState.election : assessed ? assessment.election : ({})
     readonly property var history: editorState.history || ({})
+    readonly property var reopeningReview: editorState.reopening_review || ({})
+    readonly property bool hasReopeningReview: !!reopeningReview.election_id
     readonly property var historyEvents: history.events || []
     readonly property var blockers: assessed ? (assessment.blockers || []) : []
     readonly property bool working: !!editorState.busy || !!editorState.refreshing
@@ -272,6 +274,103 @@ ColumnLayout {
         font.pixelSize: 14
     }
 
+    ColumnLayout {
+        Layout.fillWidth: true
+        visible: page.election.status === "finalized"
+        spacing: 12
+        Heading { text: page.t("election_completion_reopen") }
+        FormCaption { text: page.t("election_completion_reopen_hint") }
+        FormCaption { text: page.t("election_completion_reopen_reason") }
+        FormField {
+            id: reopenReason
+            objectName: "electionCompletionReopenReason"
+            Layout.fillWidth: true
+            maximumLength: 2000
+            enabled: !page.working && !page.hasReopeningReview && !page.editorState.uncertain_save
+            Accessible.name: page.t("election_completion_reopen_reason")
+            onReveal: control => page.reveal(control)
+        }
+        FormButton {
+            objectName: "electionCompletionReopen"
+            text: page.t("election_completion_reopen")
+            enabled: !!page.editorState.can_reopen && reopenReason.text.trim().length > 0
+                && !page.working && !page.hasReopeningReview && !page.editorState.uncertain_save
+            onClicked: {
+                if (page.completion.prepareReopening(reopenReason.text)) reopenDialog.open()
+            }
+            onReveal: control => page.reveal(control)
+        }
+    }
+
+    Dialog {
+        id: reopenDialog
+        objectName: "electionCompletionReopenPasswordDialog"
+        modal: true
+        focus: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(460, Overlay.overlay.width - 40)
+        implicitWidth: Math.max(0, width)
+        title: page.t("election_completion_reopen_confirm")
+        header: Label {
+            text: reopenDialog.title
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            padding: 24
+            bottomPadding: 0
+            font.pixelSize: Material.dialogTitleFontPixelSize
+        }
+        onOpened: reopenPassword.forceActiveFocus()
+        onRejected: page.completion.cancelReopening()
+        onAccepted: {
+            var value = reopenPassword.text
+            var reason = String(page.reopeningReview.reason || "")
+            reopenPassword.clear()
+            page.completion.reopen(reason, value)
+        }
+        onClosed: {
+            reopenPassword.clear()
+            page.completion.cancelReopening()
+        }
+        contentItem: ColumnLayout {
+            spacing: 12
+            FormCaption {
+                text: page.electionText() + " · " + page.t("election_completion_revision")
+                    + " " + String(page.reopeningReview.expected_election_revision || "")
+                    + " · #" + String(page.reopeningReview.previous_finalization_id || "")
+            }
+            FormCaption { text: String(page.reopeningReview.reason || "") }
+            FormCaption { text: page.t("election_completion_reopen_password_hint") }
+            FormCaption {
+                objectName: "electionCompletionReopenChanged"
+                visible: !!page.editorState.reopening_changed
+                text: page.t("election_completion_review_changed")
+                color: "#a13b30"
+            }
+            FormField {
+                id: reopenPassword
+                objectName: "electionCompletionReopenPassword"
+                echoMode: TextInput.Password
+                maximumLength: 128
+                Accessible.name: page.t("election_completion_password")
+                onReveal: control => page.reveal(control)
+            }
+        }
+        footer: DialogButtonBox {
+            Button {
+                objectName: "electionCompletionReopenCancel"
+                text: page.t("election_completion_cancel")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+            Button {
+                objectName: "electionCompletionReopenConfirm"
+                text: page.t("election_completion_reopen_confirm")
+                enabled: reopenPassword.text.length > 0 && page.hasReopeningReview
+                    && !page.working && !page.editorState.reopening_changed
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+        }
+    }
+
     Dialog {
         id: passwordDialog
         objectName: "electionCompletionPasswordDialog"
@@ -337,6 +436,11 @@ ColumnLayout {
     Connections {
         target: page.completion
         function onStateChanged() {
+            if (page.editorState.reopening_changed) reopenPassword.clear()
+            if (!page.hasReopeningReview) {
+                reopenPassword.clear()
+                reopenDialog.close()
+            }
             if (page.editorState.newer_basis) passwordField.clear()
             if (!page.editorState.reviewing) {
                 passwordField.clear()

@@ -2,6 +2,14 @@
 
 ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "election_completion_reopen": "重新開放選舉",
+        "election_completion_reopen_reason": "重新開放原因",
+        "election_completion_reopen_hint": "先重新載入歷史記錄，然後記錄重新開放的原因。",
+        "election_completion_reopen_confirm": "確認重新開放",
+        "election_completion_reopen_password_hint": (
+            "請輸入你自己的密碼，以重新開放已檢視的選舉版本。"
+        ),
+        "election_reopening_not_ready": "請重新載入目前已定案的選舉歷史記錄後，再重新開放。",
         "election_completion_export_failed": "無法匯出已保留報表",
         "election_completion_exported": "已匯出已保留報表",
         "election_completion_history": "已保留完成確認記錄",
@@ -34,6 +42,14 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "sc": {
+        "election_completion_reopen": "重新开放选举",
+        "election_completion_reopen_reason": "重新开放原因",
+        "election_completion_reopen_hint": "先重新载入历史记录，然后记录重新开放的原因。",
+        "election_completion_reopen_confirm": "确认重新开放",
+        "election_completion_reopen_password_hint": (
+            "请输入你自己的密码，以重新开放已检视的选举版本。"
+        ),
+        "election_reopening_not_ready": "请重新载入目前已定案的选举历史记录后，再重新开放。",
         "election_completion_export_failed": "无法导出已保留报表",
         "election_completion_exported": "已导出已保留报表",
         "election_completion_history": "已保留完成确认记录",
@@ -66,6 +82,16 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "en": {
+        "election_completion_reopen": "Reopen election",
+        "election_completion_reopen_reason": "Reason for reopening",
+        "election_completion_reopen_hint": "Refresh history, then record the reason for reopening.",
+        "election_completion_reopen_confirm": "Confirm reopening",
+        "election_completion_reopen_password_hint": (
+            "Enter your own password to reopen the reviewed election revision."
+        ),
+        "election_reopening_not_ready": (
+            "Refresh the current finalized election history before reopening."
+        ),
         "election_completion_export_failed": "Could not export the preserved statement",
         "election_completion_exported": "Preserved statement exported",
         "election_completion_history": "Preserved completion history",

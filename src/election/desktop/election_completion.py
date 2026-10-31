@@ -40,6 +40,7 @@ class ElectionCompletionController(QObject):
     def state(self) -> dict[str, Any]:
         view = quantity_display(self._state)
         view["can_finalize"] = self._can_finalize(self._state["assessment"])
+        view["can_reopen"] = bool(self._reopening_basis())
         view["selected_event"] = quantity_display(self._selected_event())
         view["history_event_times"] = {
             str(event["id"]): format_event_time(event.get("accepted_at"))
@@ -90,6 +91,7 @@ class ElectionCompletionController(QObject):
         self._state["election"] = deepcopy(election)
         if self._state["reviewing"] and not self._can_finalize(self._state["review"]):
             self._state["newer_basis"] = True
+        self._observe_reopening_review()
 
     def reset(self) -> None:
         self._generation += 1
@@ -104,6 +106,7 @@ class ElectionCompletionController(QObject):
             "receipt": {}, "pending_request_id": "", "uncertain_save": False,
             "reconciling": False, "review": {}, "reviewing": False, "newer_basis": False,
             "history": {}, "selected_event_id": None,
+            "reopening_review": {}, "reopening_changed": False,
             "report": {}, "report_text": "", "export_path": "", "notice": "",
         }
         self.stateChanged.emit()
@@ -229,6 +232,7 @@ class ElectionCompletionController(QObject):
                 history=deepcopy(data), selected_event_id=selected_id,
                 refreshing=False, error="",
             )
+            self._observe_reopening_review()
             self.stateChanged.emit()
 
         self._request(
@@ -389,6 +393,7 @@ class ElectionCompletionController(QObject):
             busy=False, refreshing=False, receipt=deepcopy(body), pending_request_id="",
             uncertain_save=False, error="",
             assessment=deepcopy(assessment), review={}, reviewing=False, newer_basis=False,
+            reopening_review={}, reopening_changed=False,
         )
         # Start authoritative reconciliation before observers can see settlement as idle.
         if body["event"]["kind"] == "reopening":
@@ -497,8 +502,7 @@ class ElectionCompletionController(QObject):
         }
         self._save_election_command("finalizations", payload, password)
 
-    @Slot(str, str)
-    def reopen(self, reason: str, password: str) -> None:
+    def _reopening_basis(self) -> dict[str, Any]:
         election_id = self._state["election_id"]
         current = self._state["election"]
         history = self._state["history"]
@@ -506,30 +510,87 @@ class ElectionCompletionController(QObject):
         events = history.get("events") or []
         previous = events[0] if events else {}
         if (
-            self._state["role"] != "supervisor" or self._state["busy"]
-            or self._state["refreshing"] or self._state["uncertain_save"]
+            self._state["role"] != "supervisor"
             or type(election_id) is not int or election_id <= 0
             or current.get("status") != "finalized"
             or election.get("id") != election_id or election.get("status") != "finalized"
             or type(election.get("revision")) is not int
             or type(current.get("revision")) is int
             and current["revision"] != election["revision"]
+            or history.get("active_election_id") not in {None, election_id}
             or previous.get("election_id") != election_id
             or previous.get("kind") != "finalization"
             or previous.get("election_revision") != election["revision"]
             or type(previous.get("id")) is not int or previous["id"] <= 0
         ):
+            return {}
+        return {
+            "election_id": election_id, "expected_election_revision": election["revision"],
+            "previous_finalization_id": previous["id"],
+        }
+
+    def _observe_reopening_review(self) -> None:
+        review = self._state["reopening_review"]
+        if review and self._reopening_basis() != {
+            key: value for key, value in review.items() if key != "reason"
+        }:
+            self._state["reopening_changed"] = True
+
+    @Slot(str, result=bool)
+    def prepareReopening(self, reason: str) -> bool:
+        basis = self._reopening_basis()
+        if (
+            not basis or self._state["busy"] or self._state["refreshing"]
+            or self._state["uncertain_save"] or self._state["reviewing"]
+            or self._state["reopening_review"]
+        ):
             self._state["error"] = "election_reopening_not_ready"
             self.stateChanged.emit()
-            return
+            return False
         reason = reason.strip()
-        if not reason or not password:
-            self._state["error"] = "reason_required" if not reason else "invalid_credentials"
+        if not reason:
+            self._state["error"] = "reason_required"
+            self.stateChanged.emit()
+            return False
+        self._state.update(
+            reopening_review={**basis, "reason": reason}, reopening_changed=False, error="",
+        )
+        self.stateChanged.emit()
+        return True
+
+    @Slot()
+    def cancelReopening(self) -> None:
+        if self._state["busy"] or self._state["uncertain_save"]:
+            return
+        if self._state["reopening_review"]:
+            self._state.update(reopening_review={}, reopening_changed=False, error="")
+            self.stateChanged.emit()
+
+    @Slot(str, str)
+    def reopen(self, reason: str, password: str) -> None:
+        basis = self._reopening_basis()
+        review = self._state["reopening_review"]
+        self._observe_reopening_review()
+        if (
+            not basis or self._state["busy"] or self._state["refreshing"]
+            or self._state["uncertain_save"] or self._state["reopening_changed"]
+        ):
+            self._state["error"] = (
+                "election_completion_review_changed" if self._state["reopening_changed"]
+                else "election_reopening_not_ready"
+            )
+            self.stateChanged.emit()
+            return
+        reviewed = review or {**basis, "reason": reason.strip()}
+        if not reviewed["reason"] or not password:
+            self._state["error"] = (
+                "reason_required" if not reviewed["reason"] else "invalid_credentials"
+            )
             self.stateChanged.emit()
             return
         payload = {
-            "request_id": str(uuid4()), "expected_election_revision": election["revision"],
-            "previous_finalization_id": previous["id"], "reason": reason,
+            "request_id": str(uuid4()),
+            **{key: value for key, value in reviewed.items() if key != "election_id"},
         }
         self._save_election_command("reopenings", payload, password)
 
@@ -550,6 +611,7 @@ class ElectionCompletionController(QObject):
         self._state.update(
             busy=True, error="", pending_request_id=payload["request_id"],
             review={}, reviewing=False, newer_basis=False,
+            reopening_review={}, reopening_changed=False,
         )
         self.stateChanged.emit()
 
