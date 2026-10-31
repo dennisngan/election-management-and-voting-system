@@ -971,3 +971,438 @@ def test_saved_tie_statement_retains_authorized_decision_after_reopened_recount(
         ):
             assert BOX_READY_PASSWORD not in response.content.decode("utf-8-sig")
             assert original["request_id"] not in response.content.decode("utf-8-sig")
+
+
+def test_saved_constituency_recount_statement_retains_original_members_and_completion(
+    admin: TestClient,
+    database_url: str,
+    tmp_path: Path,
+) -> None:
+    from datetime import datetime, timezone
+
+    from tests.outcomes_support import complete_f2_command
+    from tests.tally_support import complete_f1_command
+
+    def preserve(name: str, body: bytes) -> None:
+        descriptor = os.open(tmp_path / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(body)
+            output.flush()
+            os.fsync(output.fileno())
+
+    def checked(name: str, response: Response, status: int = 200) -> dict:
+        preserve(name, response.content)
+        assert response.status_code == status, response.text
+        return response.json()
+
+    def hkt(value: str) -> str:
+        local = datetime.fromisoformat(value).astimezone(timezone(timedelta(hours=8)))
+        precision = "microseconds" if local.microsecond else "seconds"
+        return local.isoformat(sep=" ", timespec=precision).removesuffix("+08:00") + " HKT"
+
+    def require_table(preview: dict, rows: list[list[str]], title: str, pairs: tuple) -> None:
+        matches = [
+            table
+            for table in preview["tables"]
+            if table["title"] == title
+            and all(_has_pair(table["rows"], label, value) for label, value in pairs)
+        ]
+        assert len(matches) == 1, (title, pairs, preview["tables"])
+        blocks: list[list[list[str]]] = [[]]
+        for row in rows:
+            if not row:
+                blocks.append([])
+            else:
+                blocks[-1].append(row)
+        assert any(
+            [title] in block and all(_has_pair(block, label, value) for label, value in pairs)
+            for block in blocks
+        ), (title, pairs, rows)
+
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        constituency_id = setup["constituency_id"]
+        election_path = f"/api/workspace/elections/{election_id}"
+        wide_path = f"/api/workspace/constituencies/{constituency_id}/recounts"
+        options = checked("wide-options-before-instruction.json", supervisor.get(wide_path))
+        assert options["can_instruct"] is True and len(options["scope_sources"]) == 2
+        source_by_scope = {row["scope_id"]: row for row in options["scope_sources"]}
+        assert set(source_by_scope) == {setup["scope"]["id"], setup["n3_scope"]["id"]}
+        reason = "Signed constituency instruction requires fresh tallies of both North scopes."
+        setup["clock"].value += timedelta(minutes=10)
+        wide = checked(
+            "canonical-wide-instruction.json",
+            supervisor.post(
+                wide_path,
+                json={
+                    "request_id": str(uuid4()),
+                    "basis_digest": options["basis_digest"],
+                    "scope_sources": options["scope_sources"],
+                    "event_at": (setup["clock"].value - timedelta(minutes=5)).isoformat(),
+                    "reason": reason,
+                    "password": BOX_READY_PASSWORD,
+                },
+            ),
+            201,
+        )
+        assert wide["instruction"]["member_count"] == 2
+        assert wide["instruction"]["scope_sources"] == options["scope_sources"]
+        assert len(wide["members"]) == 2
+        selected_by_scope = {}
+        with box_staff(
+            admin,
+            database_url,
+            setup["clock"],
+            "counting_officer",
+            [setup["n3_station_id"]],
+        ) as (n3_counter, _):
+            for member in wide["members"]:
+                instruction = member["instruction"]
+                scope_id = instruction["scope_id"]
+                source = source_by_scope[scope_id]
+                is_n1 = scope_id == setup["scope"]["id"]
+                counter = setup["clients"]["receiveronly"] if is_n1 else n3_counter
+                quantities = [7, 3] if is_n1 else [0, 0]
+                rounds_path = (
+                    f"/api/workspace/stations/{source['station_id']}"
+                    f"/counting-scopes/{scope_id}/rounds"
+                )
+                path = rounds_path + f"/{member['round']['id']}"
+                prefix = "n1" if is_n1 else "n3"
+                tally_options = checked(prefix + "-round-options.json", counter.get(rounds_path))
+                setup["clock"].value += timedelta(minutes=5)
+                command = complete_f1_command(
+                    tally_options,
+                    expected_revision=1,
+                    actual_counted_quantity=sum(quantities),
+                    event_at=(setup["clock"].value - timedelta(minutes=2)).isoformat(),
+                )
+                for vote, quantity in zip(command["candidate_votes"], quantities, strict=True):
+                    vote["quantity"] = quantity
+                f1 = checked(prefix + "-f1.json", counter.put(path, json=command))
+                f2 = checked(
+                    prefix + "-f2.json",
+                    counter.put(
+                        path + "/f2",
+                        json=complete_f2_command(
+                            tally_options,
+                            expected_revision=f1["revision"],
+                            event_at=(setup["clock"].value - timedelta(minutes=1)).isoformat(),
+                        ),
+                    ),
+                )
+                submitted = checked(
+                    prefix + "-submitted.json",
+                    counter.post(
+                        path + "/submit",
+                        json={
+                            "request_id": str(uuid4()),
+                            "expected_revision": f2["revision"],
+                            "scope_revision": source["scope_revision"],
+                        },
+                    ),
+                )
+                approved = checked(
+                    prefix + "-approved.json",
+                    supervisor.post(
+                        path + "/approve",
+                        json={
+                            "request_id": str(uuid4()),
+                            "expected_revision": submitted["revision"],
+                            "scope_revision": source["scope_revision"],
+                            "password": BOX_READY_PASSWORD,
+                        },
+                    ),
+                )
+                selected = checked(
+                    prefix + "-selected.json",
+                    supervisor.post(
+                        path + "/select",
+                        json={
+                            "request_id": str(uuid4()),
+                            "expected_revision": approved["revision"],
+                            "scope_revision": source["scope_revision"],
+                            "expected_selection_revision": source["expected_selection_revision"],
+                            "password": BOX_READY_PASSWORD,
+                        },
+                    ),
+                )
+                assert selected["id"] == member["round"]["id"]
+                assert selected["approval_valid"] is True and selected["selected"] is True
+                assert [
+                    vote["quantity"] for vote in selected["final_candidate_votes"]
+                ] == quantities
+                assert selected["required_recount"]["id"] == instruction["id"]
+                assert selected["required_recount"]["current_satisfied"] is True
+                selected_by_scope[scope_id] = selected
+
+        completed = checked("completed-wide-history.json", supervisor.get(wide_path))[
+            "instructions"
+        ][0]
+        assert completed["id"] == wide["instruction"]["id"]
+        assert completed["historical_complete"] is True and completed["completed_member_count"] == 2
+        assert all(member["progress"] == "completed" for member in completed["members"])
+        reviewed = checked(
+            "completion-after-wide-selection.json", supervisor.get(setup["completion_path"])
+        )
+        assert reviewed["can_finalize"] is True and reviewed["blockers"] == []
+        original = checked(
+            "canonical-completed-wide-finalization.json",
+            supervisor.post(
+                election_path + "/finalizations",
+                json={
+                    "request_id": str(uuid4()),
+                    "expected_election_revision": reviewed["election"]["revision"],
+                    "basis_digest": reviewed["basis_digest"],
+                    "password": BOX_READY_PASSWORD,
+                },
+            ),
+            201,
+        )
+        event = original["event"]
+        frozen_north = next(
+            row
+            for row in event["outcome"]["sources"]["constituencies"]
+            if row["context"]["constituency"]["id"] == constituency_id
+        )
+        parent = next(
+            row for row in frozen_north["constituency_recounts"] if row["id"] == completed["id"]
+        )
+        assert parent == completed
+        frozen_counts = {
+            source["scope_id"]: source["record"]
+            for source in event["outcome"]["sources"]["selected_counts"]
+            if source["scope_id"] in source_by_scope
+        }
+        assert set(frozen_counts) == set(source_by_scope)
+        for member in parent["members"]:
+            selected = selected_by_scope[member["scope_id"]]
+            assert member["scope_source"] == source_by_scope[member["scope_id"]]
+            assert member["completion_selection_id"] == selected["selection"]["id"]
+            assert member["completion_selection_revision"] == selected["selection"]["revision"]
+            assert member["completion_round_revision_id"] == selected["revision_id"]
+            assert member["completed_at"] == selected["selection"]["selected_at"]
+            assert member["current_required_round_id"] == selected["id"]
+            frozen = frozen_counts[member["scope_id"]]
+            assert frozen["id"] == selected["id"]
+            assert frozen["reviewed_revision_id"] == selected["reviewed_revision_id"]
+            assert frozen["required_recount"]["id"] == member["local_instruction_id"]
+            assert frozen["recount_instruction"]["id"] == member["local_instruction_id"]
+            assert frozen["recount_pending"] is False and frozen["contributes_to_result"] is True
+
+        report_path = election_path + f"/completion/history/{event['id']}/statement"
+        before_preview = checked(
+            "wide-statement-before-reopen.json",
+            supervisor.get(
+                report_path,
+                params={"locale": "en"},
+            ),
+        )
+        before_csv_response = supervisor.get(report_path + ".csv", params={"locale": "en"})
+        preserve("wide-statement-before-reopen.csv", before_csv_response.content)
+        before_rows = _csv_rows(before_csv_response)
+        assert before_preview["event"] == event and before_preview["rows"] == before_rows
+        reopened = checked(
+            "canonical-wide-election-reopening.json",
+            supervisor.post(
+                election_path + "/reopenings",
+                json={
+                    "request_id": str(uuid4()),
+                    "expected_election_revision": original["election"]["revision"],
+                    "previous_finalization_id": event["id"],
+                    "reason": (
+                        "Review a later local obligation while retaining "
+                        "both first completions."
+                    ),
+                    "password": BOX_READY_PASSWORD,
+                },
+            ),
+            201,
+        )
+        n1_scope_id = setup["scope"]["id"]
+        prior = selected_by_scope[n1_scope_id]
+        local_path = (
+            f"/api/workspace/stations/{setup['stations']['N1']['id']}"
+            f"/counting-scopes/{n1_scope_id}/recounts"
+        )
+        setup["clock"].value += timedelta(minutes=10)
+        later = checked(
+            "canonical-later-local-pending-instruction.json",
+            supervisor.post(
+                local_path,
+                json={
+                    "request_id": str(uuid4()),
+                    "scope_revision": prior["scope_revision"],
+                    "expected_selection_revision": prior["selection"]["revision"],
+                    "source_round_id": prior["id"],
+                    "source_round_revision": prior["revision"],
+                    "event_at": (setup["clock"].value - timedelta(minutes=1)).isoformat(),
+                    "reason": (
+                        "Later local pending recount must preserve the "
+                        "constituency's first completion."
+                    ),
+                    "password": BOX_READY_PASSWORD,
+                },
+            ),
+            201,
+        )
+        assert later["instruction"]["id"] != prior["required_recount"]["id"]
+        assert later["round"]["status"] == "draft" and later["instruction"]["status"] == "pending"
+        current_wide = checked("wide-history-after-later-local.json", supervisor.get(wide_path))
+        current_parent = next(
+            row for row in current_wide["instructions"] if row["id"] == parent["id"]
+        )
+        assert current_parent["historical_complete"] is True
+        assert current_parent["completed_member_count"] == 2
+        for member in parent["members"]:
+            current_member = next(
+                row for row in current_parent["members"] if row["scope_id"] == member["scope_id"]
+            )
+            for key in (
+                "scope_source",
+                "local_instruction_id",
+                "new_round_id",
+                "completed_at",
+                "completion_selection_id",
+                "completion_selection_revision",
+                "completion_round_revision_id",
+            ):
+                assert current_member[key] == member[key]
+            if member["scope_id"] == n1_scope_id:
+                assert current_member["current_required_round_id"] == later["round"]["id"]
+                assert (
+                    current_member["current_required_round_id"]
+                    != member["current_required_round_id"]
+                )
+        current = checked(
+            "completion-after-later-local.json", supervisor.get(setup["completion_path"])
+        )
+        assert current["can_finalize"] is False and current["election"] == reopened["election"]
+        assert any(
+            row["code"] == "recount_pending" and row["scope_id"] == n1_scope_id
+            for row in current["blockers"]
+        )
+        after_preview = checked(
+            "wide-statement-after-later-local.json",
+            supervisor.get(
+                report_path,
+                params={"locale": "en"},
+            ),
+        )
+        after_csv_response = supervisor.get(report_path + ".csv", params={"locale": "en"})
+        preserve("wide-statement-after-later-local.csv", after_csv_response.content)
+        after_rows = _csv_rows(after_csv_response)
+        assert after_preview["event"] == event and after_preview["rows"] == after_rows
+        assert after_preview["tables"] == before_preview["tables"]
+        assert [row for row in after_rows if not row or row[0] != "Generated at"] == [
+            row for row in before_rows if not row or row[0] != "Generated at"
+        ]
+        history = checked(
+            "completion-history-after-later-local.json",
+            supervisor.get(
+                election_path + "/completion/history",
+            ),
+        )
+        assert next(row for row in history["events"] if row["id"] == event["id"]) == event
+        assert history["election"] == reopened["election"]
+        assert history["active_election_id"] == election_id
+
+        # Expected genuine RED: saved parent/member/recount facts have no rendered source tables.
+        for preview, rows in ((before_preview, before_rows), (after_preview, after_rows)):
+            require_table(
+                preview,
+                rows,
+                "Recorded constituency recount",
+                (
+                    ("Constituency ID", constituency_id),
+                    ("Instruction ID", parent["id"]),
+                    ("Authorized by account ID", parent["actor_id"]),
+                    ("Reason", reason),
+                    ("Instruction occurred at (HKT)", hkt(parent["event_at"])),
+                    ("Instruction entered at (HKT)", hkt(parent["entered_at"])),
+                    ("Instruction basis digest", parent["basis_digest"]),
+                    ("Original member count", 2),
+                    ("Completed member count at finalization", 2),
+                    ("Historically complete at finalization", "Yes"),
+                    ("First completed at (HKT)", hkt(parent["completed_at"])),
+                    ("Latest at finalization", "Yes"),
+                ),
+            )
+            for member in parent["members"]:
+                source = member["scope_source"]
+                require_table(
+                    preview,
+                    rows,
+                    "Original constituency recount member",
+                    (
+                        ("Constituency ID", constituency_id),
+                        ("Constituency instruction ID", parent["id"]),
+                        ("Station ID", member["station_id"]),
+                        ("Counting scope ID", member["scope_id"]),
+                        ("Local instruction ID", member["local_instruction_id"]),
+                        ("Source scope revision", source["scope_revision"]),
+                        ("Source round ID", source["source_round_id"]),
+                        ("Source round revision", source["source_round_revision"]),
+                        (
+                            "Original source selection revision",
+                            source["expected_selection_revision"],
+                        ),
+                        ("Replacement round ID", member["new_round_id"]),
+                        ("Replacement round number", member["new_round_number"]),
+                        ("First completed at (HKT)", hkt(member["completed_at"])),
+                        ("First completion selection ID", member["completion_selection_id"]),
+                        (
+                            "First completion selection revision",
+                            member["completion_selection_revision"],
+                        ),
+                        (
+                            "First completion round revision record ID",
+                            member["completion_round_revision_id"],
+                        ),
+                        ("Required round ID at finalization", member["current_required_round_id"]),
+                        ("Progress at finalization", "Completed"),
+                    ),
+                )
+                frozen = frozen_counts[member["scope_id"]]
+                required = frozen["required_recount"]
+                require_table(
+                    preview,
+                    rows,
+                    "Recorded selected recount",
+                    (
+                        ("Station ID", member["station_id"]),
+                        ("Counting scope ID", member["scope_id"]),
+                        ("Round ID", frozen["id"]),
+                        ("Required instruction ID at finalization", required["id"]),
+                        ("Round instruction ID", frozen["recount_instruction"]["id"]),
+                        ("Parent constituency instruction ID", parent["id"]),
+                        ("Instruction scope revision", required["scope_revision"]),
+                        ("Instruction scope revision record ID", required["scope_revision_id"]),
+                        ("Source round ID", required["source_round_id"]),
+                        ("Source round revision", required["source_round_revision"]),
+                        ("Source round revision record ID", required["source_round_revision_id"]),
+                        ("Replacement round ID", required["new_round_id"]),
+                        ("Replacement round number", required["new_round_number"]),
+                        ("Authorized by account ID", required["actor_id"]),
+                        ("Instruction reason", required["reason"]),
+                        ("Instruction occurred at (HKT)", hkt(required["event_at"])),
+                        ("Instruction entered at (HKT)", hkt(required["entered_at"])),
+                        ("First completed at (HKT)", hkt(required["completed_at"])),
+                        ("First completion selection ID", required["completion_selection_id"]),
+                        (
+                            "First completion selection revision",
+                            required["completion_selection_revision"],
+                        ),
+                        (
+                            "First completion round revision record ID",
+                            required["completion_round_revision_id"],
+                        ),
+                        ("Pending at finalization", "No"),
+                        ("Current selection satisfies instruction at finalization", "Yes"),
+                        ("Contributes to finalized result", "Yes"),
+                    ),
+                )
+        for response in (before_csv_response, after_csv_response):
+            text = response.content.decode("utf-8-sig")
+            assert BOX_READY_PASSWORD not in text and original["request_id"] not in text
