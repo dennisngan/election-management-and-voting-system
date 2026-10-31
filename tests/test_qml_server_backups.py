@@ -1,6 +1,7 @@
 """Administrator backup workflows use visible Material controls and public HTTPS."""
 
 import json
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -77,6 +78,7 @@ def test_admin_creates_backup_and_reviews_translated_server_metadata(
         },
         """
         import re
+        import time
         for language in ('tc', 'sc', 'en'):
             controller.setLocale(language)
             frame()
@@ -85,7 +87,7 @@ def test_admin_creates_backup_and_reviews_translated_server_metadata(
             assert navigation == language_words['navigation']
             click('serverBackupsNavigation')
             page = controller.property('serverBackups')
-            wait(lambda: not page.property('state')['refreshing'])
+            wait(lambda: not page.property('state')['refreshing'], timeout=5)
             assert control('serverBackupsTitle').property('text') == language_words['title']
             assert control('serverBackupCreate').property('text') == language_words['create']
             assert control('serverBackupRefresh').property('text')
@@ -97,11 +99,15 @@ def test_admin_creates_backup_and_reviews_translated_server_metadata(
         focus('serverBackupCreate')
         prior_jobs = controller.property('serverBackups').property('state')['jobs']
         prior_ids = {row['id'] for row in prior_jobs}
+        acknowledged_at = time.monotonic()
         click('serverBackupCreate')
         page = controller.property('serverBackups')
+        wait(lambda: bool(page.property('state')['pending_request_id']) or any(
+            row['id'] not in prior_ids for row in page.property('state')['jobs']), timeout=5)
+        assert time.monotonic() - acknowledged_at < 5
         wait(lambda: any(
             row['id'] not in prior_ids and row['status'] in ('succeeded', 'failed')
-            for row in page.property('state')['jobs']))
+            for row in page.property('state')['jobs']), timeout=30)
         job = next(row for row in page.property('state')['jobs'] if row['id'] not in prior_ids)
         assert job['status'] == 'succeeded', job
         assert job['size_bytes'] > 0
@@ -121,8 +127,10 @@ def test_admin_creates_backup_and_reviews_translated_server_metadata(
 
     assert https_server.request_count("GET", "/api/backups") >= 1
     assert https_server.request_count("POST", "/api/backups") == 1
+    status_started = time.monotonic()
     listing = admin.get("/api/backups")
     assert listing.status_code == 200, listing.text
+    assert time.monotonic() - status_started < 5
     new_jobs = [row for row in listing.json()["backups"] if row["id"] not in before]
     assert len(new_jobs) == 1
     job = new_jobs[0]
@@ -159,13 +167,18 @@ def test_material_outcome_check_resolves_committed_backup_after_lost_tls_reply(
         },
         """
         import re
+        import time
         click('serverBackupsNavigation')
         page = controller.property('serverBackups')
-        wait(lambda: not page.property('state')['refreshing'])
+        wait(lambda: not page.property('state')['refreshing'], timeout=5)
+        acknowledged_at = time.monotonic()
         click('serverBackupCreate')
-        wait(lambda: page.property('state')['uncertain_save'])
+        wait(lambda: bool(page.property('state')['pending_request_id']), timeout=5)
+        assert time.monotonic() - acknowledged_at < 5
+        original_request_id = page.property('state')['pending_request_id']
+        wait(lambda: page.property('state')['uncertain_save'], timeout=30)
         pending = page.property('state')['pending_request_id']
-        assert pending
+        assert pending == original_request_id
         assert control('serverBackupUncertain').property('visible') is True
         assert control('serverBackupCheckOutcome').property('enabled') is True
         expected_check = setup['labels']['en']['check']
@@ -174,7 +187,7 @@ def test_material_outcome_check_resolves_committed_backup_after_lost_tls_reply(
         click('serverBackupCheckOutcome')
         wait(lambda: any(row['request_id'] == pending and row['status'] == 'succeeded'
             for row in page.property('state')['jobs'])
-            and not page.property('state')['uncertain_save'])
+            and not page.property('state')['uncertain_save'], timeout=5)
         assert page.property('state')['pending_request_id'] in (None, '')
         assert control('serverBackupUncertain').property('visible') is False
         """,
@@ -184,8 +197,10 @@ def test_material_outcome_check_resolves_committed_backup_after_lost_tls_reply(
     assert endpoint.response_dropped.is_set()
     assert endpoint.request_count("POST", "/api/backups") == 1
     assert endpoint.request_count("GET", "/api/backups") >= 2
+    status_started = time.monotonic()
     response = admin.get("/api/backups")
     assert response.status_code == 200, response.text
+    assert time.monotonic() - status_started < 5
     new_jobs = [row for row in response.json()["backups"] if row["id"] not in before]
     assert len(new_jobs) == 1
     assert new_jobs[0]["status"] == "succeeded", new_jobs[0]
@@ -206,17 +221,22 @@ def test_backup_metadata_inherits_readable_text_font_at_supported_size(
             "locale": "en",
         },
         """
+        import time
         from PySide6.QtGui import QFontInfo
         window.setWidth(1366)
         window.setHeight(768)
         frame()
         click('serverBackupsNavigation')
         page = controller.property('serverBackups')
-        wait(lambda: not page.property('state')['refreshing'])
+        wait(lambda: not page.property('state')['refreshing'], timeout=5)
         prior = {row['id'] for row in page.property('state')['jobs']}
+        acknowledged_at = time.monotonic()
         click('serverBackupCreate')
+        wait(lambda: bool(page.property('state')['pending_request_id']) or any(
+            row['id'] not in prior for row in page.property('state')['jobs']), timeout=5)
+        assert time.monotonic() - acknowledged_at < 5
         wait(lambda: any(row['id'] not in prior and row['status'] in ('succeeded', 'failed')
-            for row in page.property('state')['jobs']))
+            for row in page.property('state')['jobs']), timeout=30)
         job = next(row for row in page.property('state')['jobs'] if row['id'] not in prior)
         assert job['status'] == 'succeeded'
         for locale in ('tc', 'sc', 'en'):
