@@ -26,6 +26,7 @@ from election.desktop.controller import DesktopController
 from election.private_paths import private_directory, private_file
 from election.server.app import create_app
 from tests.box_support import READY_PASSWORD as BOX_READY_PASSWORD
+from tests.complaint_support import complaint_payload, station_categories
 from tests.configuration_desktop_support import ready_setup, setup_idle
 from tests.desktop_support import (
     TLS_DIRECTORY,
@@ -2691,3 +2692,115 @@ def test_observed_outcome_denial_hides_recovered_receipt_from_both_public_views(
         assert journal_file.read_bytes() == committed_bytes
         retained = supervisor.get(query_path)
         assert retained.status_code == 200 and retained.json() == canonical
+
+
+def test_finalization_prepared_review_retains_original_basis_when_complaint_source_changes(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+) -> None:
+    with reviewed_election_setup(admin, database_url) as setup:
+        https_server.clock.value = setup["clock"].value
+        actor = setup["accounts"]["supervisor"]
+        supervisor = setup["clients"]["supervisor"]
+        officer = setup["clients"]["polling"]
+        election_id = setup["election"]["id"]
+        station_id = setup["stations"]["N1"]["id"]
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(https_server.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            initial = deepcopy(completion.property("state")["assessment"])
+            assert initial["can_finalize"] is True and initial["blockers"] == []
+            assert next(
+                row["records"] for row in initial["sources"]["complaints"]
+                if row["station_id"] == station_id
+            ) == []
+            completion.prepareFinalization()
+            staged = completion.property("state")
+            review = deepcopy(staged["review"])
+            assert staged["reviewing"] is True and staged["newer_basis"] is False
+            assert review["election"] == initial["election"]
+            assert review["basis_digest"] == initial["basis_digest"]
+            assert review["sources"] == initial["sources"]
+            assert staged["pending_request_id"] == "" and staged["uncertain_save"] is False
+            assert https_server.request_count("POST", target) == 0
+
+            category = station_categories(officer, station_id)[0]
+            created = officer.post(
+                f"/api/workspace/stations/{station_id}/complaints", json=complaint_payload(
+                    category, case_reference="Prepared-review case " + uuid4().hex[:10],
+                ),
+            )
+            assert created.status_code == 201, created.text
+            complaint = created.json()
+            assert complaint["work_status"] == "in_progress"
+            assert complaint["completed_at"] is None
+            changed_response = supervisor.get(setup["completion_path"])
+            assert changed_response.status_code == 200, changed_response.text
+            changed = changed_response.json()
+            assert changed["election"] == initial["election"]
+            assert changed["active_election_id"] == election_id
+            assert changed["can_finalize"] is True and changed["blockers"] == []
+            assert changed["basis_digest"] != initial["basis_digest"]
+            assert {
+                "station_id": station_id, "records": [complaint],
+            } in changed["sources"]["complaints"]
+
+            completion.refresh()
+            wait_for_editor_idle(qt_app, completion)
+            current = completion.property("state")
+            assert current["newer_basis"] is True
+            assert current["review"] == review
+            assert current["review"]["election"] == initial["election"]
+            assert current["review"]["basis_digest"] == initial["basis_digest"]
+            assert current["review"]["sources"] == initial["sources"]
+            assert_public_business_fields(current["assessment"], changed)
+            assert current["pending_request_id"] == "" and current["uncertain_save"] is False
+            assert https_server.request_count("POST", target) == 0
+            completion.finalize(BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, completion)
+            blocked = completion.property("state")
+            assert blocked["error"]
+            assert blocked["newer_basis"] is True and blocked["review"] == review
+            assert blocked["pending_request_id"] == "" and blocked["uncertain_save"] is False
+            assert blocked["receipt"] == {}
+            assert https_server.request_count("POST", target) == 0
+            current_assessment = deepcopy(blocked["assessment"])
+
+            completion.cancelReview()
+            cancelled = completion.property("state")
+            assert cancelled["review"] == {} and cancelled["reviewing"] is False
+            assert cancelled["assessment"] == current_assessment
+            assert cancelled["assessment"]["election"] == initial["election"]
+            assert cancelled["pending_request_id"] == "" and cancelled["uncertain_save"] is False
+            assert cancelled["receipt"] == {}
+            assert client.property("state")["active_election"]["id"] == election_id
+            assert https_server.request_count("POST", target) == 0
+            _assert_completion_credential_free(cancelled)
+            final_source = officer.get(
+                f"/api/workspace/stations/{station_id}/complaints/{complaint['id']}"
+            )
+            assert final_source.status_code == 200, final_source.text
+            assert final_source.json() == complaint
+            final_assessment = supervisor.get(setup["completion_path"])
+            assert final_assessment.status_code == 200, final_assessment.text
+            assert final_assessment.json()["election"] == initial["election"]
+            assert final_assessment.json()["active_election_id"] == election_id
+            assert final_assessment.json()["basis_digest"] == changed["basis_digest"]
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
