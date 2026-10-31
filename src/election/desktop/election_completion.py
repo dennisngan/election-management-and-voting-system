@@ -25,6 +25,7 @@ class ElectionCompletionController(QObject):
         super().__init__(parent)
         self._request, self._recovery = request, recovery
         self._generation = 0
+        self._report_generation = 0
         self._opened = False
         self._scope: tuple[Any, ...] | None = None
         self._state: dict[str, Any] = {}
@@ -36,6 +37,7 @@ class ElectionCompletionController(QObject):
     def state(self) -> dict[str, Any]:
         view = quantity_display(self._state)
         view["can_finalize"] = self._can_finalize(self._state["assessment"])
+        view["selected_event"] = quantity_display(self._selected_event())
         receipt = self._state["receipt"]
         if (
             self._recovery is not None and receipt
@@ -43,6 +45,14 @@ class ElectionCompletionController(QObject):
         ):
             view["receipt"] = {}
         return qt_state(view)
+
+    def _selected_event(self) -> dict[str, Any]:
+        return next((event for event in self._state["history"].get("events", [])
+                     if event.get("id") == self._state["selected_event_id"]), {})
+
+    def _clear_report(self) -> None:
+        self._report_generation += 1
+        self._state.update(report={}, report_text="", export_path="")
 
     def _can_finalize(self, assessment: dict[str, Any]) -> bool:
         election_id = self._state["election_id"]
@@ -76,6 +86,7 @@ class ElectionCompletionController(QObject):
 
     def reset(self) -> None:
         self._generation += 1
+        self._report_generation += 1
         self._opened = False
         self._scope = None
         self._command: dict[str, Any] | None = None
@@ -85,7 +96,8 @@ class ElectionCompletionController(QObject):
             "assessment": {}, "busy": False, "refreshing": False, "error": "",
             "receipt": {}, "pending_request_id": "", "uncertain_save": False,
             "reconciling": False, "review": {}, "reviewing": False, "newer_basis": False,
-            "history": {},
+            "history": {}, "selected_event_id": None,
+            "report": {}, "report_text": "", "export_path": "",
         }
         self.stateChanged.emit()
 
@@ -181,7 +193,8 @@ class ElectionCompletionController(QObject):
                 return
             self._state.update(refreshing=False, error=code)
             if code == "full_election_access_required":
-                self._state["history"] = {}
+                self._state.update(history={}, selected_event_id=None)
+                self._clear_report()
             self.stateChanged.emit()
 
         def loaded(data: dict[str, Any]) -> None:
@@ -201,11 +214,87 @@ class ElectionCompletionController(QObject):
                 failed("invalid_response")
                 return
             self._observe_election(data["election"])
-            self._state.update(history=deepcopy(data), refreshing=False, error="")
+            selected_id = self._state["selected_event_id"]
+            if not any(event.get("id") == selected_id for event in data["events"]):
+                selected_id = data["events"][0]["id"] if data["events"] else None
+                self._clear_report()
+            self._state.update(
+                history=deepcopy(data), selected_event_id=selected_id,
+                refreshing=False, error="",
+            )
             self.stateChanged.emit()
 
         self._request(
             f"/api/workspace/elections/{election_id}/completion/history",
+            "GET", None, loaded, failed,
+        )
+
+    @Slot(str)
+    def selectHistoryEvent(self, event_id: str) -> None:
+        if self._state["busy"] or self._state["role"] != "supervisor":
+            return
+        try:
+            target = int(event_id)
+        except ValueError:
+            return
+        if target <= 0 or not any(
+            event.get("id") == target for event in self._state["history"].get("events", [])
+        ):
+            return
+        if target != self._state["selected_event_id"]:
+            self._clear_report()
+            self._state.update(selected_event_id=target, error="")
+            self.stateChanged.emit()
+
+    @Slot(str)
+    def preview(self, locale: str) -> None:
+        event = deepcopy(self._selected_event())
+        if (
+            self._state["role"] != "supervisor" or not event
+            or locale not in {"tc", "sc", "en"}
+            or self._state["busy"] or self._state["refreshing"]
+        ):
+            return
+        self._clear_report()
+        generation, report_generation = self._generation, self._report_generation
+        self._state.update(busy=True, error="")
+        self.stateChanged.emit()
+
+        def current() -> bool:
+            return (
+                generation == self._generation
+                and report_generation == self._report_generation
+                and self._state["selected_event_id"] == event["id"]
+            )
+
+        def failed(code: str) -> None:
+            if current():
+                self._state.update(busy=False, error=code)
+                self.stateChanged.emit()
+
+        def loaded(body: dict[str, Any]) -> None:
+            if not current():
+                return
+            rows = body.get("rows")
+            if (
+                body.get("locale") != locale or body.get("event") != event
+                or not isinstance(body.get("tables"), list) or not isinstance(rows, list)
+                or not all(
+                    isinstance(row, list) and all(isinstance(value, str) for value in row)
+                    for row in rows
+                )
+            ):
+                failed("invalid_response")
+                return
+            self._state.update(
+                busy=False, report=deepcopy(body),
+                report_text="\n".join(" · ".join(row) for row in rows), error="",
+            )
+            self.stateChanged.emit()
+
+        self._request(
+            f"/api/workspace/elections/{self._state['election_id']}"
+            f"/completion/history/{event['id']}/statement?locale={locale}",
             "GET", None, loaded, failed,
         )
 
