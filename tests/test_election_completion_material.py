@@ -1,6 +1,8 @@
 """A Supervisor reads actionable election completion through the actual Material UI."""
 
+import json
 from collections.abc import Iterator
+from pathlib import Path
 from textwrap import dedent
 from uuid import uuid4
 
@@ -19,6 +21,7 @@ from tests.polling_support import (
     ready_polling_staff,
 )
 from tests.qml_workspace_support import run_workspace_qml
+from tests.test_physical_acceptance_recovery_desktop import assert_public_business_fields
 
 COMPLETION_LABELS = """
 def completion_blocker_labels(station_id):
@@ -358,3 +361,141 @@ def test_material_explains_count_prerequisites_with_scope_and_box_references(
                 assert _pointer_geometry(label) is not None
             """,
         )
+
+
+@pytest.mark.parametrize(
+    ("locale", "finalize_label", "finalized_status"),
+    [
+        ("en", "Finalize election", "Election finalized. Preserved outcome available."),
+        ("tc", "確認選舉完成", "選舉已完成確認；已保留結果。"),
+        ("sc", "确认选举完成", "选举已完成确认；已保留结果。"),
+    ],
+)
+def test_material_reviews_and_finalizes_ready_election_with_own_password(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    locale: str,
+    finalize_label: str,
+    finalized_status: str,
+) -> None:
+    journal_directory = tmp_path / "material-election-finalization-journal"
+    assert not journal_directory.exists()
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        initial_response = supervisor.get(setup["completion_path"])
+        assert initial_response.status_code == 200, initial_response.text
+        reviewed = initial_response.json()
+        assert reviewed["can_finalize"] is True and reviewed["blockers"] == []
+        election_id = setup["election"]["id"]
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        https_server.clock.value = setup["clock"].value
+        assert https_server.request_count("POST", target) == 0
+        run_completion_material(
+            {
+                "server": https_server.url,
+                "username": setup["accounts"]["supervisor"]["username"],
+                "password": BOX_READY_PASSWORD,
+                "station_id": setup["stations"]["N1"]["id"],
+                "election_id": election_id,
+                "locale": locale,
+                "finalize_label": finalize_label,
+                "finalized_status": finalized_status,
+                "cancel_label": "Cancel" if locale == "en" else "取消",
+                "reviewed_revision": reviewed["election"]["revision"],
+                "reviewed_basis": reviewed["basis_digest"],
+                "journal_directory": str(journal_directory),
+            },
+            """
+            from tests.test_physical_acceptance_recovery_desktop import (
+                assert_public_business_fields,
+            )
+
+            click('electionCompletionNavigation')
+            completion = controller.property('electionCompletion')
+            wait(lambda: not any(completion.property('state')[key]
+                for key in ('busy', 'refreshing')))
+            initial = completion.property('state')
+            assert initial['error'] == '' and initial['election_id'] == setup['election_id']
+            assert initial['assessment']['can_finalize'] is True
+            assert initial['assessment']['election']['revision'] == setup['reviewed_revision']
+            assert initial['assessment']['basis_digest'] == setup['reviewed_basis']
+            finalize = control('electionCompletionFinalize')
+            assert finalize.property('visible') and finalize.property('enabled')
+            assert finalize.property('text') == setup['finalize_label']
+            click('electionCompletionFinalize')
+            dialog = window.findChild(QObject, 'electionCompletionPasswordDialog')
+            assert dialog is not None
+            wait(lambda: dialog.property('opened'))
+            staged = completion.property('state')
+            assert staged['reviewing'] is True and staged['review']
+            assert staged['newer_basis'] is False
+            password = control('electionCompletionPassword')
+            confirm = control('electionCompletionPasswordConfirm')
+            cancel = control('electionCompletionPasswordCancel')
+            assert password.property('text') == ''
+            assert confirm.property('enabled') is False
+            assert cancel.property('text') == setup['cancel_label']
+            enter('electionCompletionPassword', setup['password'])
+            assert setup['password'] not in json.dumps(completion.property('state'))
+            assert confirm.property('enabled') is True
+            click('electionCompletionPasswordConfirm')
+            wait(lambda: not any(completion.property('state')[key]
+                for key in ('busy', 'refreshing')))
+            settled = completion.property('state')
+            assert settled['error'] == '' and settled['uncertain_save'] is False
+            assert settled['pending_request_id'] == '' and settled['reviewing'] is False
+            assert controller.property('state')['active_election'] is None
+            assert settled['receipt']['election']['id'] == setup['election_id']
+            assert settled['receipt']['election']['status'] == 'finalized'
+            assert settled['receipt']['election']['revision'] == setup['reviewed_revision'] + 1
+            assert settled['receipt']['active_election_id'] is None
+            wait(lambda: not dialog.property('visible'))
+            assert password.property('text') == ''
+            assert setup['password'] not in json.dumps(settled)
+            frame()
+            assert control('electionCompletionStatus').property('text') == (
+                setup['finalized_status'])
+            files = list(Path(setup['journal_directory']).rglob('*.json'))
+            assert len(files) == 1
+            durable = json.loads(files[0].read_text(encoding='utf-8'))
+            assert durable['namespace'] == 'election' and 'station_id' not in durable
+            assert durable['election_id'] == setup['election_id']
+            assert durable['status'] == 'committed'
+            assert durable['payload'] == {
+                'request_id': durable['request_id'],
+                'expected_election_revision': setup['reviewed_revision'],
+                'basis_digest': setup['reviewed_basis'],
+            }
+            assert_public_business_fields(settled['receipt'], durable['receipt']['record'])
+            """,
+        )
+        assert https_server.request_count("POST", target) == 1
+        with https_server.lock:
+            statuses = [
+                row["status"] for row in https_server.request_timings
+                if row["method"] == "POST" and row["path"] == target
+            ]
+        assert statuses == [201]
+        files = list(journal_directory.rglob("*.json"))
+        assert len(files) == 1
+        durable = json.loads(files[0].read_text(encoding="utf-8"))
+        request_id = durable["request_id"]
+        canonical_response = supervisor.get(
+            f"/api/workspace/elections/{election_id}/request-outcomes/{request_id}"
+            "?workflow=election_completion"
+        )
+        assert canonical_response.status_code == 200, canonical_response.text
+        canonical = canonical_response.json()
+        assert canonical["request_id"] == request_id
+        assert canonical["workflow"] == "election_completion" and canonical["status"] == "committed"
+        assert durable["receipt"]["record"] == canonical["record"]
+        assert_public_business_fields(durable["receipt"]["record"], canonical["record"])
+        assert canonical["record"]["event"]["outcome"]["sources"] == reviewed["sources"]
+        current_response = supervisor.get(setup["completion_path"])
+        assert current_response.status_code == 200, current_response.text
+        assert current_response.json()["election"] == canonical["record"]["election"]
+        assert current_response.json()["active_election_id"] is None
