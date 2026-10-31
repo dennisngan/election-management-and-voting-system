@@ -165,51 +165,10 @@ class CommandJournal:
         if (type(station_id) is not int or station_id <= 0
                 or command_workflow(path, station_id) != (station_id, workflow)):
             raise JournalError("recovery_command_invalid")
-        origin, request_id = _origin(server_url), str(UUID(payload["request_id"]))
-        safe_payload = _safe(payload)
-        rows = self.commands(origin, actor_id, station_id)
-        previous = next((row for row in rows if row["request_id"] == request_id), None)
-        if previous is None and self._path(origin, actor_id, request_id).exists():
-            raise JournalError("recovery_command_conflict")
-        if previous and previous["status"] != "rejected":
-            if (previous["path"], previous["method"], previous["payload"]) != (
-                path,
-                method,
-                safe_payload,
-            ):
-                raise JournalError("recovery_command_conflict")
-            if previous["status"] in UNRESOLVED:
-                if previous.get("error") != "request_not_found":
-                    raise JournalError("recovery_outcome_check_required")
-                previous.update(status="uncertain", error="")
-                self._write(self._path(origin, actor_id, request_id), previous)
-                return {**deepcopy(previous), "retry_after_not_found": True}
-            return previous
-        if any(
-            row["request_id"] != request_id
-            and row["status"] in UNRESOLVED
-            and row["target"] == _target(path)
-            for row in rows
-        ):
-            raise JournalError("recovery_pending_command")
-        row = {
-            "request_id": request_id,
-            "server_url": origin,
-            "actor_id": actor_id,
-            "station_id": station_id,
-            "workflow": workflow,
-            "path": path,
-            "method": method,
-            "payload": safe_payload,
-            "confirmation_required": "password" in payload,
-            "target": _target(path),
-            "created_at": datetime.now(UTC).isoformat(),
-            "status": "pending",
-            "receipt": None,
-            "error": "",
-        }
-        self._write(self._path(origin, actor_id, request_id), row)
-        return deepcopy(row)
+        return self._prepare_scoped(
+            server_url, actor_id, {"station_id": station_id, "workflow": workflow},
+            path, method, payload,
+        )
 
     def election_commands(
         self, server_url: str, actor_id: int, election_id: int | None = None,
@@ -255,16 +214,34 @@ class CommandJournal:
             or election_command_workflow(path) != (election_id, "election_completion")
         ):
             raise JournalError("recovery_command_invalid")
+        return self._prepare_scoped(
+            server_url, actor_id,
+            {
+                "namespace": "election", "election_id": election_id,
+                "workflow": "election_completion",
+            },
+            path, method, payload,
+        )
+
+    def _prepare_scoped(
+        self, server_url: str, actor_id: int, scope: dict[str, Any],
+        path: str, method: str, payload: dict[str, Any],
+    ) -> dict[str, Any]:
         origin, request_id = _origin(server_url), str(UUID(payload["request_id"]))
         safe_payload = _safe(payload)
-        rows = self.election_commands(origin, actor_id, election_id)
+        election_scope = scope.get("namespace") == "election"
+        rows = (
+            self.election_commands(origin, actor_id, scope["election_id"])
+            if election_scope else self.commands(origin, actor_id, scope["station_id"])
+        )
         previous = next((row for row in rows if row["request_id"] == request_id), None)
         if previous is None and self._path(origin, actor_id, request_id).exists():
             raise JournalError("recovery_command_conflict")
-        if previous and (previous["path"], previous["method"], previous["payload"]) != (
-            path, method, safe_payload,
-        ):
-            raise JournalError("recovery_command_conflict")
+        if previous and (election_scope or previous["status"] != "rejected"):
+            if (previous["path"], previous["method"], previous["payload"]) != (
+                path, method, safe_payload,
+            ):
+                raise JournalError("recovery_command_conflict")
         if previous and previous["status"] != "rejected":
             if previous["status"] in UNRESOLVED:
                 if previous.get("error") != "request_not_found":
@@ -279,10 +256,9 @@ class CommandJournal:
         ):
             raise JournalError("recovery_pending_command")
         row = {
-            "request_id": request_id, "server_url": origin, "actor_id": actor_id,
-            "namespace": "election", "election_id": election_id,
-            "workflow": "election_completion", "path": path, "method": method,
-            "payload": safe_payload, "confirmation_required": "password" in payload,
+            "request_id": request_id, "server_url": origin, "actor_id": actor_id, **scope,
+            "path": path, "method": method, "payload": safe_payload,
+            "confirmation_required": "password" in payload,
             "target": _target(path), "created_at": datetime.now(UTC).isoformat(),
             "status": "pending", "receipt": None, "error": "",
         }
