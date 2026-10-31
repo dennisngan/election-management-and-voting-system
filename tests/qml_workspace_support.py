@@ -237,7 +237,7 @@ finally:
 """
 
 
-def run_workspace_qml(setup: dict, scenario: str, *, timeout: int = 45) -> None:
+def run_workspace_qml(setup: dict, scenario: str, *, timeout: int = 45) -> str:
     script = HEADER + indent(dedent(scenario), "    ") + FOOTER
     result = subprocess.run(
         [sys.executable, "-c", script, json.dumps(setup)],
@@ -247,3 +247,4 @@ def run_workspace_qml(setup: dict, scenario: str, *, timeout: int = 45) -> None:
         timeout=timeout,
     )
     assert result.returncode == 0, result.stderr
+    return result.stderr

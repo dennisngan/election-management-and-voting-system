@@ -37,8 +37,8 @@ def completion_blocker_labels(station_id):
 """
 
 
-def run_completion_material(setup: dict, scenario: str) -> None:
-    run_workspace_qml(setup, COMPLETION_LABELS + dedent(scenario))
+def run_completion_material(setup: dict, scenario: str) -> str:
+    return run_workspace_qml(setup, COMPLETION_LABELS + dedent(scenario))
 
 
 @pytest.fixture(scope="module")
@@ -1391,11 +1391,29 @@ def test_material_reopening_uses_captured_history_before_password(
                     assert password.property('text') == setup['password']
                     assert confirm.property('enabled') is True
                     assert list(Path(setup['journal_directory']).rglob('*')) == []
+                    preserved_history = deepcopy(loaded['history'])
+                    selected_text_before_reopening = control(
+                        'electionCompletionHistoryEvent').property('currentText')
                     click('electionCompletionReopenConfirm')
                     wait(lambda: not any(completion.property('state')[key]
                         for key in ('busy', 'refreshing')))
                     settled = completion.property('state')
                     wait(lambda: not dialog.property('visible'))
+                    frame()
+                    current_caption = control('electionCompletionHistoryCurrent')
+                    history_selector = control('electionCompletionHistoryEvent')
+                    history_ui = {
+                        'current_visible': current_caption.property('visible'),
+                        'current_text': current_caption.property('text'),
+                        'event_count': history_selector.property('count'),
+                        'selected_index': history_selector.property('currentIndex'),
+                        'selected_text': history_selector.property('currentText'),
+                    }
+                    expected_current_text = {
+                        'en': 'Current election state · {name} · Active · Revision 4',
+                        'tc': '目前選舉狀態 · {name} · 進行中 · 版本 4',
+                        'sc': '目前选举状态 · {name} · 进行中 · 版本 4',
+                    }[setup['locale']].format(name=original['election']['name'])
                     files = list(Path(setup['journal_directory']).rglob('*.json'))
                     durable = json.loads(files[0].read_text('utf-8')) if len(files) == 1 else None
                     write_evidence(setup['observation_path'], {
@@ -1407,6 +1425,10 @@ def test_material_reopening_uses_captured_history_before_password(
                         'reopened_signals': reopened_signal.count(),
                         'finalized_signals': finalized_signal.count(),
                         'durable_command': durable,
+                        'preserved_history': preserved_history,
+                        'selected_text_before_reopening': selected_text_before_reopening,
+                        'history_ui': history_ui,
+                        'expected_current_text': expected_current_text,
                     })
                     assert settled['error'] == ''
                     assert settled['pending_request_id'] == ''
@@ -1422,6 +1444,13 @@ def test_material_reopening_uses_captured_history_before_password(
                     assert settled['election']['status'] == 'active'
                     assert settled['election']['revision'] == (
                         captured['expected_election_revision'] + 1)
+                    assert history_ui['current_visible'] is True
+                    assert history_ui['current_text'] == expected_current_text
+                    assert settled['history'] == preserved_history
+                    assert settled['selected_event_id'] == original['event']['id']
+                    assert_public_business_fields(settled['selected_event'], original['event'])
+                    assert history_ui['event_count'] == 1 and history_ui['selected_index'] == 0
+                    assert history_ui['selected_text'] == selected_text_before_reopening
                     assert durable is not None
                     assert durable['namespace'] == 'election' and 'station_id' not in durable
                     assert durable['election_id'] == setup['election_id']
@@ -2022,6 +2051,7 @@ def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
     failure_path = evidence / "actual-control-failure.json"
     observation_path = evidence / "settled-reopening.json"
     transport_path = evidence / "transport.json"
+    stderr_path = evidence / "material.stderr.txt"
     with reviewed_election_setup(admin, database_url) as setup:
         supervisor = setup["clients"]["supervisor"]
         election_id = setup["election"]["id"]
@@ -2047,7 +2077,7 @@ def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
         assert original["election"]["revision"] == 3
         https_server.clock.value = setup["clock"].value
         try:
-            run_completion_material(
+            material_stderr = run_completion_material(
                 {
                     "server": https_server.url,
                     "username": setup["accounts"]["supervisor"]["username"],
@@ -2168,6 +2198,11 @@ def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
                 assert setup['password'] not in json.dumps(durable)
                 """,
             )
+            descriptor = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write(material_stderr)
+                output.flush()
+                os.fsync(output.fileno())
         finally:
             with https_server.lock:
                 transport = {"requests": list(https_server.requests),
@@ -2200,3 +2235,4 @@ def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
         history = supervisor.get(base + '/completion/history')
         assert history.status_code == 200, history.text
         assert history.json()['events'] == [canonical['event'], original['event']]
+        assert "TypeError" not in material_stderr, material_stderr
