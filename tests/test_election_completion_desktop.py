@@ -40,7 +40,7 @@ from tests.lifecycle_support import (
     lifecycle_test_state,
     prepared_election,
 )
-from tests.test_counting_workflow_retry_desktop import LostSelectionResponse
+from tests.test_counting_workflow_retry_desktop import LostSelectionResponse, TransparentTlsProxy
 from tests.test_paper_journal_failure_desktop import CompletedWriteServer
 from tests.test_paper_journal_failure_desktop import (
     completed_write_server as completed_write_server,
@@ -2329,3 +2329,271 @@ def test_recovered_original_receipt_reconciles_stale_root_without_erasing_newer_
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             qt_app.processEvents()
+
+
+@dataclass
+class ElectionReceiptDisclosureBoundary(LostSelectionResponse):
+    deny_next_outcome_path: str = ""
+    denied_outcome_count: int = 0
+    evidence_directory: Path | None = None
+
+
+@pytest.fixture
+def election_receipt_disclosure_boundary(
+    database_url: str, qt_app: QCoreApplication, tmp_path: Path,
+) -> Iterator[ElectionReceiptDisclosureBoundary]:
+    for name in ("server.pem", "server-key.pem", "ca.pem"):
+        assert (TLS_DIRECTORY / name).is_file(), "Prepare the existing local TLS fixture first"
+    directory = tmp_path / "election-receipt-disclosure-denial-wire"
+    directory.mkdir(mode=0o700)
+    backend_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    backend_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    backend_listener.bind(("127.0.0.1", 0))
+    backend_listener.listen()
+    backend_port = backend_listener.getsockname()[1]
+    client_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    client_listener.bind(("127.0.0.1", 0))
+    client_listener.listen()
+    endpoint = ElectionReceiptDisclosureBoundary(
+        f"https://localhost:{client_listener.getsockname()[1]}", ControlledClock(),
+        evidence_directory=directory,
+    )
+    application = create_app(database_url, now=endpoint.clock)
+
+    @application.middleware("http")
+    async def observe_real_commit_and_one_external_disclosure_denial(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        with endpoint.lock:
+            endpoint.requests.append((request.method, request.url.path))
+        response = await call_next(request)
+        peer = request.client
+        with endpoint.lock:
+            drop = (
+                request.method == "POST" and request.url.path == endpoint.drop_path
+                and response.status_code == 201 and peer is not None
+            )
+            if drop:
+                endpoint.drop_peer = (peer.host, peer.port)
+                endpoint.drop_path = ""
+            deny = (
+                request.method == "GET" and request.url.path == endpoint.deny_next_outcome_path
+                and response.status_code == 200
+            )
+            if deny:
+                endpoint.deny_next_outcome_path = ""
+        if drop:
+            endpoint.response_tagged.set()
+        if not deny:
+            return response
+        # Read the actual authorized server outcome before injecting a wire denial.
+        chunks = [chunk async for chunk in response.body_iterator]
+        authorized_body = b"".join(
+            chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks
+        )
+        actual = json.loads(authorized_body)
+        assert actual["status"] == "committed" and actual["workflow"] == "election_completion"
+        assert actual["record"]["request_id"] == actual["request_id"]
+        denied = JSONResponse(
+            {"detail": {"code": "full_election_access_required"}}, status_code=403,
+            headers={
+                name: value for name, value in response.headers.items()
+                if name.lower() not in {"content-length", "content-type", "transfer-encoding"}
+            },
+            background=response.background,
+        )
+        _write_incomplete_receipt_evidence(
+            directory / "authorized-outcome200.json", authorized_body,
+        )
+        _write_incomplete_receipt_evidence(
+            directory / "delivered-denial403.json", denied.body,
+        )
+        _write_incomplete_receipt_evidence(directory / "denial-proof.json", json.dumps({
+            "method": request.method, "path": request.url.path,
+            "request_id": actual["request_id"],
+            "actual_handler_status": response.status_code, "delivered_status": denied.status_code,
+            "actual_outcome_status": actual["status"],
+            "authorized_body_sha256": hashlib.sha256(authorized_body).hexdigest(),
+            "denied_body_sha256": hashlib.sha256(denied.body).hexdigest(),
+            "external_protocol_denial": True, "actual_permission_revocation": False,
+            "real_read_ran_first": True, "SQL_or_business_commit_replaced": False,
+        }, indent=2).encode())
+        with endpoint.lock:
+            endpoint.denied_outcome_count += 1
+        return denied
+
+    server = uvicorn.Server(uvicorn.Config(
+        application, host="127.0.0.1", port=backend_port, loop="asyncio", ws="none",
+        ssl_certfile=str(TLS_DIRECTORY / "server.pem"),
+        ssl_keyfile=str(TLS_DIRECTORY / "server-key.pem"),
+        log_level="warning", access_log=False,
+        timeout_keep_alive=5, timeout_graceful_shutdown=1,
+    ))
+    thread = threading.Thread(
+        target=server.run, kwargs={"sockets": [backend_listener]}, daemon=True,
+    )
+    proxy = TransparentTlsProxy(client_listener, backend_port, endpoint)
+    thread.start()
+    try:
+        wait_for(qt_app, lambda: server.started)
+        proxy.start()
+        yield endpoint
+    finally:
+        proxy.stop()
+        server.should_exit = True
+        wait_for(qt_app, lambda: not thread.is_alive())
+        thread.join(timeout=0)
+        backend_listener.close()
+        client_listener.close()
+        assert not thread.is_alive(), "The owned receipt-disclosure TLS server did not stop"
+
+
+def test_observed_outcome_denial_hides_recovered_receipt_from_both_public_views(
+    admin: TestClient,
+    database_url: str,
+    election_receipt_disclosure_boundary: ElectionReceiptDisclosureBoundary,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "election-receipt-disclosure-denial-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        endpoint = election_receipt_disclosure_boundary
+        endpoint.clock.value = setup["clock"].value
+        directory = endpoint.evidence_directory
+        assert isinstance(directory, Path)
+        actor = setup["accounts"]["supervisor"]
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        target = f"/api/workspace/elections/{election_id}/finalizations"
+        client = DesktopController(endpoint.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(endpoint.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            assert completion.property("state")["assessment"]["can_finalize"] is True
+            finalized = QSignalSpy(completion.finalized)
+            assert finalized.isValid()
+            with endpoint.lock:
+                endpoint.drop_path = target
+            completion.finalize(BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, completion)
+            unknown = completion.property("state")
+            assert endpoint.response_tagged.is_set() and endpoint.response_dropped.is_set()
+            assert unknown["uncertain_save"] is True and unknown["receipt"] == {}
+            assert finalized.count() == 0
+            request_id = unknown["pending_request_id"]
+            assert str(UUID(request_id)) == request_id
+            outcome_path = f"/api/workspace/elections/{election_id}/request-outcomes/{request_id}"
+            query_path = outcome_path + "?workflow=election_completion"
+            canonical_response = supervisor.get(query_path)
+            assert canonical_response.status_code == 200, canonical_response.text
+            canonical = canonical_response.json()
+            assert canonical["status"] == "committed" and canonical["request_id"] == request_id
+            receipt = canonical["record"]
+            recovery = client.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            before = recovery.property("state")["commands"]
+            assert len(before) == 1
+            assert before[0]["status"] == "uncertain" and before[0]["receipt"] is None
+            files = list(journal_directory.glob("*.json"))
+            assert len(files) == 1 and private_file(files[0])
+            journal_file = files[0]
+            unknown_bytes = journal_file.read_bytes()
+            _write_incomplete_receipt_evidence(
+                directory / "unknown-command-before-check.json", unknown_bytes,
+            )
+            assert endpoint.request_count("GET", outcome_path) == 0
+            recovery.checkOutcome(request_id)
+            wait_for_editor_idle(qt_app, recovery)
+            wait_for_editor_idle(qt_app, completion)
+            checked = recovery.property("state")["commands"]
+            assert len(checked) == 1 and checked[0]["status"] == "committed"
+            assert_public_business_fields(checked[0]["receipt"]["record"], receipt)
+            assert_public_business_fields(completion.property("state")["receipt"], receipt)
+            assert completion.property("state")["uncertain_save"] is False
+            assert finalized.count() == 1
+            assert endpoint.request_count("GET", outcome_path) == 1
+            committed_bytes = journal_file.read_bytes()
+            committed = json.loads(committed_bytes)
+            assert committed["status"] == "committed" and committed["receipt"]["record"] == receipt
+            _write_incomplete_receipt_evidence(
+                directory / "committed-command-before-denial.json", committed_bytes,
+            )
+            with endpoint.lock:
+                endpoint.deny_next_outcome_path = outcome_path
+            recovery.checkOutcome(request_id)
+            wait_for_editor_idle(qt_app, recovery)
+            wait_for_editor_idle(qt_app, completion)
+            denied_recovery = recovery.property("state")
+            denied_completion = completion.property("state")
+            assert endpoint.denied_outcome_count == 1 and endpoint.deny_next_outcome_path == ""
+            proof = json.loads((directory / "denial-proof.json").read_bytes())
+            assert proof["actual_handler_status"] == 200 and proof["delivered_status"] == 403
+            assert proof["request_id"] == request_id and proof["real_read_ran_first"] is True
+            assert proof["external_protocol_denial"] is True
+            assert json.loads((directory / "authorized-outcome200.json").read_bytes()) == canonical
+            assert json.loads((directory / "delivered-denial403.json").read_bytes()) == {
+                "detail": {"code": "full_election_access_required"},
+            }
+            after_bytes = journal_file.read_bytes()
+            _write_incomplete_receipt_evidence(
+                directory / "committed-command-after-denial.json", after_bytes,
+            )
+            _write_incomplete_receipt_evidence(
+                directory / "observed-denial-verdict.json", json.dumps({
+                    "request_id": request_id, "recovery_error": denied_recovery["error"],
+                    "recovery_receipt_visible": bool(denied_recovery["commands"][0].get("receipt")),
+                    "completion_receipt_visible": bool(denied_completion["receipt"]),
+                    "journal_status": json.loads(after_bytes)["status"],
+                    "journal_bytes_unchanged": after_bytes == committed_bytes,
+                    "actual_delivered_status": proof["delivered_status"],
+                    "denied_outcome_count": endpoint.denied_outcome_count,
+                    "outcome_get_count": endpoint.request_count("GET", outcome_path),
+                    "finalization_post_count": endpoint.request_count("POST", target),
+                    "finalized_signal_count": finalized.count(),
+                }, indent=2).encode(),
+            )
+            assert client.property("state")["phase"] == "workspace"
+            assert client.property("state")["account"]["id"] == actor["id"]
+            assert client.property("state")["account"]["role"] == "supervisor"
+            assert client.property("state")["server_url"] == endpoint.url
+            assert denied_recovery["error"] == "full_election_access_required"
+            assert len(denied_recovery["commands"]) == 1
+            assert denied_recovery["commands"][0]["status"] == "committed"
+            assert denied_recovery["commands"][0]["receipt"] is None
+            assert after_bytes == committed_bytes
+            assert json.loads(after_bytes)["receipt"]["record"] == receipt
+            # Intended RED: Completion retains the same full receipt after Recovery masks it.
+            assert denied_completion["receipt"] == {}
+            assert finalized.count() == 1
+            assert endpoint.request_count("POST", target) == 1
+            assert endpoint.request_count("GET", outcome_path) == 2
+            recovery.reload()
+            wait_for_editor_idle(qt_app, recovery)
+            assert recovery.property("state")["commands"][0]["receipt"] is None
+            assert completion.property("state")["receipt"] == {}
+            assert journal_file.read_bytes() == committed_bytes
+            assert endpoint.request_count("POST", target) == 1
+            assert endpoint.request_count("GET", outcome_path) == 2
+            _assert_completion_credential_free(denied_recovery)
+            _assert_completion_credential_free(denied_completion)
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
+        assert journal_file.read_bytes() == committed_bytes
+        retained = supervisor.get(query_path)
+        assert retained.status_code == 200 and retained.json() == canonical
