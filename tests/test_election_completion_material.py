@@ -1535,3 +1535,219 @@ def test_material_reopening_uses_captured_history_before_password(
         history_response = supervisor.get(base + "/completion/history")
         assert history_response.status_code == 200, history_response.text
         assert history_response.json()["events"] == [canonical["event"], original["event"]]
+
+
+def test_material_exports_captured_old_event_csv_after_ui_locale_changes_in_save_dialog(
+    admin: TestClient, database_url: str, https_server: HttpsServer,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "material-selected-csv-export-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    export_directory = tmp_path / "completion export 資料"
+    export_directory.mkdir()
+    filename = "preserved-final3-tc.csv"
+    destination = export_directory / filename
+    assert destination.is_absolute() and not destination.exists()
+    canonical_path = tmp_path / "canonical-old-event-tc.csv"
+    observation_path = tmp_path / "material-selected-csv-export-observation.json"
+    transport_path = tmp_path / "material-selected-csv-export-transport.json"
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        response = supervisor.get(setup["completion_path"])
+        assert response.status_code == 200, response.text
+        reviewed = response.json()
+        assert reviewed["can_finalize"] is True
+        finalized = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        assert original["election"]["status"] == "finalized"
+        assert original["election"]["revision"] == 3
+        reopened_response = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": original["event"]["id"],
+            "reason": "Export the preserved earlier statement while current work stays active.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened_response.status_code == 201, reopened_response.text
+        reopened = reopened_response.json()
+        assert reopened["election"]["status"] == "active"
+        assert reopened["election"]["revision"] == 4
+        csv_path = base + f"/completion/history/{original['event']['id']}/statement.csv"
+        canonical_response = supervisor.get(csv_path, params={"locale": "tc"})
+        descriptor = os.open(canonical_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(canonical_response.content)
+            output.flush()
+            os.fsync(output.fileno())
+        assert canonical_response.status_code == 200, canonical_response.text
+        assert canonical_response.content.startswith(b"\xef\xbb\xbf")
+        https_server.clock.value = setup["clock"].value
+        try:
+            run_completion_material(
+                {
+                    "server": https_server.url,
+                    "username": setup["accounts"]["supervisor"]["username"],
+                    "password": BOX_READY_PASSWORD, "locale": "tc",
+                    "station_id": setup["stations"]["N1"]["id"], "election_id": election_id,
+                    "current_election": reopened["election"],
+                    "old_event_id": original["event"]["id"],
+                    "export_directory": str(export_directory), "filename": filename,
+                    "destination": str(destination), "canonical_path": str(canonical_path),
+                    "journal_directory": str(journal_directory),
+                    "observation_path": str(observation_path),
+                },
+                """
+                import os
+                from copy import deepcopy
+
+                click('electionCompletionNavigation')
+                completion = controller.property('electionCompletion')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                click('electionCompletionHistoryRefresh')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                choose('electionCompletionHistoryEvent', 1)
+                selected = completion.property('state')
+                assert str(selected['selected_event_id']) == str(setup['old_event_id'])
+                assert selected['selected_event']['kind'] == 'finalization'
+                assert selected['selected_event']['election_revision'] == 3
+                assert selected['election'] == setup['current_election']
+                active_before = deepcopy(controller.property('state')['active_election'])
+                page = control('electionCompletionPage')
+                assert page.property('locale') == 'tc'
+                # Intended first Material RED: the explicit CSV export control is absent.
+                csv_button = focus('electionCompletionExportCsv')
+                assert csv_button.property('visible') and csv_button.property('enabled')
+                assert csv_button.property('text').strip()
+                assert _pointer_geometry(csv_button) is not None
+                dialog = window.findChild(QObject, 'electionCompletionExportDialog')
+                assert dialog is not None
+                assert dialog.setProperty('currentFolder',
+                    QUrl.fromLocalFile(setup['export_directory']))
+                click('electionCompletionExportCsv')
+                wait(lambda: dialog.property('visible'))
+                initial_file = dialog.property('selectedFile')
+                initial_pending = {
+                    'format': page.property('pendingFormat'),
+                    'locale': page.property('pendingLocale'),
+                    'event_id': str(page.property('pendingEventId')),
+                }
+                assert initial_pending == {
+                    'format': 'csv', 'locale': 'tc', 'event_id': str(setup['old_event_id'])}
+                assert dialog.property('defaultSuffix') == 'csv'
+                assert list(dialog.property('nameFilters')) == ['CSV (*.csv)']
+                assert initial_file.isLocalFile(), initial_file.toString()
+                assert initial_file.fileName().endswith('.csv')
+                assert str(setup['old_event_id']) in initial_file.fileName()
+                assert 'tc' in initial_file.fileName()
+                assert not Path(setup['destination']).exists()
+                # External public locale observation cannot retarget an already open export.
+                controller.setLocale('sc')
+                frame()
+                assert controller.property('state')['locale'] == 'sc'
+                assert page.property('locale') == 'sc'
+                assert page.property('pendingLocale') == 'tc'
+                assert page.property('pendingFormat') == 'csv'
+                assert str(page.property('pendingEventId')) == str(setup['old_event_id'])
+                assert dialog.property('selectedFile') == initial_file
+
+                # Existing actual Qt save-dialog seam, as used by fallback P(15) Material tests.
+                field = focus('fileNameTextField')
+                assert QMetaObject.invokeMethod(field, 'selectAll')
+                dialog_window = field.window()
+                QCoreApplication.sendEvent(dialog_window, QKeyEvent(QEvent.Type.KeyPress, 0,
+                    Qt.KeyboardModifier.NoModifier, setup['filename']))
+                QCoreApplication.sendEvent(dialog_window, QKeyEvent(QEvent.Type.KeyRelease, 0,
+                    Qt.KeyboardModifier.NoModifier, ''))
+                application.processEvents()
+                assert field.property('text') == setup['filename']
+                pending = list(dialog_window.contentItem().childItems())
+                save_buttons = []
+                while pending:
+                    item = pending.pop()
+                    text = str(item.property('text') or '').replace('&', '')
+                    if (item.inherits('QQuickAbstractButton') and item.property('visible')
+                            and text in ('Save', '儲存', '保存')):
+                        save_buttons.append(item)
+                    pending.extend(item.childItems())
+                assert len(save_buttons) == 1, 'Actual Qt save dialog needs one visible Save button'
+                save_button = save_buttons[0]
+                center = save_button.mapToScene(QPointF(
+                    save_button.width()/2, save_button.height()/2)).toPoint()
+                QTest.mouseClick(save_button.window(), Qt.MouseButton.LeftButton,
+                    Qt.KeyboardModifier.NoModifier, center)
+                wait(lambda: not dialog.property('visible'))
+                window.requestActivate()
+                wait(lambda: window.isActive())
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                exported = completion.property('state')
+                root_election = controller.property('state')['election'] or {}
+                observed = {
+                    'initial_pending': initial_pending,
+                    'initial_filename': initial_file.fileName(),
+                    'ui_locale_after_open': controller.property('state')['locale'],
+                    'selected_event_id': exported['selected_event_id'],
+                    'selected_event': exported['selected_event'],
+                    'export_path': exported['export_path'], 'notice': exported.get('notice'),
+                    'error': exported['error'], 'election': exported['election'],
+                    'root_election': root_election,
+                    'active_before': active_before,
+                    'active_after': controller.property('state')['active_election'],
+                    'destination_exists': Path(setup['destination']).is_file(),
+                    'pending_request_id': exported['pending_request_id'],
+                    'uncertain_save': exported['uncertain_save'],
+                }
+                descriptor = os.open(setup['observation_path'],
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                    json.dump(observed, output, ensure_ascii=False, indent=2)
+                    output.flush()
+                    os.fsync(output.fileno())
+                assert exported['error'] == ''
+                assert exported['export_path'] == setup['destination']
+                assert Path(setup['destination']).read_bytes() == (
+                    Path(setup['canonical_path']).read_bytes())
+                assert str(exported['selected_event_id']) == str(setup['old_event_id'])
+                assert exported['selected_event']['election_revision'] == 3
+                assert exported['election'] == setup['current_election']
+                assert {key: root_election[key] for key in setup['current_election']} == (
+                    setup['current_election'])
+                assert controller.property('state')['active_election'] == active_before
+                assert exported['receipt'] == {} and exported['pending_request_id'] == ''
+                assert exported['uncertain_save'] is False
+                assert list(Path(setup['journal_directory']).rglob('*')) == []
+                """,
+            )
+        finally:
+            with https_server.lock:
+                transport = {"requests": list(https_server.requests),
+                             "request_timings": list(https_server.request_timings)}
+            descriptor = os.open(transport_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                json.dump(transport, output, ensure_ascii=False, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+        assert destination.read_bytes() == canonical_response.content
+        assert destination.read_bytes().startswith(b"\xef\xbb\xbf")
+        assert "已保留選舉完成確認報表" in destination.read_text('utf-8-sig')
+        assert https_server.request_count("GET", csv_path) == 1
+        assert [row["status"] for row in transport["request_timings"]
+                if row["method"] == "GET" and row["path"] == csv_path] == [200]
+        assert not [path for method, path in transport["requests"]
+                    if method == "GET" and "/request-outcomes/" in path]
+        assert not [(method, path) for method, path in transport["requests"]
+                    if method in {"POST", "PUT", "PATCH", "DELETE"}
+                    and path.startswith("/api/workspace/")]
+        assert [(method, path) for method, path in transport["requests"]
+                if "/completion/history/" in path and "/statement" in path] == [
+                    ("GET", csv_path)]
+        assert list(journal_directory.rglob('*')) == []
