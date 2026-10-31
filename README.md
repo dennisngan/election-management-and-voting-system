@@ -5,51 +5,29 @@ MySQL 8.4/InnoDB, and a PySide6 Qt Quick desktop client. The selected interface 
 workspace**. The approved scope and ordered tickets are in [the specification](docs/SPECIFICATION.md)
 and [ticket plan](docs/TICKET-PLAN.md).
 
-Ticket 01 establishes real-server sign-in, first-password change, revocable sessions, and the desktop
-workspace shell. Ticket 02 adds Administrator draft elections, single-seat constituencies and
-independent candidate lists, with three-language forms, replay-safe creates and revision conflicts.
-Ticket 03 adds scoped polling stations, issuance counters and same-constituency counting destinations.
-Tickets 04 and 05 add staff administration, assigned-station workspaces, election schedules and
-single-election activation; their current verification status is recorded in the local tickets.
-Ticket 06 adds revision-bound opening/closing records and Supervisor approval. Ticket 07 adds
-received-stock pools, retained corrections and translated receipt statements. Independent slices
-also implement normal turnout, complaint cases/statistics, queue observations and box handover.
-Ticket 08 adds ordinary-stock allocations to issuance counters, shared ownership guards and
-P(14) current/historical statements. Ticket 09 adds remaining-stock snapshots, unissued counter
-returns and selected P(12) stock-derived issuance statements. Ticket 10 adds replacement, tendered
-and retrieved-unused paper accounting with frozen revisions and three-language statements.
-Ticket 12 adds Supervisor-confirmed fallback/recovery, stock-derived turnout, retained source/mode
-coverage and renewed downstream review after corrections. **15 of 27 tickets are complete: 01–15.**
-[Ticket 12 closure](docs/evidence/ticket-12/README.md) records the latest frozen `5f9ac69` full suite:
-**1,089 passed, 27 warnings, zero failures in 2602.12 seconds, exit 0**, with 286 unchanged source fingerprints.
-Ruff and mypy (95 source files) pass. Computer evidence totals 81 capture pairs, seven native exports
-and ten inspected PDF pages; failed runs and their repairs remain visible. This session stops after
-Ticket 12; [the saved prompt](.scratch/election-management-voting-system/CONTINUE-IMPLEMENTATION.md)
-resumes with Ticket 16 in a new session and permits isolated independent fanout/test overlap.
-[Ticket 10 closure](docs/evidence/ticket-10/README.md) records the earlier frozen `94eb11f` full suite:
-**1,042 passed, 25 warnings, zero failures in 2200.48 seconds**, exit 0, with 78 retained Computer
-capture pairs, nine native exports and 15 complete PDF pages. Known runtime diagnostics and earlier
-failed-run/provenance limits remain visible. [Ticket 09 closure](docs/evidence/ticket-09/README.md)
-retains its earlier 1,006-pass checkpoint and corrected PDF/CSV evidence.
-[Ticket 15 closure](docs/evidence/ticket-15/README.md) retains its earlier frozen
-`b8cd10b` full suite: **884 passed, 21 warnings, zero failures in 1378.11 seconds**, exit 0.
-Its root-operated native evidence has 60 PNG/AX pairs, nine actual exports, thirteen native
-PDF-page captures and 188 passing corrected-artifact checks. The final native continuation uses
-client `c19c24f` / backend `bd2d82d`; the final observer change is test-only.
-[Ticket 13 evidence](docs/evidence/ticket-13/README.md) retains its earlier frozen
-`431e8e2` suite: **875 passed, 24 recorded warnings in 1369.33 seconds**, exit 0; production
-source `5308e5e`, 68 native capture pairs, seven actual exports and eleven native PDF pages.
-Its final evidence review has zero documented/heuristic Standards findings and zero definite
-Spec findings. Separate manifests retain 309 checks for six exports and 163 checks for the
-historical Counting Officer CSV. [Ticket 08 evidence](docs/evidence/ticket-08/README.md)
-retains its earlier 861-test checkpoint and 54 native captures.
-[Ticket 11 evidence](docs/evidence/ticket-11/README.md) retains the earlier 866-test checkpoint,
-59 native captures and seven actual exports. [Ticket 14 evidence](docs/evidence/ticket-14/README.md)
-retains its `165a748` checkpoint: 869 passed, 24 known warnings in 1320.53 seconds; 33 native
-capture pairs, seven exports, four native PDF pages and 422 checks. Its layout source
-`3ef03a2` and test-helper `165a748` review follow-ups have zero Standards/zero Spec findings.
-Ticket 09 is complete. Windows verification remains Ticket 27; remaining stock-flow, counting
-and delivery work follows the dependency plan. Illustrative design-preview figures are not application data.
+The implementation covers election/station/staff configuration, approved polling events, separate
+ballot-stock pools and counter ownership, stock snapshots and turnout, EPR fallback, complaints and
+queues, box handover, P(18)/F1–F4, selected approved counts, local and constituency recounts, outage
+reconciliation and protected backup/restore. Election completion adds an immutable reviewed outcome;
+authorized reopening retains that earlier outcome while later work receives new revisions and approval.
+
+**25 of 27 tickets are formally complete: 01–23, 25 and 26. Ticket 24 is in progress; Ticket 27 delivery
+is outstanding.** Current Ticket 24 focused results are not a replacement for the required final full
+suite, matching packaged-client journeys, protected current-source restore or final Main integration.
+[Delivery traceability](docs/DELIVERY-TRACEABILITY.md) records those gates and their actual source/build
+scope. [Windows setup](docs/WINDOWS-SETUP.md) separates the backend/MySQL host from packaged clients.
+
+The latest accepted historical batch passed **1,547 tests with 36 warnings** at
+`edaff3020bd6c66aec1ead64c72cd66bb5ad59e9`, followed by Ruff and mypy. Its
+[sealed evidence archive](docs/evidence/integrated/ticket22-23-25-final-edaff/README.md) includes the
+representative protected restores and packaged readbacks for Tickets 22, 23 and 25. That source
+predates Ticket 24; the result is not a current-source full-suite claim. Earlier ticket evidence and
+failed/UNKNOWN runtime records retain their original identities and qualifications.
+
+Actual Windows 11 x64 build/smoke, Windows private-file permissions, 125%/150% display scaling and
+physical-printer checks remain **INCOMPLETE** until exercised on the required environment. macOS
+validation does not satisfy them. Video production remains deferred. Illustrative design-preview
+figures are not application data.
 
 After signing in as an Administrator and changing the initial password, open **Election setup**.
 Create or choose a saved election, then create or choose a constituency and its candidates. Saved
@@ -157,7 +135,7 @@ origin, destination, event corrections and exact source references.
 From the repository root, install all development groups:
 
 ```sh
-uv sync --all-groups
+uv sync --locked --all-groups
 ```
 
 The project does not install itself as a Python package. Set its source path before running commands.
@@ -179,7 +157,7 @@ groups; `uv.lock` records the resolved versions.
 
 Development commands below keep all groups available so starting the desktop does not remove the
 running server's dependencies. For an isolated server environment, use
-`UV_PROJECT_ENVIRONMENT=.venv-server uv sync --group server --group reports`; a source desktop environment can
+`UV_PROJECT_ENVIRONMENT=.venv-server uv sync --locked --no-default-groups --group server --group reports`; a source desktop environment can
 use a separate `.venv-desktop` with `--only-group desktop`. Packaged clients do not need server packages.
 
 ## Local database and HTTPS
@@ -274,26 +252,34 @@ The Ticket 01 API exposes health at `GET /api/health`, sign-in at `POST /api/aut
 
 ## Verification
 
-With development dependencies installed:
+Use a separate prepared test environment and explicit dedicated MySQL fixture roles. Test setup
+migrates and mutates those databases; it must never use operational or retained native datasets.
+The local validation role mapping is:
+
+| Variable | Reserved fixture schema | Purpose |
+| --- | --- | --- |
+| `ELECTION_TEST_DATABASE_URL` | `election_t17_fixture_test` | Ordinary mutable fixtures. |
+| `ELECTION_LIFECYCLE_TEST_DATABASE_URL` | `election_t19_comparisons_lifecycle_test` | Lifecycle fixtures and backup source. |
+| `ELECTION_RESTORE_DATABASE_URL` | `election_t17_reports_test` | Explicit disposable restore destination. |
+
+Supply private MySQL URLs for these roles through the process environment. The restore URL is
+required explicitly and must differ from both sources. `election_t19_workflow_edges_test` and
+`election_t19_comparisons_test` are protected retained observers and are rejected as ordinary/restore
+fixtures. Provision distinct test roles through the database owner's setup; a `_test` suffix alone
+does not establish ownership. Preserve affected data privately before migration or maintenance,
+reserve exclusive use, and retain failed/unknown results. Do not reset a retained dataset to run tests.
 
 ```sh
-uv run --all-groups ruff check .
-uv run --all-groups mypy src/election
-uv run --all-groups pytest
+uv run --locked --all-groups --no-sync ruff check src tests migrations scripts
+uv run --locked --all-groups --no-sync mypy src/election
+uv run --locked --all-groups --no-sync pytest
 ```
 
-Integration tests require dedicated real MySQL databases configured through
-`ELECTION_TEST_DATABASE_URL` and `ELECTION_LIFECYCLE_TEST_DATABASE_URL`. The local `mysql-dev` command
-above provisions both. For a separate MySQL service, create and grant access to distinct test databases
-and set both URLs in private `.env` or environment variables. The ordinary test database name must end
-in `_test`; the lifecycle database name must end in `_lifecycle_test`.
-
-Lifecycle API and desktop checks use their own database because they change the single active-election
-pointer and reset synthetic activation state between cases. They must not share the development
-database or the ordinary test database. Follow the test configuration rather than pointing tests at
-operational data. API checks prove persisted authentication/session behavior; native GUI checks and screenshots
-prove the desktop interaction. A successful export, import, or
-process start alone does not prove the full workflow.
+Lifecycle fixtures change the active-election pointer and synthetic activation state. Restore
+fixtures replace only their explicitly reserved destination. Keep environments and test roles
+separate from the operational installation. API checks prove persisted behavior; native GUI checks
+and screenshots prove interaction. Export/import/process startup alone does not establish a complete
+workflow. [Delivery traceability](docs/DELIVERY-TRACEABILITY.md) records source/build and pending gates.
 
 Record the actual environment, commands, results, and GUI evidence for each ticket. Windows packaging
 and the packaged-client smoke test remain separate delivery work. Actual Windows verification is
@@ -301,18 +287,24 @@ pending ticket 27; per-ticket evidence records the completed development checks.
 
 ## Native macOS validation
 
-For Computer-driven validation on macOS, build the local native launcher after installing all groups:
+For Computer-driven validation on macOS, use the locked validation environment and a fresh
+lowercase run name containing letters, digits and hyphens. Existing build outputs are retained.
 
 ```sh
-uv run --all-groups --locked python scripts/build_macos_validation.py
-".runtime/native/Election Desk.app/Contents/MacOS/Election Desk" \
+uv run --locked --all-groups --no-sync python scripts/build_macos_validation.py --run-name native-demo-v1
+".runtime/macos-package-native-demo-v1/dist/Election Desk.app/Contents/MacOS/Election Desk" \
   --server https://localhost:8443 --ca "$PWD/.runtime/tls/ca.pem"
 ```
 
-The launcher stays under ignored `.runtime/`. The helper is for development GUI validation; Windows
-release packaging and actual Windows checks remain ticket 27. `--window-size 910 512` sets a small
-logical window for layout checks. `QT_SCALE_FACTOR=1.25` or `1.5` exercises Qt scaling on the current
-platform; it does not establish Windows display-scaling compatibility.
+Add `--peer` to build a separately identified second desktop process under
+`.runtime/macos-package-native-demo-v1-peer/`. Its app is `Election Desk Peer.app`. All client
+processes still use normal sign-in and the configured shared HTTPS backend. Keep each validation
+client's command-state directory private and separate from retained earlier journeys.
+
+The helper builds a macOS validation artifact. [Windows setup](docs/WINDOWS-SETUP.md) documents the
+separate Windows builder and runtime folder; actual Windows checks remain INCOMPLETE.
+`--window-size 910 512` sets a small logical window. `QT_SCALE_FACTOR=1.25` or `1.5` exercises Qt on
+the current host and does not establish actual Windows display-scaling compatibility.
 
 The isolated UI-test API runs with `uv run --all-groups --locked python tests/ui_server.py` on port
 8444. It accepts only a database ending in `_test` and reads a controlled UTC clock and sign-in delay
