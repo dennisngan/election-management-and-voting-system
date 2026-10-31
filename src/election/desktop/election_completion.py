@@ -1,5 +1,6 @@
 """Reviewed election completion and durable original command acknowledgements."""
 
+from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 from uuid import uuid4
@@ -43,6 +44,7 @@ class ElectionCompletionController(QObject):
             "election_id": None, "actor_id": None, "role": "", "election": {},
             "assessment": {}, "busy": False, "refreshing": False, "error": "",
             "receipt": {}, "pending_request_id": "", "uncertain_save": False,
+            "reconciling": False,
         }
         self.stateChanged.emit()
 
@@ -111,6 +113,20 @@ class ElectionCompletionController(QObject):
         self._request(
             f"/api/workspace/elections/{election_id}/completion", "GET", None, loaded, failed
         )
+
+    def wait_for_current_lifecycle(self) -> Callable[[str], None]:
+        """Keep settlement visibly working until an authoritative lifecycle read finishes."""
+        generation = self._generation
+        self._state.update(refreshing=True, reconciling=True)
+        self.stateChanged.emit()
+
+        def finished(code: str) -> None:
+            if generation != self._generation:
+                return
+            self._state.update(refreshing=False, reconciling=False, error=code)
+            self.stateChanged.emit()
+
+        return finished
 
     def _settled(self, body: dict[str, Any]) -> None:
         self._generation += 1

@@ -199,6 +199,7 @@ class DesktopController(QObject):
             unresolved_target_guard=self._unresolved_station_selection,
         )
         self._election_completion.stateChanged.connect(self._workspace.stateChanged.emit)
+        self._election_completion.stateChanged.connect(self._completion_context_changed)
         self._accounting.stateChanged.connect(self._workspace.stateChanged.emit)
         self._polling.stateChanged.connect(self._workspace.stateChanged.emit)
         self._stock.stateChanged.connect(self._workspace.stateChanged.emit)
@@ -414,6 +415,7 @@ class DesktopController(QObject):
         return bool(self._state["election"] and (
             self._state["election"].get("status") == "finalized"
             or self._election_completion.property("state")["pending_request_id"]
+            or self._election_completion.property("state")["receipt"]
             or self._recovery.election_context_locked()
         ))
 
@@ -441,16 +443,25 @@ class DesktopController(QObject):
             (election or {}).get("id", 0),
         )
 
-    def _completion_finalized(self, receipt: dict[str, Any]) -> None:
-        active = self._state["active_election"]
-        if active is None or (
-            active.get("id") == receipt["election"]["id"]
-            and active.get("revision") == receipt["election"]["revision"] - 1
+    def _completion_context_changed(self) -> None:
+        if self._state["phase"] != "workspace":
+            return
+        current = self._election_completion.property("state").get("assessment", {}).get("election")
+        selected = self._state["election"] or {}
+        if (
+            isinstance(current, dict) and current.get("id") == selected.get("id")
+            and type(current.get("revision")) is int
+            and (type(selected.get("revision")) is not int
+                 or current["revision"] >= selected["revision"])
+            and current != selected
         ):
-            self._active_generation += 1
-            active = None
+            self._state["election"] = dict(current)
+            self.stateChanged.emit()
+
+    def _completion_finalized(self, receipt: dict[str, Any]) -> None:
         self._state["election"] = dict(self._election_completion.property("state")["election"])
-        self._apply_active_election(active)
+        finished = self._election_completion.wait_for_current_lifecycle()
+        self._refresh_active_election(force=True, finished=finished)
         self._workspace.refresh()
 
     def _lifecycle_changed(self) -> None:
@@ -463,29 +474,39 @@ class DesktopController(QObject):
                 self._active_generation += 1
                 self._apply_active_election(election)
 
-    def _refresh_active_election(self) -> None:
-        if self._active_refreshing or self._state["phase"] != "workspace":
+    def _refresh_active_election(
+        self, *, force: bool = False, finished: Callable[[str], None] | None = None,
+    ) -> None:
+        if self._state["phase"] != "workspace" or self._active_refreshing and not force:
             return
+        if force:
+            self._active_generation += 1
         self._active_refreshing = True
         generation = self._active_generation
 
         def loaded(data: dict[str, Any]) -> None:
-            self._active_refreshing = False
             if generation != self._active_generation:
                 return
+            self._active_refreshing = False
             election = data.get("election")
             if election is not None and (
                 not isinstance(election, dict) or type(election.get("id")) is not int
             ):
                 self._error("request_failed")
+                if finished is not None:
+                    finished("request_failed")
                 return
             self._apply_active_election(election)
+            if finished is not None:
+                finished("")
 
         def failed(code: str) -> None:
-            self._active_refreshing = False
             if generation != self._active_generation:
                 return
+            self._active_refreshing = False
             self._error(code)
+            if finished is not None:
+                finished(code)
 
         self._authorized_request("/api/active-election", "GET", None, loaded, failed)
 
