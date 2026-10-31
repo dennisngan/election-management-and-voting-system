@@ -26,6 +26,7 @@ from election.server.complaint_reports import complaint_reports_router
 from election.server.complaints import complaints_router
 from election.server.config import Settings
 from election.server.configuration import configuration_router
+from election.server.constituency_recounts import constituency_recounts_router
 from election.server.constituency_reports import constituency_reports_router
 from election.server.constituency_results import constituency_results_router
 from election.server.constituency_ties import constituency_ties_router
@@ -37,14 +38,19 @@ from election.server.counting_scope_reports import counting_scope_reports_router
 from election.server.counting_scopes import counting_scopes_router
 from election.server.counting_workflow import counting_workflow_router
 from election.server.db import make_engine
+from election.server.election_completion import election_completion_router
 from election.server.f1_reports import f1_reports_router
 from election.server.fallback import fallback_router
 from election.server.invalid_ballot_reasons import invalid_ballot_reasons_router
 from election.server.lifecycle import lifecycle_router
+from election.server.local_recounts import local_recounts_router
 from election.server.models import Account, AuditEvent, LoginSession
+from election.server.outage_reports import outage_report_router
+from election.server.outages import outage_router
 from election.server.polling import polling_router
 from election.server.queue import queue_router
 from election.server.queue_reports import queue_reports_router
+from election.server.request_outcomes import request_outcomes_router
 from election.server.security import hash_password, token_digest, verify_password
 from election.server.special_paper_reports import special_paper_reports_router
 from election.server.special_papers import special_paper_router
@@ -149,7 +155,9 @@ def create_app(
         return account
 
     app.include_router(configuration_router(database, administrator, timestamp))
+    app.include_router(election_completion_router(database, authenticated, timestamp))
     app.include_router(constituency_results_router(database, ready_account, timestamp))
+    app.include_router(constituency_recounts_router(database, ready_account, timestamp))
     app.include_router(constituency_reports_router(database, ready_account, timestamp))
     app.include_router(constituency_ties_router(database, ready_account, timestamp))
     app.include_router(backups_router(database, administrator, timestamp, engine))
@@ -186,8 +194,12 @@ def create_app(
     app.include_router(accounting_router(database, ready_account, timestamp))
     app.include_router(counting_scopes_router(database, ready_account, timestamp))
     app.include_router(counting_rounds_router(database, ready_account, timestamp))
+    app.include_router(local_recounts_router(database, ready_account, timestamp))
     app.include_router(counting_outcomes_router(database, ready_account, timestamp))
     app.include_router(counting_workflow_router(database, ready_account, timestamp))
+    app.include_router(request_outcomes_router(database, ready_account, timestamp))
+    app.include_router(outage_router(database, ready_account, timestamp))
+    app.include_router(outage_report_router(database, ready_account, timestamp))
     app.include_router(counting_discrepancies_router(database, ready_account, timestamp))
     app.include_router(f1_reports_router(database, ready_account, timestamp))
     app.include_router(count_reports_router(database, ready_account, timestamp))

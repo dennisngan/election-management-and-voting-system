@@ -5,21 +5,28 @@ from election.desktop.allocation_translations import ALLOCATION_TRANSLATIONS
 from election.desktop.box_translations import BOX_EVENT_WORDS
 from election.desktop.complaint_period_translations import COMPLAINT_PERIOD_TRANSLATIONS
 from election.desktop.complaint_translations import COMPLAINT_TRANSLATIONS
+from election.desktop.constituency_recount_translations import CONSTITUENCY_RECOUNT_TRANSLATIONS
 from election.desktop.constituency_result_translations import CONSTITUENCY_RESULT_TRANSLATIONS
 from election.desktop.count_discrepancy_translations import COUNT_DISCREPANCY_TRANSLATIONS
 from election.desktop.counter_return_translations import COUNTER_RETURN_TRANSLATIONS
 from election.desktop.counting_outcome_translations import COUNT_OUTCOME_TRANSLATIONS
 from election.desktop.counting_round_translations import COUNTING_ROUND_TRANSLATIONS
 from election.desktop.counting_scope_translations import COUNTING_SCOPE_TRANSLATIONS
+from election.desktop.election_completion_translations import ELECTION_COMPLETION_TRANSLATIONS
 from election.desktop.fallback_translations import FALLBACK_TRANSLATIONS
 from election.desktop.fallback_turnout_translations import FALLBACK_TURNOUT_TRANSLATIONS
 from election.desktop.invalid_reason_translations import INVALID_REASON_TRANSLATIONS
+from election.desktop.local_recount_translations import LOCAL_RECOUNT_TRANSLATIONS
+from election.desktop.outage_translations import OUTAGE_TRANSLATIONS
+from election.desktop.paper_reentry_translations import PAPER_REENTRY_TRANSLATIONS
+from election.desktop.recovery_translations import RECOVERY_TRANSLATIONS
 from election.desktop.server_backup_translations import SERVER_BACKUP_TRANSLATIONS
 from election.desktop.special_paper_translations import SPECIAL_PAPER_TRANSLATIONS
 from election.desktop.stock_snapshot_translations import STOCK_SNAPSHOT_TRANSLATIONS
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "workspace_uncertain_request": "請先查核不確定請求的結果，再切換票站。",
         "app_name": "選舉管理及投票系統",
         "election_management": "選舉管理",
         "tagline": "清楚記錄每項票站工作。",
@@ -601,6 +608,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "unsaved_station_changes": "表格有未儲存的內容。請先儲存，或捨棄變更後繼續。",
     },
     "sc": {
+        "workspace_uncertain_request": "请先核查不确定请求的结果，再切换票站。",
         "app_name": "选举管理及投票系统",
         "election_management": "选举管理",
         "tagline": "清楚记录每项票站工作。",
@@ -1182,6 +1190,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "unsaved_station_changes": "表格有未保存的内容。请先保存，或放弃更改后继续。",
     },
     "en": {
+        "workspace_uncertain_request": (
+            "Check the uncertain request before switching polling stations."
+        ),
         "app_name": "Election Management and Voting System",
         "election_management": "Election management",
         "tagline": "A clear record of station work.",
@@ -1984,9 +1995,26 @@ for language, outcome_labels in COUNT_OUTCOME_TRANSLATIONS.items():
 for language, event_labels in BOX_EVENT_WORDS.items():
     TRANSLATIONS[language].update(event_labels)
 
+for language, labels in RECOVERY_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)
+
+for language, labels in OUTAGE_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)
+
+for language, labels in PAPER_REENTRY_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)
 for language, discrepancy_labels in COUNT_DISCREPANCY_TRANSLATIONS.items():
     TRANSLATIONS[language].update(discrepancy_labels)
 for language, result_labels in CONSTITUENCY_RESULT_TRANSLATIONS.items():
     TRANSLATIONS[language].update(result_labels)
 for language, backup_labels in SERVER_BACKUP_TRANSLATIONS.items():
     TRANSLATIONS[language].update(backup_labels)
+
+for language, recount_labels in LOCAL_RECOUNT_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(recount_labels)
+
+for language, labels in CONSTITUENCY_RECOUNT_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(labels)
+
+for language, completion_labels in ELECTION_COMPLETION_TRANSLATIONS.items():
+    TRANSLATIONS[language].update(completion_labels)

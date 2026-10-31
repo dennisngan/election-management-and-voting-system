@@ -32,6 +32,7 @@ ColumnLayout {
         && election.status === "active" && (result.tie_candidate_ids || []).length > 1
     readonly property bool canEdit: supervisor && completeTie && !working && !stale && !uncertain
     readonly property bool reportBlocked: working || !!editorState.dirty || stale || uncertain
+        || !!editorState.recount_protected
     signal reveal(var control)
     spacing: 20
 
@@ -184,8 +185,8 @@ ColumnLayout {
             text: page.t("constituency_results_refresh")
             flat: true
             highlighted: false
-            working: page.loading
-            enabled: !page.loading
+            working: page.working
+            enabled: !page.working
             onClicked: page.results.reload()
             onReveal: control => page.reveal(control)
         }
@@ -622,6 +623,12 @@ ColumnLayout {
                 }
             }
         }
+    }
+
+    ConstituencyRecountsPanel {
+        recounts: page.results.recounts
+        texts: page.words
+        onReveal: control => page.reveal(control)
     }
 
     FormPanel {

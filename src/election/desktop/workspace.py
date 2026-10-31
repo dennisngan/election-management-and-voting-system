@@ -19,10 +19,14 @@ class WorkspaceController(QObject):
         parent: QObject,
         *,
         selection_guard: Callable[[], bool] | None = None,
+        unresolved_guard: Callable[[], bool] | None = None,
+        unresolved_target_guard: Callable[[int, dict[str, Any] | None], bool] | None = None,
     ) -> None:
         super().__init__(parent)
         self._request = request
         self._selection_guard = selection_guard
+        self._unresolved_guard = unresolved_guard
+        self._unresolved_target_guard = unresolved_target_guard
         self._generation = 0
         self._available = False
         self._state: dict[str, Any] = {}
@@ -34,7 +38,13 @@ class WorkspaceController(QObject):
 
     @Property(bool, notify=stateChanged)
     def selectionGuarded(self) -> bool:
-        return bool(self._selection_guard and self._selection_guard())
+        return bool(self.unresolvedRequest) or bool(
+            self._selection_guard and self._selection_guard()
+        )
+
+    @Property(bool, notify=stateChanged)
+    def unresolvedRequest(self) -> bool:
+        return bool(self._unresolved_guard and self._unresolved_guard())
 
     def reset(self) -> None:
         self._generation += 1
@@ -111,7 +121,18 @@ class WorkspaceController(QObject):
         if not self._available or self._state["busy"]:
             return
         selected_id = self._state["selected"].get("station", {}).get("id")
-        if station_id != selected_id and self.selectionGuarded and not discard:
+        unresolved = (
+            self._unresolved_target_guard(station_id, None)
+            if self._unresolved_target_guard else self.unresolvedRequest
+        )
+        if station_id != selected_id and unresolved:
+            self._state["error"] = "workspace_uncertain_request"
+            self.stateChanged.emit()
+            return
+        if (
+            station_id != selected_id and not discard
+            and self._selection_guard and self._selection_guard()
+        ):
             self._state["error"] = "unsaved_station_changes"
             self.stateChanged.emit()
             return
@@ -126,6 +147,8 @@ class WorkspaceController(QObject):
             self._state["busy"] = False
             if not self._valid_context(data) or data["station"]["id"] != station_id:
                 self._state["error"] = "request_failed"
+            elif self._unresolved_target_guard and self._unresolved_target_guard(station_id, data):
+                self._state["error"] = "workspace_uncertain_request"
             else:
                 self._state["selected"] = data
                 self.contextChanged.emit()

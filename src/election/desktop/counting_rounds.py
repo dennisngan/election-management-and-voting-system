@@ -10,9 +10,17 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 from election.desktop.configuration import AuthorizedRequest, ResultHandler
 from election.desktop.event_times import format_event_time, parse_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
+from election.desktop.local_recounts import LocalRecountsController
+from election.desktop.paper_reentry import paper_options, paper_record_fields
+from election.desktop.recovery import RecoveryController
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
-NETWORK_ERRORS = frozenset({"request_failed", "disconnected", "database_unavailable"})
+NETWORK_ERRORS = frozenset({
+    "request_failed", "disconnected", "database_unavailable",
+    "certificate_error",
+    "recovery_outcome_check_required", "recovery_pending_command",
+    "recovery_journal_outcome_unavailable",
+})
 
 
 def empty_forms() -> dict[str, str]:
@@ -42,18 +50,67 @@ class CountingRoundsController(QObject):
         super().__init__(parent)
         self._request, self._download = request, download
         self._generation = self._report_generation = 0
+        self._paper_generation = 0
         self._opened = False
         self._pending: tuple[str, str] | None = None
+        self._recovery = parent.property("recovery") if parent is not None else None
         self._state: dict[str, Any] = {}
+        self._recounts = LocalRecountsController(
+            request, self,
+            recovery=self._recovery if isinstance(self._recovery, RecoveryController) else None,
+        )
         self.reset()
+        self._recounts.stateChanged.connect(self.stateChanged.emit)
+        self._recounts.instructed.connect(self._recount_instructed)
+        recovery_signal = getattr(self._recovery, "stateChanged", None)
+        if recovery_signal is not None:
+            recovery_signal.connect(self._recovery_state_changed)
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return qt_state(quantity_display(self._state))
+        view = qt_state(quantity_display(self._state))
+        busy, refreshing = self._recounts.activity()
+        view["busy"] = bool(view["busy"] or busy)
+        view["refreshing"] = bool(view["refreshing"] or refreshing)
+        view["recount_protected"] = self.recount_changes_pending()
+        return view
+
+    @Property(QObject, constant=True)
+    def recounts(self) -> LocalRecountsController:
+        return self._recounts
+
+    def _recount_instructed(self) -> None:
+        self._clear_report()
+        self.refresh()
+
+    def _durable_recount_unknown(self) -> bool:
+        return (isinstance(self._recovery, RecoveryController)
+                and self._recovery.recount_context_locked())
+
+    def recount_changes_pending(self) -> bool:
+        # An initial explicit scope choice remains available after sign-in. Once
+        # chosen, the tally stays anchored until the original command is checked.
+        return (self._recounts.blocks_navigation()
+                or bool(self._state["selected_scope_id"] and self._durable_recount_unknown()))
+
+    def recount_outcome_unknown(self) -> bool:
+        return self._recounts.outcome_unknown() or self._durable_recount_unknown()
+
+    def recount_context_locked(self) -> bool:
+        return self._recounts.blocks_context_change() or self._durable_recount_unknown()
+
+    def _block_recount_changes(self) -> bool:
+        if not self.recount_changes_pending():
+            return False
+        self._error("local_recount_outcome_unconfirmed" if self.recount_outcome_unknown()
+                    else "local_recount_changes_pending")
+        return True
 
     def reset(self) -> None:
+        self._recounts.reset()
         self._generation += 1
         self._report_generation += 1
+        self._paper_generation += 1
         self._opened = False
         self._pending = None
         self._state = {
@@ -97,6 +154,10 @@ class CountingRoundsController(QObject):
             "refresh_error": "",
             "notice": "",
             "uncertain_save": False,
+            "paper_records": [],
+            "paper_record": {},
+            "paper_loading": False,
+            "paper_binding_locked": False,
             "report_form": "f1",
             "report": {},
             "report_text": "",
@@ -116,6 +177,7 @@ class CountingRoundsController(QObject):
             context=deepcopy(context),
             role=context.get("account", {}).get("role", ""),
         )
+        self._recounts.set_context(self._state["context"], self._state["selected_scope_id"])
         self.stateChanged.emit()
         if changed and station_id and self._opened:
             self.reload()
@@ -125,6 +187,198 @@ class CountingRoundsController(QObject):
 
     def _path(self) -> str:
         return self._scope_path() + f"/{self._state['selected_scope_id']}/rounds"
+
+    def _matching_recovery_command(self) -> dict[str, Any] | None:
+        if not self._state["uncertain_save"] or self._pending is None:
+            return None
+        if not isinstance(self._recovery, QObject):
+            return None
+        recovery = self._recovery.property("state")
+        if not isinstance(recovery, dict):
+            return None
+        account_id = self._state["context"].get("account", {}).get("id")
+        return next(
+            (
+                row
+                for row in recovery.get("commands", [])
+                if isinstance(row, dict)
+                and row.get("request_id") == self._pending[1]
+                and row.get("workflow") == "count"
+                and row.get("station_id") == self._state["station_id"]
+                and row.get("actor_id") == account_id
+            ),
+            None,
+        )
+
+    def _paper_binding_is_locked(self) -> bool:
+        paper = self._state.get("paper_record", {})
+        if not paper or not self._state["uncertain_save"]:
+            return False
+        command = self._matching_recovery_command()
+        return command is None or command.get("status") not in {"committed", "rejected"}
+
+    def _sync_paper_binding_lock(self) -> None:
+        locked = self._paper_binding_is_locked()
+        if self._state["paper_binding_locked"] != locked:
+            self._state["paper_binding_locked"] = locked
+            self.stateChanged.emit()
+
+    def _recovery_state_changed(self) -> None:
+        if isinstance(self._recovery, RecoveryController):
+            self._recounts.sync_recovery(self._recovery.property("state")["commands"])
+        command = self._matching_recovery_command()
+        if command is None:
+            self._sync_paper_binding_lock()
+            self.stateChanged.emit()
+            return
+        status = command.get("status")
+        if status not in {"committed", "rejected"}:
+            self._sync_paper_binding_lock()
+            return
+        selected_paper = self._state.get("paper_record", {})
+        payload = command.get("payload", {})
+        if (
+            status == "committed"
+            and isinstance(payload, dict)
+            and payload.get("paper_record_id") == selected_paper.get("id")
+        ):
+            self._clear_paper_binding()
+        self._pending = None
+        self._state["uncertain_save"] = False
+        self._sync_paper_binding_lock()
+        if not self._state["dirty"] and self._state["selected"]:
+            selected_id = self._state["selected"]["id"]
+            self._clear_report()
+            self._send(
+                self._path() + f"/{selected_id}",
+                "GET",
+                None,
+                lambda body: self._history_loaded(body, foreground=True),
+            )
+        else:
+            self.stateChanged.emit()
+
+    def _clear_paper_binding(self) -> None:
+        self._state.update(paper_record={}, paper_binding_locked=False)
+
+    def _clear_paper_options(self) -> None:
+        self._paper_generation += 1
+        self._state.update(paper_records=[], paper_loading=False)
+
+    def _paper_target(self) -> dict[str, int] | None:
+        selected = self._state["selected"]
+        if (
+            not selected
+            or self._state["historical"]
+            or selected.get("status") != "draft"
+            or selected.get("is_current") is not True
+            or selected.get("source_current") is not True
+            or type(self._state["selected_scope_id"]) is not int
+            or self._state["selected_scope_id"] < 1
+        ):
+            return None
+        return {"scope_id": self._state["selected_scope_id"], "round_id": selected["id"]}
+
+    @Slot()
+    def refreshPaperRecords(self) -> None:
+        target = self._paper_target()
+        if (
+            self._state["role"] != "counting_officer"
+            or target is None
+            or self._state["busy"]
+            or self._state["refreshing"]
+            or self._state["paper_loading"]
+        ):
+            return
+        station_id = self._state["station_id"]
+        generation = self._paper_generation = self._paper_generation + 1
+
+        self._state["paper_loading"] = True
+        self.stateChanged.emit()
+
+        def loaded(snapshot: dict[str, Any]) -> None:
+            if generation != self._paper_generation:
+                return
+            self._state["paper_loading"] = False
+            if self._paper_target() != target or station_id != self._state["station_id"]:
+                self.stateChanged.emit()
+                return
+            try:
+                options = paper_options(
+                    snapshot,
+                    station_id=station_id,
+                    workflow="count",
+                    target=target,
+                    actions=("submit",),
+                )
+            except (TypeError, ValueError):
+                self._state.update(
+                    paper_records=[], error="invalid_response", error_origin="read"
+                )
+                self.stateChanged.emit()
+                return
+            selected = self._state["paper_record"]
+            if selected:
+                latest = next((row for row in options if row["id"] == selected.get("id")), None)
+                if latest is not None:
+                    self._state["paper_record"] = deepcopy(latest)
+            self._state["paper_records"] = options
+            self._sync_paper_binding_lock()
+            self.stateChanged.emit()
+
+        def failed(code: str) -> None:
+            if generation != self._paper_generation:
+                return
+            self._state.update(
+                paper_loading=False,
+                paper_records=[],
+                error=code,
+                error_origin="read",
+                notice="",
+            )
+            self.stateChanged.emit()
+
+        self._request(
+            f"/api/workspace/stations/{station_id}/outages", "GET", None, loaded, failed
+        )
+
+    @Slot(int, result=bool)
+    def selectPaperRecord(self, paper_id: int) -> bool:
+        if self._state["busy"] or self._state["refreshing"] or self._state["paper_loading"]:
+            return False
+        if self._state["uncertain_save"]:
+            current_id = self._state["paper_record"].get("id", 0)
+            if paper_id == current_id and not self._paper_binding_is_locked():
+                return True
+            self._error("paper_reentry_uncertain")
+            return False
+        if paper_id == 0:
+            self._clear_paper_binding()
+            self.stateChanged.emit()
+            return True
+        row = next((row for row in self._state["paper_records"] if row.get("id") == paper_id), None)
+        if row is None:
+            self._error("paper_reentry_invalid")
+            return False
+        target = self._paper_target()
+        if target is None:
+            self._error("paper_reentry_invalid")
+            return False
+        try:
+            paper_record_fields(
+                row,
+                station_id=self._state["station_id"],
+                workflow="count",
+                action="submit",
+                target=target,
+            )
+        except ValueError:
+            self._error("paper_reentry_invalid")
+            return False
+        self._state.update(paper_record=deepcopy(row), error="", error_origin="", notice="")
+        self._sync_paper_binding_lock()
+        self.stateChanged.emit()
+        return True
 
     def _error(self, code: str, origin: str = "local") -> None:
         self._state.update(error=code, error_origin=origin, notice="")
@@ -180,6 +434,7 @@ class CountingRoundsController(QObject):
                     self._state["uncertain_save"] = remains_uncertain
                     if not remains_uncertain:
                         self._pending = None
+                    self._sync_paper_binding_lock()
             self.stateChanged.emit()
 
         self._request(path, method, payload, done, failed)
@@ -209,7 +464,8 @@ class CountingRoundsController(QObject):
         forms = empty_forms()
         if record:
             forms.update(
-                event_at=format_event_time(record["event_at"]).removesuffix(" HKT"),
+                event_at=(format_event_time(record["event_at"]).removesuffix(" HKT")
+                          if record["event_at"] else ""),
                 notes=record["notes"],
                 questionable_quantity=quantity_input(record["questionable_quantity"]),
                 actual_counted_quantity=quantity_input(record["actual_counted_quantity"]),
@@ -278,6 +534,7 @@ class CountingRoundsController(QObject):
         )
         self._f2_forms_for(record)
         self._clear_report()
+        self._sync_paper_binding_lock()
 
     def _history_loaded(self, data: dict[str, Any], *, foreground: bool) -> None:
         record, history = data.get("record"), data.get("history")
@@ -297,6 +554,7 @@ class CountingRoundsController(QObject):
         if foreground:
             self._state["selected"] = deepcopy(record)
             self._forms_for(record)
+            self.refreshPaperRecords()
             return
         selected = self._state["selected"]
         if selected.get("id") != record["id"]:
@@ -350,8 +608,13 @@ class CountingRoundsController(QObject):
         decisions_changed = selected.get("physical_decisions", []) != same.get(
             "physical_decisions", []
         )
-        if decisions_changed:
+        recount_changed = any(
+            selected.get(key) != same.get(key)
+            for key in ("required_recount", "recount_pending", "contributes_to_result")
+        )
+        if decisions_changed or recount_changed:
             self._clear_report()
+        if decisions_changed:
             self._state["decisions_changed"] = True
         self._state.update(
             selected=deepcopy(same),
@@ -405,6 +668,9 @@ class CountingRoundsController(QObject):
             if row is None:
                 self._state.update(selected={}, history=[])
                 self._forms_for({})
+                self._recounts.set_context(
+                    self._state["context"], self._state["selected_scope_id"]
+                )
                 return
             self._send(
                 self._path() + f"/{row['id']}",
@@ -434,6 +700,8 @@ class CountingRoundsController(QObject):
                     lambda body: self._history_loaded(body, foreground=True),
                     background=True,
                 )
+        # Start the next parent read before a child context signal can report idle.
+        self._recounts.set_context(self._state["context"], self._state["selected_scope_id"])
 
     def _scopes_loaded(self, data: dict[str, Any], *, foreground: bool) -> None:
         if not (
@@ -466,7 +734,12 @@ class CountingRoundsController(QObject):
 
     @Slot(result=bool)
     def reload(self) -> bool:
+        if self._block_recount_changes():
+            return False
         if not self._state["station_id"] or self._state["busy"]:
+            return False
+        if self._paper_binding_is_locked():
+            self._error("paper_reentry_uncertain")
             return False
         if self._state["dirty"]:
             self._error("unsaved_f1_changes")
@@ -484,7 +757,9 @@ class CountingRoundsController(QObject):
             and self._state["station_id"]
             and not self._state["busy"]
             and not self._state["refreshing"]
+            and not self._recounts.activity()[0]
         ):
+            self._recounts.refresh()
             self._send(
                 self._scope_path(),
                 "GET",
@@ -495,13 +770,20 @@ class CountingRoundsController(QObject):
 
     @Slot()
     def discardAndReload(self) -> None:
+        if self._block_recount_changes():
+            return
         if self._state["busy"]:
+            return
+        if self._paper_binding_is_locked():
+            self._error("paper_reentry_uncertain")
             return
         self._state.update(dirty=False, uncertain_save=False)
         self.reload()
 
     @Slot(int, result=bool)
     def selectScope(self, scope_id: int) -> bool:
+        if self._block_recount_changes():
+            return False
         if self._state["busy"]:
             return False
         if self._state["dirty"]:
@@ -510,6 +792,14 @@ class CountingRoundsController(QObject):
         if not any(row.get("id") == scope_id for row in self._state["scopes"]):
             self._error("counting_scope_not_found")
             return False
+        if scope_id == self._state["selected_scope_id"]:
+            return True
+        if self._state["paper_record"]:
+            if self._paper_binding_is_locked():
+                self._error("paper_reentry_uncertain")
+                return False
+            self._clear_paper_binding()
+        self._clear_paper_options()
         self._pending = None
         self._state.update(
             selected_scope_id=scope_id,
@@ -541,7 +831,9 @@ class CountingRoundsController(QObject):
             error_origin="",
             notice="",
             uncertain_save=False,
+            paper_records=[],
         )
+        self._recounts.set_context(self._state["context"], scope_id)
         self._clear_report()
         self._send(
             self._path(), "GET", None, lambda body: self._rounds_loaded(body, foreground=True)
@@ -550,6 +842,8 @@ class CountingRoundsController(QObject):
 
     @Slot(int, result=bool)
     def selectRound(self, round_id: int) -> bool:
+        if self._block_recount_changes():
+            return False
         if self._state["busy"]:
             return False
         if self._state["dirty"]:
@@ -558,6 +852,22 @@ class CountingRoundsController(QObject):
         if not any(row.get("id") == round_id for row in self._state["rounds"]):
             self._error("count_round_not_found")
             return False
+        if self._state["selected"].get("id") == round_id:
+            if self._paper_binding_is_locked():
+                self._error("paper_reentry_uncertain")
+                return False
+            return True
+        if self._state["paper_record"]:
+            target = self._state["paper_record"].get("target", {})
+            if (
+                target.get("scope_id") != self._state["selected_scope_id"]
+                or target.get("round_id") != round_id
+            ):
+                if self._paper_binding_is_locked():
+                    self._error("paper_reentry_uncertain")
+                    return False
+                self._clear_paper_binding()
+        self._clear_paper_options()
         self._pending = None
         self._clear_report()
         self._send(
@@ -570,8 +880,13 @@ class CountingRoundsController(QObject):
 
     @Slot(int, result=bool)
     def loadRevision(self, revision: int) -> bool:
+        if self._block_recount_changes():
+            return False
         selected = self._state["selected"]
         if self._state["busy"] or not selected:
+            return False
+        if self._paper_binding_is_locked():
+            self._error("paper_reentry_uncertain")
             return False
         if self._state["dirty"]:
             self._error("unsaved_f1_changes")
@@ -594,6 +909,8 @@ class CountingRoundsController(QObject):
 
     @Slot(str, bool)
     def startCorrection(self, stage: str, refresh_basis: bool = False) -> None:
+        if self._block_recount_changes():
+            return
         selected = self._state["selected"]
         if self._state["role"] != "counting_officer":
             self._error("counting_officer_required")
@@ -646,6 +963,8 @@ class CountingRoundsController(QObject):
 
     @Slot()
     def cancelCorrection(self) -> None:
+        if self._block_recount_changes():
+            return
         if self._state["busy"] or self._state["uncertain_save"]:
             return
         if self._state["correction_stage"]:
@@ -656,8 +975,10 @@ class CountingRoundsController(QObject):
     def _editable(self) -> bool:
         return bool(
             self._state["role"] == "counting_officer"
+            and not self.recount_changes_pending()
             and self._state["selected_scope_id"]
             and not self._state["busy"]
+            and not self._paper_binding_is_locked()
             and not self._state["historical"]
             and (
                 self._state["correction_stage"] == "f1"
@@ -787,6 +1108,8 @@ class CountingRoundsController(QObject):
 
     @Slot()
     def save(self, discard_f2: bool = False) -> None:
+        if self._block_recount_changes():
+            return
         if self._state["role"] != "counting_officer":
             self._error("counting_officer_required")
             return
@@ -949,6 +1272,7 @@ class CountingRoundsController(QObject):
             and selected["f1_complete"]
             and selected["source_current"]
             and not self._state["busy"]
+            and not self._paper_binding_is_locked()
             and not self._state["historical"]
             and self._state["dirty_stage"] in ("", "f2")
             and self._state["context"].get("election", {}).get("status") == "active"
@@ -997,6 +1321,8 @@ class CountingRoundsController(QObject):
 
     @Slot()
     def saveF2(self) -> None:
+        if self._block_recount_changes():
+            return
         if not self._f2_editable():
             return
         selected, forms = self._state["selected"], self._state["f2_forms"]
@@ -1092,6 +1418,8 @@ class CountingRoundsController(QObject):
     def _workflow(
         self, action: str, password: str | None = None, *, extra: dict[str, Any] | None = None
     ) -> None:
+        if self._block_recount_changes():
+            return
         role = "counting_officer" if action == "submit" else "supervisor"
         if self._state["role"] != role:
             self._error(role + "_required")
@@ -1130,6 +1458,42 @@ class CountingRoundsController(QObject):
                     payload = pending[1]
             except ValueError, TypeError:
                 pass
+        if action != "submit" and self._state["paper_record"]:
+            self._error("paper_reentry_invalid")
+            return
+        if action == "submit":
+            paper = self._state["paper_record"]
+            if paper and self._state["paper_loading"]:
+                self._error("paper_reentry_load_failed")
+                return
+            pending_paper_id = payload.get("paper_record_id")
+            if pending_paper_id is not None and (
+                not paper or paper.get("id") != pending_paper_id
+            ):
+                self._error("paper_reentry_uncertain")
+                return
+            if paper:
+                if not self._state["uncertain_save"] and not any(
+                    row.get("id") == paper.get("id") for row in self._state["paper_records"]
+                ):
+                    self._error("paper_reentry_invalid")
+                    return
+                try:
+                    payload.update(
+                        paper_record_fields(
+                            paper,
+                            station_id=self._state["station_id"],
+                            workflow="count",
+                            action="submit",
+                            target={
+                                "scope_id": self._state["selected_scope_id"],
+                                "round_id": selected["id"],
+                            },
+                        )
+                    )
+                except ValueError:
+                    self._error("paper_reentry_invalid")
+                    return
         signature = json.dumps([path, payload], sort_keys=True, ensure_ascii=False)
         retry = bool(
             self._state["uncertain_save"] and self._pending and self._pending[0] == signature
@@ -1156,6 +1520,12 @@ class CountingRoundsController(QObject):
             if not self._valid_record(row) or row["id"] != selected["id"]:
                 self._error("invalid_response", "write")
                 return
+            paper_id = payload.get("paper_record_id") if action == "submit" else None
+            if paper_id and self._state["paper_record"].get("id") == paper_id:
+                self._clear_paper_binding()
+                self._state["paper_records"] = [
+                    paper for paper in self._state["paper_records"] if paper.get("id") != paper_id
+                ]
             self._state["selected"] = deepcopy(row)
             self._forms_for(row)
 
@@ -1208,6 +1578,8 @@ class CountingRoundsController(QObject):
 
     @Slot(str, result=bool)
     def selectReportForm(self, form: str) -> bool:
+        if self._block_recount_changes():
+            return False
         if form not in ("f1", "f2", "f3", "f4", "count"):
             self._error("count_report_invalid")
             return False
@@ -1224,6 +1596,8 @@ class CountingRoundsController(QObject):
         return True
 
     def _report_path(self, locale: str, extension: str = "") -> str | None:
+        if self._block_recount_changes():
+            return None
         row = self._state["selected"]
         if self._state["busy"] or not row or locale not in ("tc", "sc", "en"):
             self._error("count_round_not_found")

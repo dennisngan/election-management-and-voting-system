@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, load_only
 
@@ -102,7 +102,10 @@ def station_context_view(
     election: Election,
 ) -> dict[str, Any]:
     return {
-        "election": {"id": election.id, "name": election.name, "status": election.status},
+        "election": {
+            "id": election.id, "name": election.name,
+            "status": election.status, "revision": election.revision,
+        },
         "constituency": {
             "id": constituency.id,
             "name": constituency.name,
@@ -117,9 +120,13 @@ def station_context_view(
         },
         "account": account,
         "capabilities": {
-            "prepare_polling": account["role"] == "polling_officer",
-            "prepare_counting": account["role"] == "counting_officer",
-            "approve": account["role"] == "supervisor",
+            "prepare_polling": (
+                election.status != "finalized" and account["role"] == "polling_officer"
+            ),
+            "prepare_counting": (
+                election.status != "finalized" and account["role"] == "counting_officer"
+            ),
+            "approve": election.status != "finalized" and account["role"] == "supervisor",
         },
     }
 
@@ -142,7 +149,9 @@ def require_station(
     constituency = db.get(Constituency, station.constituency_id)
     assert constituency is not None
     if active and active.election_id is not None and constituency.election_id != active.election_id:
-        raise HTTPException(409, detail={"code": "wrong_active_election"})
+        election = db.get(Election, constituency.election_id)
+        if election is None or election.status != "finalized":
+            raise HTTPException(409, detail={"code": "wrong_active_election"})
     return station
 
 
@@ -391,12 +400,15 @@ def station_access_router(
             select(PollingStation)
             .join(StationAssignment, StationAssignment.station_id == PollingStation.id)
             .join(Constituency, Constituency.id == PollingStation.constituency_id)
+            .join(Election, Election.id == Constituency.election_id)
             .where(StationAssignment.account_id == account.id)
             .order_by(PollingStation.id)
         )
         active = db.get(ActiveElection, 1)
         if active and active.election_id is not None:
-            query = query.where(Constituency.election_id == active.election_id)
+            query = query.where(or_(
+                Constituency.election_id == active.election_id, Election.status == "finalized",
+            ))
         stations = db.scalars(query)
         return {"items": [station_context(db, account, station) for station in stations]}
 

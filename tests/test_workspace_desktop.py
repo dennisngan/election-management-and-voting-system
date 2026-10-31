@@ -1,7 +1,9 @@
 """Assigned station selection uses public Qt slots over real HTTPS/MySQL."""
 
+from collections.abc import Iterator
 from uuid import uuid4
 
+import pytest
 from PySide6.QtCore import QCoreApplication, QEvent
 
 from election.desktop.controller import DesktopController
@@ -13,6 +15,19 @@ from tests.desktop_support import (
     wait_for,
     wait_for_editor_idle,
 )
+from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
+
+
+@pytest.fixture(scope="module")
+def database_url() -> Iterator[str]:
+    yield from lifecycle_database_url()
+
+
+@pytest.fixture(autouse=True)
+def isolated_lifecycle_state(database_url: str) -> Iterator[None]:
+    # These draft/assignment checks must not inherit another test's active election.
+    with lifecycle_test_state(database_url):
+        yield
 
 
 def test_officer_selects_only_assigned_station_context_and_sign_out_clears_it(

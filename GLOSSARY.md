@@ -73,6 +73,9 @@ The tallying of physical ballots to determine voting totals and results.
 **Recount (重新點票)**:
 A subsequent tally of ballots that have already been counted.
 
+**Constituency-wide recount instruction**:
+A Supervisor's instruction to recount all required counting scopes of one constituency, with its original scope membership, reason and time. Its completion history remains available as later counts and instructions progress.
+
 **Count round**:
 One tally attempt for a counting scope. A recount creates a subsequent round while preserving the earlier tally.
 
@@ -93,3 +96,9 @@ A staff member responsible for recording counts and recounts of physical ballots
 
 **Supervisor**:
 A staff member responsible for reviewing operational records and approving completion.
+
+**Finalized outcome**:
+The preserved reviewed result and supporting records at an election’s finalization. It remains viewable when reopening and later work change the current results.
+
+**Reopening**:
+A Supervisor-authorized return of a finalized election to active work, with a recorded reason and its earlier finalized outcomes preserved. No different election may be active at the same time.

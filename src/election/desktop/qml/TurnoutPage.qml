@@ -18,6 +18,10 @@ ColumnLayout {
     readonly property var form: editorState.forms || ({})
     readonly property var context: editorState.context || ({})
     readonly property var schedule: editorState.schedule || ({})
+    readonly property var paperRecords: editorState.paper_records || []
+    readonly property var paperRecord: editorState.paper_record || ({})
+    readonly property bool paperSaveSelected: paperRecord.action === "save"
+    readonly property bool paperSubmitSelected: paperRecord.action === "submit"
     readonly property var prefix: editorState.approved_prefix || ({})
     readonly property var sourceModes: ["normal", "fallback", "recovery"]
     readonly property string sourceMode: form.mode || "normal"
@@ -29,12 +33,20 @@ ColumnLayout {
     readonly property bool supervisor: editorState.role === "supervisor"
     readonly property bool activeElection: !!context.election && context.election.status === "active"
     readonly property bool editable: pollingOfficer && activeElection && hasReviewedPeriod
-        && !editorState.busy && !editorState.historical
+        && !editorState.busy && !editorState.historical && !editorState.uncertain_save
     readonly property bool draft: !selected.revision || selected.status === "draft"
     readonly property bool amendable: selected.status === "submitted" || selected.status === "approved"
     readonly property bool canApprove: supervisor && activeElection && hasReviewedPeriod
         && selected.status === "submitted" && !editorState.busy && !editorState.dirty
-        && !editorState.historical && !editorState.newer_revision
+        && !editorState.historical && !editorState.newer_revision && !paperRecord.id
+        && !editorState.uncertain_save
+    readonly property var paperPickerRows: [{id: 0, label: page.t("paper_reentry_none")}].concat(
+        paperRecords.map(function(row) {
+            return {id: row.id, label: row.paper_reference + " · "
+                + page.t(row.action === "save" ? "turnout_save" : "turnout_submit")
+                + " · " + page.turnout.formatPaperTime(row.original_event_at)}
+        })
+    )
     property string pendingAction: "reload"
     property var pendingValue: 0
     property string pendingFormat: "pdf"
@@ -72,6 +84,15 @@ ColumnLayout {
         for (let i = 0; i < editorState.items.length; i++)
             if (editorState.items[i].period_index === editorState.selected_period) return i
         return -1
+    }
+    function paperPickerIndex() {
+        for (var index = 0; index < paperPickerRows.length; index++)
+            if (paperPickerRows[index].id === (paperRecord.id || 0)) return index
+        return 0
+    }
+    function restorePaperPicker() {
+        if (paperPicker)
+            paperPicker.currentIndex = Qt.binding(function() { return page.paperPickerIndex() })
     }
     function periodLabel(row) {
         return t("turnout_period") + " " + row.period_index_display + " · "
@@ -188,7 +209,12 @@ ColumnLayout {
     Connections {
         target: page.turnout
         function onErasePassword() { approvalPassword.clear() }
-        function onStateChanged() { Qt.callLater(function() { page.restorePicker() }) }
+        function onStateChanged() {
+            Qt.callLater(function() {
+                page.restorePicker()
+                page.restorePaperPicker()
+            })
+        }
     }
 
     RowLayout {
@@ -227,6 +253,108 @@ ColumnLayout {
         color: "#8a5c16"
     }
     FormCaption { visible: !page.hasStation; text: page.t("select_station") }
+
+    FormPanel {
+        objectName: "turnoutPaperReentryPanel"
+        visible: page.hasStation && (page.pollingOfficer || page.paperRecords.length > 0)
+            || !!page.paperRecord.id
+        implicitHeight: paperReentry.implicitHeight + 40
+        ColumnLayout {
+            id: paperReentry
+            anchors.fill: parent
+            anchors.margins: 20
+            spacing: 12
+            Heading { text: page.t("paper_reentry_title") }
+            FormCaption { text: page.t("paper_reentry_hint") }
+            RowLayout {
+                Layout.fillWidth: true
+                ComboBox {
+                    id: paperPicker
+                    objectName: "turnoutPaperPicker"
+                    Layout.fillWidth: true
+                    model: page.paperPickerRows
+                    currentIndex: page.paperPickerIndex()
+                    textRole: "label"
+                    displayText: currentIndex >= 0 && currentIndex < model.length
+                        ? model[currentIndex].label : page.t("paper_reentry_none")
+                    enabled: page.editable && !page.editorState.paper_refreshing
+                    implicitHeight: Math.max(48, paperPickerText.implicitHeight + 24)
+                    Accessible.name: page.t("paper_reentry_reference")
+                    contentItem: Text {
+                        id: paperPickerText
+                        text: paperPicker.displayText
+                        textFormat: Text.PlainText
+                        font: paperPicker.font
+                        color: "#25344b"
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    delegate: ItemDelegate {
+                        required property var modelData
+                        required property int index
+                        width: paperPicker.width
+                        highlighted: paperPicker.highlightedIndex === index
+                        implicitHeight: Math.max(48, paperOptionText.implicitHeight + 20)
+                        contentItem: Text {
+                            id: paperOptionText
+                            text: modelData.label
+                            textFormat: Text.PlainText
+                            font: paperPicker.font
+                            color: "#25344b"
+                            wrapMode: Text.WordWrap
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                    onActivated: index => {
+                        var row = model[index]
+                        if (row) page.turnout.selectPaperRecord(row.id)
+                        page.restorePaperPicker()
+                    }
+                    onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+                        if (paperPicker.activeFocus) page.reveal(paperPicker)
+                    })
+                }
+                FormButton {
+                    objectName: "turnoutPaperRefresh"
+                    text: page.t("paper_reentry_refresh")
+                    working: page.editorState.paper_refreshing
+                    enabled: page.hasStation && !page.editorState.paper_refreshing
+                    onClicked: page.turnout.refreshPaperRecords()
+                    onReveal: control => page.reveal(control)
+                }
+                FormButton {
+                    objectName: "turnoutPaperClear"
+                    text: page.t("paper_reentry_clear")
+                    flat: true
+                    highlighted: false
+                    enabled: !!page.paperRecord.id && !page.editorState.uncertain_save
+                    onClicked: {
+                        page.turnout.selectPaperRecord(0)
+                        page.restorePaperPicker()
+                    }
+                    onReveal: control => page.reveal(control)
+                }
+            }
+            Detail {
+                objectName: "turnoutPaperOriginalEventAt"
+                visible: !!page.paperRecord.id
+                caption: page.t("paper_reentry_original_at")
+                value: page.turnout.formatPaperTime(page.paperRecord.original_event_at || "")
+            }
+            Detail {
+                objectName: "turnoutPaperServerEntryTime"
+                visible: !!page.paperRecord.id
+                caption: page.t("server_entry")
+                value: page.turnout.formatPaperTime(page.paperRecord.entered_at || "")
+            }
+            FormCaption {
+                visible: !!page.editorState.uncertain_save
+                text: page.t("paper_reentry_uncertain") + " · "
+                    + (page.editorState.paper_pending_request_id || "")
+                color: "#8a5c16"
+            }
+        }
+    }
 
     FormPanel {
         visible: page.hasStation
@@ -667,7 +795,9 @@ ColumnLayout {
                     text: page.t("turnout_save")
                     working: page.editorState.busy
                     enabled: page.editable && page.draft && !page.editorState.newer_revision
-                        && (!page.selected.revision || page.editorState.dirty)
+                        && (page.paperRecord.id
+                            ? page.paperSaveSelected
+                            : (!page.selected.revision || page.editorState.dirty))
                     onClicked: page.turnout.save()
                 }
                 ActionButton {
@@ -677,6 +807,7 @@ ColumnLayout {
                     working: page.editorState.busy
                     enabled: page.editable && page.selected.status === "draft"
                         && !page.editorState.dirty && !page.editorState.newer_revision
+                        && (!page.paperRecord.id || page.paperSubmitSelected)
                     onClicked: page.turnout.submit()
                 }
                 ActionButton {
@@ -685,7 +816,7 @@ ColumnLayout {
                     text: page.t("turnout_amend")
                     working: page.editorState.busy
                     enabled: page.editable && page.amendable && !page.editorState.newer_revision
-                        && !!(page.form.amendment_reason || "").trim()
+                        && !page.paperRecord.id && !!(page.form.amendment_reason || "").trim()
                     onClicked: page.turnout.amend()
                 }
             }

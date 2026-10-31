@@ -12,6 +12,19 @@ from fastapi.testclient import TestClient
 
 from election.server.app import create_app
 from tests.configuration_support import create_constituency, create_election
+from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
+
+
+@pytest.fixture(scope="module")
+def database_url() -> Iterator[str]:
+    yield from lifecycle_database_url()
+
+
+@pytest.fixture(autouse=True)
+def isolated_lifecycle_state(database_url: str) -> Iterator[None]:
+    # These draft/assignment checks must not inherit another test's active election.
+    with lifecycle_test_state(database_url):
+        yield
 
 
 def test_administrator_manages_officer_access_first_password_reset_and_disabling(
@@ -106,6 +119,7 @@ def test_administrator_manages_officer_access_first_password_reset_and_disabling
             "id": election["id"],
             "name": election["name"],
             "status": election["status"],
+            "revision": election["revision"],
         }
         assert context["constituency"] == {
             "id": constituency["id"],

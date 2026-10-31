@@ -28,6 +28,7 @@ from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
 from election.server.physical_decisions import physical_review
 from election.server.polling import as_utc
+from election.server.recount_state import scope_recount_state
 from election.server.turnout_basis import turnout_scope
 
 Quantity = Annotated[int, Field(strict=True, ge=0)]
@@ -156,7 +157,7 @@ def round_context(
     return result
 
 
-def round_view(
+def _round_view_core(
     db: Session,
     round: CountRound,
     row: CountRoundRevision,
@@ -236,6 +237,34 @@ def round_view(
     }
 
 
+def round_view(
+    db: Session,
+    round: CountRound,
+    row: CountRoundRevision,
+    options: dict[str, Any],
+) -> dict[str, Any]:
+    result = _round_view_core(db, round, row, options)
+    recount = scope_recount_state(db, round.scope_id, options.get("selection"))
+    if not recount["instructions"]:
+        return result
+    associated = next(
+        (item for item in recount["instructions"] if item["new_round_id"] == round.id), None
+    )
+    result.update(
+        recount_instruction=associated,
+        required_recount=recount["latest_instruction"],
+        recount_pending=recount["pending"],
+        contributes_to_result=bool(
+            result["selected"] and result["approval_valid"] and not recount["pending"]
+        ),
+    )
+    if row.data.get("instruction_only"):
+        # This revision records authorization, not a Counting Officer's observation.
+        # Its generic revision provenance and separate instruction remain available.
+        result.update(event_at=None, entered_at=None, actor_id=None)
+    return result
+
+
 def selection_context(db: Session, scope_id: int, options: dict[str, Any]) -> dict[str, Any]:
     rows = list(
         db.scalars(
@@ -255,7 +284,7 @@ def selection_context(db: Session, scope_id: int, options: dict[str, Any]) -> di
         )
         assert target is not None
         round = round_at(db, scope_id, target.round_id)
-        target_view = round_view(db, round, target, {**options, "selection": None})
+        target_view = _round_view_core(db, round, target, {**options, "selection": None})
         history.append(
             {
                 "id": pointer.id,

@@ -28,7 +28,7 @@ ApplicationWindow {
     readonly property bool administrator: state.account.role === "administrator"
     property string currentPage: "account"
     readonly property bool stationPage: ["polling", "stock", "allocations", "stockSnapshots", "specialPapers", "counterReturns", "turnout", "fallback", "complaints",
-        "complaintPeriods", "queue", "boxes", "accounting", "countingScopes", "countingRounds", "constituency_results"].indexOf(currentPage) >= 0
+        "complaintPeriods", "queue", "boxes", "accounting", "countingScopes", "countingRounds", "recovery", "outages", "constituency_results"].indexOf(currentPage) >= 0
     onSignedInChanged: if (!signedIn) currentPage = "account"
     onAdministratorChanged: if (!administrator) currentPage = "account"
     onCurrentPageChanged: Qt.callLater(function() { if (scroll.contentItem) scroll.contentItem.contentY = 0 })
@@ -58,7 +58,13 @@ ApplicationWindow {
     Connections {
         target: scroll.contentItem
         function onContentHeightChanged() {
-            Qt.callLater(function() { window.revealField(window.activeFocusItem) })
+            Qt.callLater(function() {
+                var control = window.activeFocusItem
+                // Recovery card expansion can change the extent after a button gains focus.
+                if (control && ((control.cursorPosition !== undefined && control.readOnly !== true)
+                        || window.currentPage === "recovery"))
+                    window.revealField(control)
+            })
         }
     }
 
@@ -640,6 +646,58 @@ ApplicationWindow {
                     }
                 }
                 Button {
+                    id: recoveryNavigation
+                    objectName: "recoveryNavigation"
+                    text: window.t("recovery_title")
+                    Layout.fillWidth: true
+                    flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "recovery"
+                    Material.background: highlighted ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: recoveryNavigation.text
+                        textFormat: Text.PlainText
+                        font: recoveryNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "recovery"
+                        controller.workspace.open()
+                        controller.recovery.open()
+                    }
+                }
+                Button {
+                    id: outagesNavigation
+                    objectName: "outagesNavigation"
+                    text: window.t("outage_title")
+                    Layout.fillWidth: true
+                    flat: true
+                    visible: !window.administrator
+                    highlighted: window.currentPage === "outages"
+                    Material.background: highlighted ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: outagesNavigation.text
+                        textFormat: Text.PlainText
+                        font: outagesNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "outages"
+                        controller.workspace.open()
+                        controller.outages.open()
+                    }
+                }
+                Button {
                     id: constituencyResultsNavigation
                     objectName: "constituencyResultsNavigation"
                     text: window.t("constituency_results_title"); Layout.fillWidth: true; flat: true
@@ -659,7 +717,31 @@ ApplicationWindow {
                         controller.constituencyResults.open()
                     }
                 }
-                Button { text: window.t("records"); Layout.fillWidth: true; flat: true; enabled: false }
+                Button {
+                    id: electionCompletionNavigation
+                    objectName: "electionCompletionNavigation"
+                    text: window.t("election_completion_navigation")
+                    Layout.fillWidth: true
+                    flat: true
+                    visible: window.state.account.role === "supervisor"
+                    highlighted: window.currentPage === "election_completion"
+                    Material.background: window.currentPage === "election_completion" ? "#dceaff" : "transparent"
+                    Material.roundedScale: Material.FullScale
+                    implicitHeight: Math.max(48, contentItem.implicitHeight + 20)
+                    contentItem: Text {
+                        text: electionCompletionNavigation.text
+                        textFormat: Text.PlainText
+                        font: electionCompletionNavigation.font
+                        color: window.ink
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        window.currentPage = "election_completion"
+                        controller.electionCompletion.open()
+                    }
+                }
                 Item { Layout.fillHeight: true }
                 Caption { text: window.t("role") + " · " + window.t(window.state.account.role || ""); Layout.fillWidth: true }
                 Button { text: window.t("logout"); flat: true; Layout.fillWidth: true; onClicked: controller.signOut() }
@@ -913,6 +995,19 @@ ApplicationWindow {
                     words: window.words
                     onReveal: control => window.revealField(control)
                 }
+                ElectionCompletionPage {
+                    visible: window.state.phase === "workspace"
+                        && window.currentPage === "election_completion"
+                        && window.state.account.role === "supervisor"
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 28
+                    Layout.rightMargin: 28
+                    Layout.bottomMargin: 28
+                    completion: controller.electionCompletion
+                    locale: window.state.locale
+                    words: window.words
+                    onReveal: control => window.revealField(control)
+                }
                 ColumnLayout {
                     visible: window.state.phase === "workspace" && window.stationPage && !window.administrator
                     Layout.fillWidth: true
@@ -1014,6 +1109,22 @@ ApplicationWindow {
                         visible: window.currentPage === "accounting"
                         Layout.fillWidth: true
                         accounting: controller.accounting
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    RecoveryPage {
+                        visible: window.currentPage === "recovery"
+                        Layout.fillWidth: true
+                        recovery: controller.recovery
+                        words: window.words
+                        locale: window.state.locale
+                        onReveal: control => window.revealField(control)
+                    }
+                    OutagesPage {
+                        visible: window.currentPage === "outages"
+                        Layout.fillWidth: true
+                        outages: controller.outages
                         words: window.words
                         locale: window.state.locale
                         onReveal: control => window.revealField(control)

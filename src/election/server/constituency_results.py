@@ -13,13 +13,15 @@ from sqlalchemy.orm import Session
 
 from election.server.box_models import BallotBox
 from election.server.configuration_models import Candidate, Constituency, Election
+from election.server.constituency_recount_state import constituency_recount_history
 from election.server.constituency_result_models import ConstituencyTieResolution
 from election.server.counting_round_models import CountRoundRevision
 from election.server.counting_rounds import round_at, round_context, round_view
 from election.server.counting_scopes import scope_options
-from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account
 from election.server.polling import as_utc
+from election.server.recount_authority import lock_recount_supervisor
+from election.server.recount_state import scope_recount_state
 from election.server.station_models import PollingStation
 from election.server.stock import stock_scope
 
@@ -70,9 +72,7 @@ def _references(row: dict[str, Any] | None, keys: tuple[str, ...]) -> dict[str, 
 
 def constituency_result(db: Session, actor: Account, constituency_id: int) -> dict[str, Any]:
     """Read an authorized result and bind decisions to substantive source references."""
-    if actor.role != "supervisor":
-        raise HTTPException(403, detail={"code": "supervisor_required"})
-    db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
+    actor = lock_recount_supervisor(db, actor)
     constituency = db.get(Constituency, constituency_id)
     if constituency is None:
         raise HTTPException(404, detail={"code": "constituency_not_found"})
@@ -207,7 +207,18 @@ def constituency_result(db: Session, actor: Account, constituency_id: int) -> di
             round_options, selected = _selected_round(db, actor, station.id, scope_id)
             pointer = round_options.get("selection")
             state["selection"] = pointer
-            if pointer is None:
+            recount = scope_recount_state(db, scope_id, pointer)
+            if recount["pending"]:
+                instruction = recount["latest_instruction"]
+                pending.append(
+                    _pending(
+                        "recount_pending", station_id=station.id, scope_id=scope_id,
+                        box_ids=box_ids, instruction_id=instruction["id"],
+                        new_round_id=instruction["new_round_id"],
+                        source_round_id=instruction["source_round_id"],
+                    )
+                )
+            elif pointer is None:
                 pending.append(
                     _pending(
                         "selected_count_missing",
@@ -439,6 +450,7 @@ def constituency_result(db: Session, actor: Account, constituency_id: int) -> di
     )
     return {
         "context": context,
+        "constituency_recounts": constituency_recount_history(db, constituency_id),
         "candidate_totals": total_rows,
         "contributions": contributions,
         "pending": pending,
