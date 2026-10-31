@@ -748,3 +748,226 @@ def test_saved_completion_preview_matches_old_event_csv_after_current_complaint_
         )
         assert BOX_READY_PASSWORD not in response.text
         assert original["request_id"] not in response.text
+
+
+
+def test_saved_tie_statement_retains_authorized_decision_after_reopened_recount(
+    admin: TestClient, database_url: str, tmp_path: Path,
+) -> None:
+    from datetime import datetime, timezone
+
+    def preserve(name: str, body: bytes) -> None:
+        descriptor = os.open(tmp_path / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(body)
+            output.flush()
+            os.fsync(output.fileno())
+
+    def business_rows(rows: list[list[str]]) -> list[list[str]]:
+        return [row for row in rows if not row or row[0] != "Generated at"]
+
+    def csv_blocks(rows: list[list[str]]) -> list[list[list[str]]]:
+        blocks: list[list[list[str]]] = [[]]
+        for row in rows:
+            if not row:
+                blocks.append([])
+            else:
+                blocks[-1].append(row)
+        return blocks
+
+    with reviewed_election_setup(admin, database_url, n1_quantities=(5, 5)) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        constituency_id = setup["constituency_id"]
+        base = f"/api/workspace/elections/{election_id}"
+        result_path = f"/api/workspace/constituencies/{constituency_id}/results"
+        before_response = supervisor.get(setup["completion_path"])
+        preserve("completion-before-tie-authorization.json", before_response.content)
+        assert before_response.status_code == 200, before_response.text
+        before = before_response.json()
+        north = next(
+            row for row in before["sources"]["constituencies"]
+            if row["context"]["constituency"]["id"] == constituency_id
+        )
+        assert north["complete"] is True
+        assert [row["quantity"] for row in north["candidate_totals"]] == [5, 5]
+        tied_ids = north["tie_candidate_ids"]
+        assert len(tied_ids) == 2 and north["resolved_candidate_id"] is None
+        assert before["can_finalize"] is False
+        assert {
+            "code": "result_tie_resolution_required", "constituency_id": constituency_id,
+            "candidate_ids": tied_ids,
+        } in before["blockers"]
+        reason = "Signed tie disposition authorizes this candidate; retain the reviewed decision."
+        resolved_response = supervisor.post(result_path + "/tie-resolutions", json={
+            "request_id": str(uuid4()), "expected_resolution_revision": 0,
+            "basis_digest": north["basis_digest"], "candidate_id": tied_ids[0],
+            "reason": reason, "password": BOX_READY_PASSWORD,
+        })
+        preserve("canonical-authorized-tie-result.json", resolved_response.content)
+        assert resolved_response.status_code == 200, resolved_response.text
+        resolved = resolved_response.json()
+        decision = resolved["tie_resolution"]
+        assert decision["id"] > 0 and decision["revision"] == 1
+        assert decision["candidate_id"] == tied_ids[0]
+        assert decision["actor_id"] == setup["accounts"]["supervisor"]["id"]
+        assert decision["reason"] == reason and decision["basis_digest"] == north["basis_digest"]
+        assert decision["valid"] is True and decision["is_current"] is True
+        assert resolved["resolved_candidate_id"] == decision["candidate_id"]
+        assert resolved["tie_candidate_ids"] == tied_ids
+
+        assessment_response = supervisor.get(setup["completion_path"])
+        preserve("completion-after-tie-authorization.json", assessment_response.content)
+        assert assessment_response.status_code == 200, assessment_response.text
+        reviewed = assessment_response.json()
+        assert reviewed["can_finalize"] is True and reviewed["blockers"] == []
+        finalized = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        preserve("canonical-tied-election-finalization.json", finalized.content)
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        event = original["event"]
+        assert event["kind"] == "finalization"
+        saved_result = next(
+            row for row in event["outcome"]["results"]
+            if row["constituency"]["id"] == constituency_id
+        )
+        assert saved_result["tie_resolution"] == decision
+        assert saved_result["winner_candidate_id"] == decision["candidate_id"]
+        assert saved_result["candidate_totals"] == north["candidate_totals"]
+        assert saved_result["status"] == "finalized" and saved_result["provisional"] is False
+        saved_source = next(
+            row for row in event["outcome"]["sources"]["constituencies"]
+            if row["context"]["constituency"]["id"] == constituency_id
+        )
+        assert saved_source["tie_candidate_ids"] == tied_ids
+        assert saved_source["tie_resolution"] == decision
+
+        report_path = base + f"/completion/history/{event['id']}/statement"
+        preview_before_response = supervisor.get(report_path, params={"locale": "en"})
+        preserve("original-tie-preview-before-recount.json", preview_before_response.content)
+        csv_before_response = supervisor.get(report_path + ".csv", params={"locale": "en"})
+        preserve("original-tie-statement-before-recount.csv", csv_before_response.content)
+        assert preview_before_response.status_code == 200, preview_before_response.text
+        preview_before = preview_before_response.json()
+        rows_before = _csv_rows(csv_before_response)
+        assert preview_before["locale"] == "en" and preview_before["event"] == event
+        assert preview_before["rows"] == rows_before
+
+        reopened_response = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": event["id"],
+            "reason": "Reopen for a later retally without replacing the signed tie disposition.",
+            "password": BOX_READY_PASSWORD,
+        })
+        preserve("canonical-reopening-before-later-recount.json", reopened_response.content)
+        assert reopened_response.status_code == 201, reopened_response.text
+        reopened = reopened_response.json()
+        assert reopened["election"]["status"] == "active"
+        assert reopened["active_election_id"] == election_id
+        prior = setup["n1_round"]["selected"]
+        scope_id = setup["scope"]["id"]
+        station_id = setup["stations"]["N1"]["id"]
+        recount_path = (
+            f"/api/workspace/stations/{station_id}/counting-scopes/{scope_id}/recounts"
+        )
+        setup["clock"].value += timedelta(minutes=10)
+        instructed_response = supervisor.post(recount_path, json={
+            "request_id": str(uuid4()), "scope_revision": setup["scope"]["revision"],
+            "expected_selection_revision": prior["selection"]["revision"],
+            "source_round_id": prior["id"], "source_round_revision": prior["revision"],
+            "event_at": (setup["clock"].value - timedelta(minutes=1)).isoformat(),
+            "reason": "Later pending recount must not rewrite the finalized tie report.",
+            "password": BOX_READY_PASSWORD,
+        })
+        preserve("canonical-later-pending-recount.json", instructed_response.content)
+        assert instructed_response.status_code == 201, instructed_response.text
+        instructed = instructed_response.json()
+        assert instructed["instruction"]["new_round_id"] != prior["id"]
+        assert instructed["round"]["status"] == "draft"
+        assert instructed["round"]["actual_counted_quantity"] is None
+        assert instructed["instruction"]["status"] == "pending"
+
+        current_response = supervisor.get(setup["completion_path"])
+        preserve("current-completion-with-pending-recount.json", current_response.content)
+        assert current_response.status_code == 200, current_response.text
+        current = current_response.json()
+        assert current["can_finalize"] is False
+        assert current["election"] == reopened["election"]
+        assert any(
+            row["code"] == "recount_pending" and row["scope_id"] == scope_id
+            for row in current["blockers"]
+        )
+        current_result_response = supervisor.get(result_path)
+        preserve("current-result-after-pending-recount.json", current_result_response.content)
+        assert current_result_response.status_code == 200, current_result_response.text
+        current_result = current_result_response.json()
+        assert current_result["complete"] is False
+        assert current_result["tie_resolution"]["id"] == decision["id"]
+        assert current_result["tie_resolution"]["valid"] is False
+        assert current_result["resolved_candidate_id"] is None
+
+        preview_after_response = supervisor.get(report_path, params={"locale": "en"})
+        preserve("original-tie-preview-after-pending-recount.json", preview_after_response.content)
+        csv_after_response = supervisor.get(report_path + ".csv", params={"locale": "en"})
+        preserve("original-tie-statement-after-pending-recount.csv", csv_after_response.content)
+        history_response = supervisor.get(base + "/completion/history")
+        preserve("history-after-pending-recount.json", history_response.content)
+        assert preview_after_response.status_code == 200, preview_after_response.text
+        preview_after = preview_after_response.json()
+        rows_after = _csv_rows(csv_after_response)
+        assert preview_after["locale"] == "en" and preview_after["event"] == event
+        assert preview_after["rows"] == rows_after
+        assert business_rows(rows_after) == business_rows(rows_before)
+        assert preview_after["tables"] == preview_before["tables"]
+        assert [row for row in rows_after if row and row[0] == "Generated at"] != [
+            row for row in rows_before if row and row[0] == "Generated at"
+        ]
+        assert history_response.status_code == 200, history_response.text
+        assert next(
+            row for row in history_response.json()["events"] if row["id"] == event["id"]
+        ) == event
+        assert history_response.json()["election"] == reopened["election"]
+        assert history_response.json()["active_election_id"] == election_id
+
+        local = datetime.fromisoformat(decision["accepted_at"]).astimezone(
+            timezone(timedelta(hours=8))
+        )
+        precision = "microseconds" if local.microsecond else "seconds"
+        accepted_hkt = local.isoformat(sep=" ", timespec=precision).removesuffix("+08:00")
+        expected_pairs = (
+            ("Constituency ID", constituency_id), ("Decision ID", decision["id"]),
+            ("Revision", decision["revision"]),
+            ("Winner candidate ID", saved_result["winner_candidate_id"]),
+            ("Authorized by account ID", decision["actor_id"]),
+            ("Accepted at (HKT)", accepted_hkt + " HKT"), ("Reason", reason),
+            ("Resolution basis digest", decision["basis_digest"]),
+            ("Valid at finalization", "Yes"), ("Current at finalization", "Yes"),
+        )
+        # Expected genuine RED: raw saved decision exists, but no rendered tie source table.
+        for preview, rows in ((preview_before, rows_before), (preview_after, rows_after)):
+            matches = [
+                table for table in preview["tables"]
+                if table["title"] == "Recorded tie resolution"
+                and all(_has_pair(table["rows"], label, value) for label, value in expected_pairs)
+            ]
+            assert len(matches) == 1, (expected_pairs, preview["tables"])
+            assert any(
+                ["Recorded tie resolution"] in block
+                and all(_has_pair(block, label, value) for label, value in expected_pairs)
+                for block in csv_blocks(rows)
+            ), (expected_pairs, rows)
+            for candidate in saved_result["candidate_totals"]:
+                assert [
+                    str(candidate["candidate_id"]), candidate["name"], str(candidate["quantity"]),
+                ] in rows
+        for response in (
+            preview_before_response, csv_before_response,
+            preview_after_response, csv_after_response,
+        ):
+            assert BOX_READY_PASSWORD not in response.content.decode("utf-8-sig")
+            assert original["request_id"] not in response.content.decode("utf-8-sig")
