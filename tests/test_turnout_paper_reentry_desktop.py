@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from PySide6.QtCore import QTimer
 
 from tests.desktop_support import HttpsServer, wait_for, wait_for_editor_idle
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
@@ -272,37 +273,50 @@ def test_assigned_counting_officer_cannot_write_turnout_paper_reentry(
         ),
     ):
         outage = _outage(polling, station_id, reference="N1 role paper " + uuid4().hex[:8])
-        paper = _paper(
-            polling,
-            station_id,
-            outage["id"],
-            reference="N1-COUNTING-OFFICER-" + uuid4().hex[:8],
-            action="save",
-            period_index=1,
-            event_at="2026-11-15T09:30:00+08:00",
-        )
         with turnout_editor(https_server, qt_app, counting_account, station_id) as (
             client,
             editor,
         ):
             assert client.property("state")["account"]["role"] == "counting_officer"
-            editor.refreshPaperRecords()
-            wait_for_editor_idle(qt_app, editor)
-            rows = editor.property("state")["paper_records"]
-            assert any(row["id"] == paper["id"] for row in rows)
-            editor.selectPaperRecord(paper["id"])
-            editor.setField("supplied_hourly", "0")
-            editor.save()
-            wait_for_editor_idle(qt_app, editor)
-            state = editor.property("state")
-            assert state["role"] == "counting_officer"
-            assert state["dirty"] is False
-            assert state["error"] == "polling_officer_required"
-            assert https_server.request_count("PUT", scope["path"] + "/1") == 0
-            record = polling.get(
-                f"/api/workspace/stations/{station_id}/outages/{outage['id']}"
-            ).json()["record"]["paper_records"]
-            assert next(row for row in record if row["id"] == paper["id"])["status"] == "pending"
+            wait_for(qt_app, lambda: not editor.state["paper_refreshing"])
+            # Publish the new paper after the initial real read, then hold only
+            # its refreshed HTTPS response to expose the asynchronous boundary.
+            paper = _paper(
+                polling,
+                station_id,
+                outage["id"],
+                reference="N1-COUNTING-OFFICER-" + uuid4().hex[:8],
+                action="save",
+                period_index=1,
+                event_at="2026-11-15T09:30:00+08:00",
+            )
+            https_server.hold_staff_response_path = (
+                f"/api/workspace/stations/{station_id}/outages"
+            )
+            try:
+                assert editor.refreshPaperRecords() is True
+                wait_for(qt_app, https_server.staff_response_entered.is_set)
+                assert editor.state["paper_refreshing"] is True
+                assert all(row["id"] != paper["id"] for row in editor.state["paper_records"])
+                QTimer.singleShot(100, https_server.release_staff_response.set)
+                wait_for_editor_idle(qt_app, editor)
+                rows = editor.property("state")["paper_records"]
+                assert any(row["id"] == paper["id"] for row in rows)
+                editor.selectPaperRecord(paper["id"])
+                editor.setField("supplied_hourly", "0")
+                editor.save()
+                wait_for_editor_idle(qt_app, editor)
+                state = editor.property("state")
+                assert state["role"] == "counting_officer"
+                assert state["dirty"] is False
+                assert state["error"] == "polling_officer_required"
+                assert https_server.request_count("PUT", scope["path"] + "/1") == 0
+                record = polling.get(
+                    f"/api/workspace/stations/{station_id}/outages/{outage['id']}"
+                ).json()["record"]["paper_records"]
+                assert next(row for row in record if row["id"] == paper["id"])["status"] == "pending"
+            finally:
+                https_server.release_staff_response.set()
 
 
 def test_submit_paper_keeps_saved_observation_time_when_paper_time_differs(
