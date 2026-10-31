@@ -342,3 +342,265 @@ def test_completion_csv_rechecks_authentication_role_and_whole_election_coverage
             "request_id": original["request_id"], "workflow": "election_completion",
             "status": "committed", "record": original,
         }
+
+
+def test_completion_csv_keeps_frozen_source_ids_and_accepted_difference_after_count_amendment(
+    admin: TestClient, database_url: str, tmp_path: Path,
+) -> None:
+    from tests.outcomes_support import complete_f2_command
+    from tests.tally_support import complete_f1_command
+
+    def preserve(name: str, body: bytes) -> None:
+        descriptor = os.open(tmp_path / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(body)
+            output.flush()
+            os.fsync(output.fileno())
+
+    def require_source(
+        rows: list[list[str]], identity: tuple[tuple[str, object], ...],
+        facts: tuple[tuple[str, object], ...],
+    ) -> None:
+        # Existing CSV convention separates logical tables by blank rows.
+        # Match semantic pairs in ONE source table, without fixed title/order/geometry.
+        blocks: list[list[list[str]]] = [[]]
+        for row in rows:
+            if not row:
+                blocks.append([])
+            else:
+                blocks[-1].append(row)
+        assert any(
+            all(_has_pair(block, label, value) for label, value in (*identity, *facts))
+            for block in blocks
+        ), (identity, facts, rows)
+
+    with reviewed_election_setup(
+        admin, database_url, n1_quantities=(5, 3), n1_selected=False,
+    ) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        counter = setup["clients"]["receiveronly"]
+        station_id = setup["stations"]["N1"]["id"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        n1 = setup["n1_round"]
+        target, submitted = n1["round_path"], n1["submitted"]
+        scope_id = setup["scope"]["id"]
+        scope_revision = n1["options"]["scope"]["revision"]
+        stock = next(row for row in submitted["physical_comparisons"] if row["source"] == "stock")
+        assert (
+            stock["expected_quantity"], stock["actual_quantity"], stock["difference_quantity"]
+        ) == (10, 8, -2)
+        reason = "Signed paper review confirms eight papers; retain the accepted stock difference."
+        accepted = supervisor.post(target + "/physical-differences/stock/accept", json={
+            "request_id": str(uuid4()), "expected_revision": submitted["revision"],
+            "scope_revision": scope_revision, "expected_decision_revision": 0,
+            "reason": reason, "password": BOX_READY_PASSWORD,
+        })
+        assert accepted.status_code == 200, accepted.text
+        decision = next(
+            row for row in accepted.json()["physical_decisions"] if row["source"] == "stock"
+        )
+        assert decision["id"] > 0 and decision["reason"] == reason
+        assert decision["reviewed_revision_id"] == submitted["revision_id"]
+        assert decision["difference_quantity"] == -2 and decision["valid"] is True
+        approved = supervisor.post(target + "/approve", json={
+            "request_id": str(uuid4()), "expected_revision": submitted["revision"],
+            "scope_revision": scope_revision, "password": BOX_READY_PASSWORD,
+        })
+        assert approved.status_code == 200, approved.text
+        selected_response = supervisor.post(target + "/select", json={
+            "request_id": str(uuid4()), "expected_revision": approved.json()["revision"],
+            "scope_revision": scope_revision, "expected_selection_revision": 0,
+            "password": BOX_READY_PASSWORD,
+        })
+        assert selected_response.status_code == 200, selected_response.text
+        selected = selected_response.json()
+        assert selected["selected"] is True and selected["approval_valid"] is True
+        assert selected["approved_physical_decisions"] == [decision]
+        assert selected["reviewed_revision_id"] == submitted["revision_id"]
+        assert selected["scope_basis"] == setup["scope"]
+        turnout = next(
+            row for row in selected["physical_comparisons"] if row["source"] == "turnout"
+        )
+        assert turnout["available"] is False and turnout["status"] == "unavailable"
+        assert turnout["expected_quantity"] is None and turnout["difference_quantity"] is None
+        assert turnout["actual_quantity"] == 8
+
+        assessment_response = supervisor.get(setup["completion_path"])
+        assert assessment_response.status_code == 200, assessment_response.text
+        reviewed = assessment_response.json()
+        assert reviewed["can_finalize"] is True
+        finalized = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        event = original["event"]
+        preserve("canonical-original-finalization.json", finalized.content)
+        sources = event["outcome"]["sources"]
+        assert sources == reviewed["sources"]
+        frozen_count = next(
+            row["record"] for row in sources["selected_counts"] if row["scope_id"] == scope_id
+        )
+        assert frozen_count == selected
+        assert frozen_count["approved_physical_decisions"] == [decision]
+        for source in sources["polling_completion"]:
+            record = source["record"]
+            assert record["id"] > 0 and record["status"] == "approved"
+            assert record["approved_by"] == setup["accounts"]["supervisor"]["id"]
+        for source in sources["accounting"]:
+            record = source["record"]
+            assert record["id"] > 0 and record["status"] == "approved"
+            assert record["source_current"] is True and record["approval_valid"] is True
+        assert next(
+            row["record"] for row in sources["accounting"] if row["station_id"] == station_id
+        ) == setup["accounting"]["N1"]["record"]
+        report_path = base + f"/completion/history/{event['id']}/statement.csv"
+        before_response = supervisor.get(report_path, params={"locale": "en"})
+        preserve("original-before-current-count-amendment.csv", before_response.content)
+
+        reopened = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": event["id"],
+            "reason": "Correct the later current tally while retaining the signed first outcome.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened.status_code == 201, reopened.text
+        options_response = counter.get(setup["rounds_path"])
+        assert options_response.status_code == 200, options_response.text
+        options = options_response.json()
+        amended_command = complete_f1_command(
+            options, expected_revision=selected["revision"], actual_counted_quantity=10,
+            discard_f2=True,
+            amendment_reason="Later current-only correction from the reviewed paper tally.",
+        )
+        for row, quantity in zip(amended_command["candidate_votes"], [7, 3], strict=True):
+            row["quantity"] = quantity
+        amended = counter.post(target + "/amend-f1", json=amended_command)
+        assert amended.status_code == 200, amended.text
+        f2 = counter.put(target + "/f2", json=complete_f2_command(
+            options, expected_revision=amended.json()["revision"],
+        ))
+        assert f2.status_code == 200, f2.text
+        submitted_again = counter.post(target + "/submit", json={
+            "request_id": str(uuid4()), "expected_revision": f2.json()["revision"],
+            "scope_revision": scope_revision,
+        })
+        assert submitted_again.status_code == 200, submitted_again.text
+        approved_again = supervisor.post(target + "/approve", json={
+            "request_id": str(uuid4()), "expected_revision": submitted_again.json()["revision"],
+            "scope_revision": scope_revision, "password": BOX_READY_PASSWORD,
+        })
+        assert approved_again.status_code == 200, approved_again.text
+        selected_again = supervisor.post(target + "/select", json={
+            "request_id": str(uuid4()), "expected_revision": approved_again.json()["revision"],
+            "scope_revision": scope_revision,
+            "expected_selection_revision": selected["selection"]["revision"],
+            "password": BOX_READY_PASSWORD,
+        })
+        assert selected_again.status_code == 200, selected_again.text
+        current = selected_again.json()
+        preserve("canonical-new-current-count.json", selected_again.content)
+        assert current["id"] == frozen_count["id"]
+        assert current["revision_id"] != frozen_count["revision_id"]
+        assert current["reviewed_revision_id"] != frozen_count["reviewed_revision_id"]
+        assert current["selection"]["id"] != frozen_count["selection"]["id"]
+        assert current["actual_counted_quantity"] == 10
+        assert [row["quantity"] for row in current["final_candidate_votes"]] == [7, 3]
+        assert current["approved_physical_decisions"] == []
+        assert current["selected"] is True and current["approval_valid"] is True
+        after_response = supervisor.get(report_path, params={"locale": "en"})
+        preserve("original-after-current-count-amendment.csv", after_response.content)
+        history_response = supervisor.get(base + "/completion/history")
+        preserve("history-after-current-count-amendment.json", history_response.content)
+        assert history_response.status_code == 200, history_response.text
+        assert next(
+            row for row in history_response.json()["events"] if row["id"] == event["id"]
+        ) == event
+
+        before = _csv_rows(before_response)
+        after = _csv_rows(after_response)
+        assert [row for row in after if not row or row[0] != "Generated at"] == [
+            row for row in before if not row or row[0] != "Generated at"
+        ]
+        # First expected RED: the report has results/complaints but no real source provenance.
+        for rows in (before, after):
+            for source in sources["polling_completion"]:
+                record = source["record"]
+                require_source(rows, (
+                    ("Source", "Polling completion"), ("Station ID", source["station_id"]),
+                ), (
+                    ("Record ID", record["id"]), ("Revision", record["revision"]),
+                    ("Status", "Approved"), ("Approved by supervisor ID", record["approved_by"]),
+                ))
+            for source in sources["accounting"]:
+                record = source["record"]
+                require_source(rows, (
+                    ("Source", "P(18) accounting"), ("Station ID", source["station_id"]),
+                ), (
+                    ("P(18) record ID", record["id"]), ("P(18) revision", record["revision"]),
+                    ("P(18) status", "Approved"),
+                    ("Source current at finalization", "Yes"),
+                    ("Approval valid at finalization", "Yes"),
+                    ("Approved by supervisor ID", record["approved_by"]),
+                ))
+            count_identity = (
+                ("Source", "Selected approved count"), ("Station ID", station_id),
+                ("Counting scope ID", scope_id), ("Round ID", frozen_count["id"]),
+            )
+            require_source(rows, count_identity, (
+                ("Scope revision", frozen_count["scope_revision"]),
+                ("Revision", frozen_count["revision"]),
+                ("Revision record ID", frozen_count["revision_id"]),
+                ("Count revision reviewed", frozen_count["reviewed_revision"]),
+                ("Count revision record reviewed", frozen_count["reviewed_revision_id"]),
+                ("Approval valid at finalization", "Yes"),
+                ("Approved by supervisor ID", frozen_count["approved_by"]),
+                ("Selection ID", frozen_count["selection"]["id"]),
+                ("Selection record revision", frozen_count["selection"]["revision"]),
+                ("Selected at finalization", "Yes"), ("Actual observed quantity", 8),
+            ))
+            for box in frozen_count["scope_basis"]["box_basis"]:
+                require_source(rows, (
+                    ("Source", "Frozen box basis"), ("Counting scope ID", scope_id),
+                    ("Box record ID", box["id"]),
+                ), (
+                    ("Revision", box["revision"]),
+                    ("Origin station ID", box["origin_station_id"]),
+                    ("Destination station ID", box["destination_station_id"]),
+                ))
+            require_source(rows, (
+                ("Source", "Physical decision approved at review"),
+                ("Counting scope ID", scope_id), ("Round ID", frozen_count["id"]),
+                ("Decision ID", decision["id"]),
+            ), (
+                ("Comparison source", "Stock-derived estimate"),
+                ("Decision revision", decision["revision"]),
+                ("Count revision record reviewed", decision["reviewed_revision_id"]),
+                ("Reviewing supervisor ID", decision["actor_id"]),
+                ("Reason for accepting the difference", reason),
+                ("Frozen expected quantity", 10), ("Actual observed quantity", 8),
+                ("Actual minus expected difference", -2),
+            ))
+            require_source(rows, (
+                ("Source", "Physical comparison"), ("Counting scope ID", scope_id),
+                ("Round ID", frozen_count["id"]),
+                ("Comparison source", "Approved-turnout-derived estimate"),
+            ), (
+                ("Comparison data available", "No"),
+                ("Comparison status", "Unavailable; source quantity was not recorded"),
+                ("Frozen expected quantity", "Not recorded"),
+                ("Actual observed quantity", 8),
+                ("Actual minus expected difference", "Not recorded"),
+            ))
+            for result in event["outcome"]["results"]:
+                for candidate in result["candidate_totals"]:
+                    assert any(
+                        row[:3] == [str(candidate["candidate_id"]), candidate["name"],
+                                    str(candidate["quantity"])] for row in rows
+                    ), (candidate, rows)
+        assert BOX_READY_PASSWORD not in after_response.content.decode("utf-8-sig")
+        assert original["request_id"] not in after_response.content.decode("utf-8-sig")
