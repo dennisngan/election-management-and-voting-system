@@ -937,6 +937,75 @@ def test_material_peer_finalization_invalidates_review_from_workspace_context_re
                 assert observed['pending_request_id'] == '' and observed['uncertain_save'] is False
                 assert observed['receipt'] == {}
                 assert list(Path(setup['journal_directory']).rglob('*')) == []
+                terminal_before = completion.property('state')
+                terminal_button_before = control('electionCompletionFinalize').property('enabled')
+                click('electionCompletionPasswordCancel')
+                wait(lambda: not dialog.property('visible'))
+                terminal_cancelled = completion.property('state')
+                terminal_button_cancelled = control(
+                    'electionCompletionFinalize').property('enabled')
+                terminal_root_cancelled = controller.property('state').get('election') or {}
+                terminal_prepare_result = completion.prepareFinalization()
+                terminal_after = completion.property('state')
+                terminal_button_after = control('electionCompletionFinalize').property('enabled')
+                terminal_observation = {
+                    'election_id': setup['election_id'],
+                    'before_cancel': {
+                        'finalize_enabled': terminal_button_before,
+                        'review_present': bool(terminal_before.get('review')),
+                        'reviewing': terminal_before.get('reviewing'),
+                        'context_status': terminal_before.get('election', {}).get('status'),
+                        'assessment_status': terminal_before.get('assessment', {}).get(
+                            'election', {}).get('status'),
+                    },
+                    'after_cancel': {
+                        'finalize_enabled': terminal_button_cancelled,
+                        'review_present': bool(terminal_cancelled.get('review')),
+                        'reviewing': terminal_cancelled.get('reviewing'),
+                        'root_status': terminal_root_cancelled.get('status'),
+                        'context_status': terminal_cancelled.get('election', {}).get('status'),
+                        'assessment_status': terminal_cancelled.get('assessment', {}).get(
+                            'election', {}).get('status'),
+                        'assessment_can_finalize': terminal_cancelled.get('assessment', {}).get(
+                            'can_finalize'),
+                    },
+                    'after_public_prepare': {
+                        'returned': terminal_prepare_result,
+                        'finalize_enabled': terminal_button_after,
+                        'review_present': bool(terminal_after.get('review')),
+                        'reviewing': terminal_after.get('reviewing'),
+                        'context_status': terminal_after.get('election', {}).get('status'),
+                        'pending_request_present': bool(terminal_after.get('pending_request_id')),
+                        'uncertain_save': terminal_after.get('uncertain_save'),
+                        'password_visible': bool(password.property('text')),
+                        'dialog_visible': dialog.property('visible'),
+                        'journal_files': [
+                            path.name for path in Path(setup['journal_directory']).rglob('*')
+                        ],
+                    },
+                    'no_explicit_completion_refresh': True,
+                }
+                terminal_observation_path = Path(setup['observation_path']).with_name(
+                    'material-terminal-context-cancel-observation.json')
+                descriptor = os.open(terminal_observation_path,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                    json.dump(terminal_observation, output, ensure_ascii=False, indent=2)
+                    output.flush()
+                    os.fsync(output.fileno())
+                assert terminal_cancelled['review'] == {}
+                assert terminal_cancelled['reviewing'] is False
+                assert password.property('text') == '' and not dialog.property('visible')
+                assert terminal_root_cancelled['status'] == 'finalized'
+                assert terminal_cancelled['election']['status'] == 'finalized'
+                assert terminal_button_cancelled is False, terminal_observation
+                assert terminal_prepare_result is False, terminal_observation
+                assert terminal_after['review'] == {} and terminal_after['reviewing'] is False
+                assert terminal_after['election']['status'] == 'finalized'
+                assert terminal_after['pending_request_id'] == ''
+                assert terminal_after['uncertain_save'] is False
+                assert terminal_after['receipt'] == {}
+                assert list(Path(setup['journal_directory']).rglob('*')) == []
                 """,
             )
         finally:
