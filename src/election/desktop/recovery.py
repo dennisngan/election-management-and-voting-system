@@ -71,6 +71,13 @@ class RecoveryController(QObject):
         ]}
         return qt_state(view)
 
+    def election_receipt_disclosed(self, request_id: str) -> bool:
+        """A known receipt remains private after an inspected lookup loses disclosure."""
+        return (
+            request_id not in self._inspected_election_requests
+            or request_id in self._verified_election_receipts
+        )
+
     def _receipt_visible(self, command: dict[str, Any]) -> bool:
         if command.get("workflow") != "election_completion":
             return True

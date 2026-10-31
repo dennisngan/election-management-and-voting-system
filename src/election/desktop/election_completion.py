@@ -33,13 +33,21 @@ class ElectionCompletionController(QObject):
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return qt_state(quantity_display(self._state))
+        view = quantity_display(self._state)
+        receipt = self._state["receipt"]
+        if (
+            self._recovery is not None and receipt
+            and not self._recovery.election_receipt_disclosed(receipt["request_id"])
+        ):
+            view["receipt"] = {}
+        return qt_state(view)
 
     def reset(self) -> None:
         self._generation += 1
         self._opened = False
         self._scope = None
         self._command: dict[str, Any] | None = None
+        self._receipt_disclosed = True
         self._state = {
             "election_id": None, "actor_id": None, "role": "", "election": {},
             "assessment": {}, "busy": False, "refreshing": False, "error": "",
@@ -153,7 +161,14 @@ class ElectionCompletionController(QObject):
         self.finalized.emit(body)
 
     def _sync_recovery(self) -> None:
-        if self._recovery is None or self._state["role"] != "supervisor" or not self._scope:
+        if self._recovery is None:
+            return
+        receipt = self._state["receipt"]
+        disclosed = not receipt or self._recovery.election_receipt_disclosed(receipt["request_id"])
+        if disclosed != self._receipt_disclosed:
+            self._receipt_disclosed = disclosed
+            self.stateChanged.emit()
+        if self._state["role"] != "supervisor" or not self._scope:
             return
         pending_id = self._state["pending_request_id"]
         command = next((row for row in self._recovery.command_records() if (
