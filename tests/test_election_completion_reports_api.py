@@ -615,3 +615,136 @@ def test_completion_csv_keeps_frozen_source_ids_and_accepted_difference_after_co
                     ), (candidate, rows)
         assert BOX_READY_PASSWORD not in after_response.content.decode("utf-8-sig")
         assert original["request_id"] not in after_response.content.decode("utf-8-sig")
+
+
+@pytest.mark.parametrize(("locale", "words"), [
+    ("en", {
+        "title": "Preserved election completion statement", "status": "Status",
+        "finalized": "Finalized", "revision": "Revision", "basis": "Basis digest",
+        "generated_at": "Generated at", "in_progress": "In progress",
+        "completed": "Completed", "not_recorded": "Not recorded",
+    }),
+    ("tc", {
+        "title": "已保留選舉完成確認報表", "status": "狀態", "finalized": "已定案",
+        "revision": "修訂", "basis": "基礎摘要", "generated_at": "報表產生時間",
+        "in_progress": "處理中", "completed": "已完成", "not_recorded": "未有資料",
+    }),
+    ("sc", {
+        "title": "已保留选举完成确认报表", "status": "状态", "finalized": "已定案",
+        "revision": "修订", "basis": "基础摘要", "generated_at": "报表生成时间",
+        "in_progress": "处理中", "completed": "已完成", "not_recorded": "未有资料",
+    }),
+])
+def test_saved_completion_preview_matches_old_event_csv_after_current_complaint_changes(
+    admin: TestClient, database_url: str, tmp_path: Path, locale: str, words: dict[str, str],
+) -> None:
+    def preserve(name: str, body: bytes) -> None:
+        descriptor = os.open(tmp_path / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(body)
+            output.flush()
+            os.fsync(output.fileno())
+
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        officer = setup["clients"]["polling"]
+        election_id = setup["election"]["id"]
+        station_id = setup["stations"]["N1"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        complaints_path = f"/api/workspace/stations/{station_id}/complaints"
+        category = station_categories(officer, station_id)[0]
+        case_reference = "completion-preview-" + uuid4().hex[:12]
+        created = officer.post(complaints_path, json=complaint_payload(
+            category, case_reference=case_reference,
+        ))
+        assert created.status_code == 201, created.text
+        complaint = created.json()
+        assert complaint["work_status"] == "in_progress" and complaint["completed_at"] is None
+        assessment_response = supervisor.get(setup["completion_path"])
+        assert assessment_response.status_code == 200, assessment_response.text
+        reviewed = assessment_response.json()
+        assert reviewed["can_finalize"] is True
+        finalized = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        event = original["event"]
+        preserve("original-finalization.json", finalized.content)
+        assert event["kind"] == "finalization"
+        assert {"station_id": station_id, "records": [complaint]} in (
+            event["outcome"]["sources"]["complaints"]
+        )
+        reopened = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": event["id"],
+            "reason": "Review later complaint progress while preserving the first statement.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened.status_code == 201, reopened.text
+        assert reopened.json()["election"]["status"] == "active"
+        assert reopened.json()["election"]["revision"] > event["election_revision"]
+        updated = officer.put(f"{complaints_path}/{complaint['id']}", json=complaint_payload(
+            category, case_reference=case_reference, expected_revision=complaint["revision"],
+            work_status="completed", completed_at="2026-11-15T09:00:00+08:00",
+            description="Current complaint progress recorded after the saved finalization.",
+        ))
+        assert updated.status_code == 200, updated.text
+        current = officer.get(f"{complaints_path}/{complaint['id']}")
+        assert current.status_code == 200 and current.json() == updated.json()
+        assert current.json()["revision"] == complaint["revision"] + 1
+        assert current.json()["work_status"] == "completed"
+        # Same controlled fixture clock for both real report requests; no advancement/sleep.
+        generation_clock = setup["clock"].value
+        path = base + f"/completion/history/{event['id']}/statement"
+        response = supervisor.get(path, params={"locale": locale})
+        preserve(f"old-event-preview-{locale}.json", response.content)
+        csv_response = supervisor.get(path + ".csv", params={"locale": locale})
+        preserve(f"old-event-statement-{locale}.csv", csv_response.content)
+        assert setup["clock"].value == generation_clock
+        # Expected first genuine RED: the new JSON preview route currently returns404.
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"].partition(";")[0] == "application/json"
+        preview = response.json()
+        assert preview["locale"] == locale
+        assert preview["event"] == event
+        assert preview["title"] == words["title"]
+        assert preview["rows"] == _csv_rows(csv_response)
+        assert preview["rows"][:1 + len(preview["metadata"])] == [
+            [words["title"]], *preview["metadata"],
+        ]
+        for label, value in (
+            (words["status"], words["finalized"]),
+            (words["revision"], event["election_revision"]),
+            (words["basis"], event["basis_digest"]),
+        ):
+            assert _has_pair(preview["metadata"], label, value), (label, value, preview)
+        generated = [row for row in preview["metadata"] if row[0] == words["generated_at"]]
+        assert len(generated) == 1 and len(generated[0]) == 2
+        assert generated[0][1].endswith(" HKT")
+        reconstructed = [[preview["title"]], *preview["metadata"]]
+        assert preview["tables"]
+        for table in preview["tables"]:
+            assert isinstance(table["title"], str) and isinstance(table["rows"], list)
+            assert all(
+                isinstance(row, list) and all(isinstance(cell, str) for cell in row)
+                for row in table["rows"]
+            )
+            reconstructed.extend([[], [table["title"]], *table["rows"]])
+            if table.get("empty_message"):
+                reconstructed.append([table["empty_message"]])
+        assert reconstructed == preview["rows"]
+        assert [
+            str(station_id), str(complaint["id"]), case_reference,
+            str(complaint["revision"]), words["in_progress"], words["not_recorded"],
+        ] in preview["rows"]
+        assert not any(
+            row[:5] == [str(station_id), str(complaint["id"]), case_reference,
+                        str(current.json()["revision"]), words["completed"]]
+            for row in preview["rows"]
+        )
+        assert BOX_READY_PASSWORD not in response.text
+        assert original["request_id"] not in response.text
