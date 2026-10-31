@@ -7,6 +7,7 @@ from typing import Any
 
 from election.server.constituency_result_labels import LABELS as RESULT_LABELS
 from election.server.constituency_result_labels import ReportLocale
+from election.server.election_completion_provenance import completion_source_tables
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.turnout_reports import hong_kong_time
 
@@ -80,7 +81,9 @@ def _metadata(
     return rows
 
 
-def _tables(event: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]:
+def _tables(
+    event: dict[str, Any], labels: dict[str, str], locale: ReportLocale,
+) -> list[HistoryTable]:
     outcome = event["outcome"]
     tables = []
     for result in outcome.get("results", []):
@@ -115,6 +118,7 @@ def _tables(event: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]
             labels["complaints"], complaints, (0.12, 0.12, 0.25, 0.10, 0.16, 0.25),
             labels["none"] if len(complaints) == 1 else "",
         ))
+        tables.extend(completion_source_tables(outcome["sources"], locale))
     return tables
 
 
@@ -125,7 +129,7 @@ def completion_csv(event: dict[str, Any], locale: ReportLocale, generated_at: da
     writer = csv.writer(output)
     writer.writerow([labels["title"]])
     writer.writerows(_metadata(event, labels, generated_at))
-    for table in _tables(event, labels):
+    for table in _tables(event, labels, locale):
         writer.writerows([[], [table.title], *table.rows])
         if table.empty_message:
             writer.writerow([table.empty_message])
@@ -140,6 +144,6 @@ def completion_pdf(event: dict[str, Any], locale: ReportLocale, generated_at: da
         f" | {event['basis_digest']}"
     )
     return history_pdf(
-        labels["title"], _metadata(event, labels, generated_at), _tables(event, labels),
+        labels["title"], _metadata(event, labels, generated_at), _tables(event, labels, locale),
         footer, labels["page"],
     )
