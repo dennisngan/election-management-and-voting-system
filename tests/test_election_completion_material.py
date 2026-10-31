@@ -1753,9 +1753,29 @@ def test_material_exports_captured_old_event_csv_after_ui_locale_changes_in_save
         assert list(journal_directory.rglob('*')) == []
 
 
+@pytest.mark.parametrize(("locale", "labels"), [
+    ("en", {
+        "workflow": "Election completion", "election": "Election", "kind": "Finalization",
+        "committed": "Recorded by server", "original": "Original server receipt",
+        "event": "Event", "revision": "Original revision",
+        "hint": "The saved outcome is preserved. Current election state is shown separately.",
+    }),
+    ("tc", {
+        "workflow": "選舉完成確認", "election": "選舉", "kind": "完成確認",
+        "committed": "伺服器已記錄", "original": "原伺服器收據",
+        "event": "事件", "revision": "原修訂",
+        "hint": "已保留原有結果。目前選舉狀態會分開顯示。",
+    }),
+    ("sc", {
+        "workflow": "选举完成确认", "election": "选举", "kind": "完成确认",
+        "committed": "服务器已记录", "original": "原服务器收据",
+        "event": "事件", "revision": "原修订",
+        "hint": "已保留原有结果。目前选举状态会分开显示。",
+    }),
+])
 def test_material_recovery_shows_original_finalization_receipt_separate_from_current_election(
     admin: TestClient, database_url: str, https_server: HttpsServer,
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, locale: str, labels: dict[str, str],
 ) -> None:
     from datetime import datetime, timedelta, timezone
 
@@ -1769,7 +1789,6 @@ def test_material_recovery_shows_original_finalization_receipt_separate_from_cur
     pending_path = evidence / "fixture-pending-journal-before-check.json"
     observation_path = evidence / "material-original-receipt-observation.json"
     transport_path = evidence / "material-original-receipt-transport.json"
-    readiness_path = evidence / "pre-check-readiness.json"
 
     def preserve(path: Path, body: bytes) -> None:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -1848,13 +1867,12 @@ def test_material_recovery_shows_original_finalization_receipt_separate_from_cur
             run_completion_material(
                 {
                     "server": https_server.url, "username": actor["username"],
-                    "password": BOX_READY_PASSWORD, "locale": "en",
+                    "password": BOX_READY_PASSWORD, "locale": locale, "labels": labels,
                     "station_id": setup["stations"]["N1"]["id"], "election_id": election_id,
                     "actor_id": actor["id"], "request_id": original["request_id"],
                     "canonical_path": str(canonical_path), "pending_path": str(pending_path),
                     "journal_path": str(journal_path), "observation_path": str(observation_path),
                     "accepted_hkt": accepted_hkt, "current_election": reopened["election"],
-                    "readiness_path": str(readiness_path),
                 },
                 """
                 import os
@@ -1889,40 +1907,7 @@ def test_material_recovery_shows_original_finalization_receipt_separate_from_cur
                 click(card_name)
                 assert control('recoveryPage').property('selectedRequestId') == setup['request_id']
                 assert control('recoverySelectedCommandPanel').property('visible') is True
-                try:
-                    check = focus('recoveryCheckOutcome')
-                except AssertionError:
-                    # DEBUG-t24-recovery-readiness: public controls only, unchanged focus budget.
-                    button = control('recoveryCheckOutcome')
-                    origin = button.mapToScene(QPointF(0, 0))
-                    ancestors = []
-                    ancestor = button.parentItem()
-                    while ancestor is not None:
-                        ancestors.append({
-                            'name': ancestor.objectName(),
-                            'width': ancestor.width(), 'height': ancestor.height(),
-                            'x': ancestor.x(), 'y': ancestor.y(),
-                            'clip': ancestor.property('clip'),
-                            'contentY': ancestor.property('contentY'),
-                            'contentHeight': ancestor.property('contentHeight'),
-                        })
-                        ancestor = ancestor.parentItem()
-                    diagnostic = {
-                        'button': {key: button.property(key) for key in (
-                            'visible', 'enabled', 'activeFocus', 'width', 'height')},
-                        'scene_origin': [origin.x(), origin.y()], 'ancestors': ancestors,
-                        'working': {key: recovery.property('state')[key]
-                            for key in ('busy', 'refreshing')},
-                        'command_status': control('recoveryPage').property(
-                            'selectedCommand').get('status'),
-                    }
-                    descriptor = os.open(setup['readiness_path'],
-                        os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                    with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
-                        json.dump(diagnostic, output, ensure_ascii=False, indent=2)
-                        output.flush()
-                        os.fsync(output.fileno())
-                    raise
+                check = focus('recoveryCheckOutcome')
                 assert check.property('enabled') and _pointer_geometry(check) is not None
                 assert control('recoveryRetryOriginal').property('visible') is False
                 click('recoveryCheckOutcome')
@@ -1963,23 +1948,23 @@ def test_material_recovery_shows_original_finalization_receipt_separate_from_cur
                 assert durable['receipt']['record'] == canonical
                 assert durable['payload'] == pending['payload']
                 # First expected presentation RED: no localized election workflow/target/summary.
-                assert card_text.startswith('Election completion' + ' · '), card_text
-                for fragment in ('Election #' + str(setup['election_id']),
-                                 'Finalization', 'Recorded by server'):
+                words = setup['labels']
+                assert card_text.startswith(words['workflow'] + ' · '), card_text
+                for fragment in (words['election'] + ' #' + str(setup['election_id']),
+                                 words['kind'], words['committed']):
                     assert fragment in card_text, (fragment, card_text)
                 assert 'Target not recorded' not in card_text
                 assert summary.property('visible') is True
                 assert summary.width() > 0 and summary.height() > 0
                 for fragment in (
-                    'Original server receipt', 'Finalization',
-                    'Event #' + str(canonical['event']['id']),
-                    'Original revision 3', setup['accepted_hkt'],
+                    words['original'], words['kind'],
+                    words['event'] + ' #' + str(canonical['event']['id']),
+                    words['revision'] + ' 3', setup['accepted_hkt'],
                 ):
                     assert fragment in summary_text, (fragment, summary_text)
                 assert 'No server receipt is available yet.' not in summary_text
                 assert hint.property('visible') is True
-                assert hint_text == (
-                    'The saved outcome is preserved. Current election state is shown separately.')
+                assert hint_text == words['hint']
                 assert control('recoveryCheckOutcome').property('enabled') is False
                 assert control('recoveryRetryOriginal').property('visible') is False
                 assert control('recoveryPage').property('selectedRequestId') == setup['request_id']
