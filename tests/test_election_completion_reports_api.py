@@ -572,6 +572,17 @@ def test_completion_csv_keeps_frozen_source_ids_and_accepted_difference_after_co
                     ("Origin station ID", box["origin_station_id"]),
                     ("Destination station ID", box["destination_station_id"]),
                 ))
+            pinned_accounting = frozen_count["scope_basis"]["accounting_basis"]
+            assert any(record["station_id"] != station_id for record in pinned_accounting)
+            for record in pinned_accounting:
+                require_source(rows, (
+                    ("Source", "Counting scope accounting basis"),
+                    ("Counting scope ID", scope_id), ("P(18) record ID", record["id"]),
+                ), (
+                    ("Counting station ID", station_id),
+                    ("Accounting source station ID", record["station_id"]),
+                    ("P(18) revision", record["revision"]),
+                ))
             require_source(rows, (
                 ("Source", "Physical decision approved at review"),
                 ("Counting scope ID", scope_id), ("Round ID", frozen_count["id"]),
