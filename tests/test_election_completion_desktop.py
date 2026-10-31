@@ -20,7 +20,6 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from PySide6.QtCore import QCoreApplication, QEvent
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtTest import QSignalSpy
 
 from election.desktop.controller import DesktopController
@@ -1534,24 +1533,10 @@ def test_predispatch_finalization_requires_checked_original_retry_with_fresh_own
             assert endpoint.request_count("POST", target) == 0
             assert journal_file.read_bytes() == checked_bytes
 
-            delivered_statuses = []
-
-            def observe_retry_status(reply: QNetworkReply) -> None:
-                if reply.url().path() == target:
-                    delivered_statuses.append(int(
-                        reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 0
-                    ))
-
             recovery.retry(request_id, BOX_READY_PASSWORD)
-            # Consequential credentials get a new normal Qt manager synchronously.
-            # Observe its public signal before processing events; never read body/headers.
-            managers = client.findChildren(QNetworkAccessManager)
-            assert managers
-            for manager in managers:
-                manager.finished.connect(observe_retry_status)
             wait_for_editor_idle(qt_app, recovery)
             wait_for_editor_idle(qt_app, completion)
-            assert delivered_statuses == [201]
+            assert endpoint.status_codes("POST", target) == [201]
             assert endpoint.request_count("POST", target) == 1
             assert endpoint.request_count("GET", outcome_path) == 1
             committed = recovery.property("state")["commands"]

@@ -4,7 +4,7 @@ import json
 import socket
 import threading
 from collections.abc import Awaitable, Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
@@ -48,6 +48,12 @@ class ReconnectableRecountServer(LostSelectionResponse):
     backend_port: int = 0
     client_port: int = 0
     proxy: TransparentTlsProxy | None = None
+    response_statuses: list[tuple[str, str, int]] = field(default_factory=list)
+
+    def status_codes(self, method: str, path: str) -> list[int]:
+        with self.lock:
+            return [status for verb, target, status in self.response_statuses
+                    if verb == method and target == path]
 
     def disconnect_proxy(self) -> None:
         assert self.proxy is not None
@@ -97,7 +103,12 @@ def reconnectable_recount_server(
         # The only fault is a disconnected listener; never inspect bodies or fabricate replies.
         with endpoint.lock:
             endpoint.requests.append((request.method, request.url.path))
-        return await call_next(request)
+        response = await call_next(request)
+        with endpoint.lock:
+            endpoint.response_statuses.append((
+                request.method, request.url.path, response.status_code,
+            ))
+        return response
 
     server = uvicorn.Server(uvicorn.Config(
         application, host="127.0.0.1", port=backend_port, loop="asyncio", ws="none",
