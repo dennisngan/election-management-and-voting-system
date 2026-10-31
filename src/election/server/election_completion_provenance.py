@@ -102,9 +102,9 @@ _EXTRA: dict[ReportLocale, dict[str, str]] = {
         "box_receipt_at": "Box received at (HKT)",
     },
     "tc": {
-        "kind_wide": "已記錄全選區重點票",
-        "kind_member": "原有全選區重點票成員",
-        "kind_recount": "已記錄的已選重點票",
+        "kind_wide": "已記錄全選區重新點票",
+        "kind_member": "原有全選區重新點票成員",
+        "kind_recount": "已記錄的已選重新點票",
         "instruction_id": "指示編號",
         "instruction_actor": "授權帳戶編號",
         "instruction_reason": "指示原因",
