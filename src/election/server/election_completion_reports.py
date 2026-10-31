@@ -1,6 +1,7 @@
 """Localized completion statements rendered exclusively from immutable event values."""
 
 import csv
+from dataclasses import asdict
 from datetime import datetime
 from io import StringIO
 from typing import Any
@@ -122,17 +123,28 @@ def _tables(
     return tables
 
 
+def completion_statement(
+    event: dict[str, Any], locale: ReportLocale, generated_at: datetime,
+) -> dict[str, Any]:
+    """Expose the exact saved event and the same localized rows used by downloads."""
+    labels = LABELS[locale]
+    metadata = _metadata(event, labels, generated_at)
+    tables = _tables(event, labels, locale)
+    rows = [[labels["title"]], *metadata]
+    for table in tables:
+        rows.extend([[], [table.title], *table.rows])
+        if table.empty_message:
+            rows.append([table.empty_message])
+    return {
+        "locale": locale, "event": event, "title": labels["title"],
+        "metadata": metadata, "tables": [asdict(table) for table in tables], "rows": rows,
+    }
+
+
 def completion_csv(event: dict[str, Any], locale: ReportLocale, generated_at: datetime) -> bytes:
     """Keep generation metadata separate from the event's preserved business rows."""
-    labels = LABELS[locale]
     output = StringIO(newline="")
-    writer = csv.writer(output)
-    writer.writerow([labels["title"]])
-    writer.writerows(_metadata(event, labels, generated_at))
-    for table in _tables(event, labels, locale):
-        writer.writerows([[], [table.title], *table.rows])
-        if table.empty_message:
-            writer.writerow([table.empty_message])
+    csv.writer(output).writerows(completion_statement(event, locale, generated_at)["rows"])
     return output.getvalue().encode("utf-8-sig")
 
 

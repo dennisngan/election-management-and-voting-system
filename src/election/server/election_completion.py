@@ -26,7 +26,11 @@ from election.server.election_completion_models import (
     ElectionCompletionEvent,
     ElectionCompletionRequest,
 )
-from election.server.election_completion_reports import completion_csv, completion_pdf
+from election.server.election_completion_reports import (
+    completion_csv,
+    completion_pdf,
+    completion_statement,
+)
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent, LoginSession
 from election.server.polling import as_utc, record_view
@@ -286,6 +290,14 @@ def election_completion_router(
         frozen = _completion_event_view(event)
         db.rollback()
         return frozen
+
+    @router.get("/completion/history/{event_id}/statement")
+    def statement(
+        election_id: int, event_id: int, db: Database, identity: Identity,
+        locale: ReportLocale = "tc",
+    ) -> dict[str, Any]:
+        frozen = report_event(election_id, event_id, db, identity)
+        return completion_statement(frozen, locale, timestamp())
 
     @router.get("/completion/history/{event_id}/statement.csv")
     def statement_csv(
