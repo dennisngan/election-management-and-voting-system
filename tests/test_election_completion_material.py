@@ -1391,11 +1391,29 @@ def test_material_reopening_uses_captured_history_before_password(
                     assert password.property('text') == setup['password']
                     assert confirm.property('enabled') is True
                     assert list(Path(setup['journal_directory']).rglob('*')) == []
+                    preserved_history = deepcopy(loaded['history'])
+                    selected_text_before_reopening = control(
+                        'electionCompletionHistoryEvent').property('currentText')
                     click('electionCompletionReopenConfirm')
                     wait(lambda: not any(completion.property('state')[key]
                         for key in ('busy', 'refreshing')))
                     settled = completion.property('state')
                     wait(lambda: not dialog.property('visible'))
+                    frame()
+                    current_caption = control('electionCompletionHistoryCurrent')
+                    history_selector = control('electionCompletionHistoryEvent')
+                    history_ui = {
+                        'current_visible': current_caption.property('visible'),
+                        'current_text': current_caption.property('text'),
+                        'event_count': history_selector.property('count'),
+                        'selected_index': history_selector.property('currentIndex'),
+                        'selected_text': history_selector.property('currentText'),
+                    }
+                    expected_current_text = {
+                        'en': 'Current election state · {name} · Active · Revision 4',
+                        'tc': '目前選舉狀態 · {name} · 進行中 · 版本 4',
+                        'sc': '目前选举状态 · {name} · 进行中 · 版本 4',
+                    }[setup['locale']].format(name=original['election']['name'])
                     files = list(Path(setup['journal_directory']).rglob('*.json'))
                     durable = json.loads(files[0].read_text('utf-8')) if len(files) == 1 else None
                     write_evidence(setup['observation_path'], {
@@ -1407,6 +1425,10 @@ def test_material_reopening_uses_captured_history_before_password(
                         'reopened_signals': reopened_signal.count(),
                         'finalized_signals': finalized_signal.count(),
                         'durable_command': durable,
+                        'preserved_history': preserved_history,
+                        'selected_text_before_reopening': selected_text_before_reopening,
+                        'history_ui': history_ui,
+                        'expected_current_text': expected_current_text,
                     })
                     assert settled['error'] == ''
                     assert settled['pending_request_id'] == ''
@@ -1422,6 +1444,13 @@ def test_material_reopening_uses_captured_history_before_password(
                     assert settled['election']['status'] == 'active'
                     assert settled['election']['revision'] == (
                         captured['expected_election_revision'] + 1)
+                    assert history_ui['current_visible'] is True
+                    assert history_ui['current_text'] == expected_current_text
+                    assert settled['history'] == preserved_history
+                    assert settled['selected_event_id'] == original['event']['id']
+                    assert_public_business_fields(settled['selected_event'], original['event'])
+                    assert history_ui['event_count'] == 1 and history_ui['selected_index'] == 0
+                    assert history_ui['selected_text'] == selected_text_before_reopening
                     assert durable is not None
                     assert durable['namespace'] == 'election' and 'station_id' not in durable
                     assert durable['election_id'] == setup['election_id']
