@@ -16,6 +16,7 @@ from election.desktop.recovery import NETWORK_ERRORS, RecoveryController
 class ElectionCompletionController(QObject):
     stateChanged = Signal()
     finalized = Signal(object)
+    reopened = Signal(object)
 
     def __init__(
         self, request: AuthorizedRequest, parent: QObject | None = None, *,
@@ -215,7 +216,10 @@ class ElectionCompletionController(QObject):
             assessment=deepcopy(assessment), review={}, reviewing=False, newer_basis=False,
         )
         # Start authoritative reconciliation before observers can see settlement as idle.
-        self.finalized.emit(body)
+        if body["event"]["kind"] == "reopening":
+            self.reopened.emit(body)
+        else:
+            self.finalized.emit(body)
         self.stateChanged.emit()
 
     def _sync_recovery(self) -> None:
@@ -234,9 +238,10 @@ class ElectionCompletionController(QObject):
             and row.get("election_id") == self._state["election_id"]
             and row.get("actor_id") == self._state["actor_id"]
             and row.get("server_url") == self._scope[0]
-            and row.get("path") == (
-                f"/api/workspace/elections/{self._state['election_id']}/finalizations"
-            )
+            and row.get("path") in {
+                f"/api/workspace/elections/{self._state['election_id']}/finalizations",
+                f"/api/workspace/elections/{self._state['election_id']}/reopenings",
+            }
             and (row.get("request_id") == pending_id if pending_id
                  else row.get("status") in {"pending", "uncertain"})
         )), None)
@@ -321,7 +326,49 @@ class ElectionCompletionController(QObject):
             "expected_election_revision": assessment["election"]["revision"],
             "basis_digest": assessment["basis_digest"],
         }
-        path = f"/api/workspace/elections/{election_id}/finalizations"
+        self._save_election_command("finalizations", payload, password)
+
+    @Slot(str, str)
+    def reopen(self, reason: str, password: str) -> None:
+        election_id = self._state["election_id"]
+        current = self._state["election"]
+        history = self._state["history"]
+        election = history.get("election") or {}
+        events = history.get("events") or []
+        previous = events[0] if events else {}
+        if (
+            self._state["role"] != "supervisor" or self._state["busy"]
+            or self._state["refreshing"] or self._state["uncertain_save"]
+            or type(election_id) is not int or election_id <= 0
+            or current.get("status") != "finalized"
+            or election.get("id") != election_id or election.get("status") != "finalized"
+            or type(election.get("revision")) is not int
+            or type(current.get("revision")) is int
+            and current["revision"] != election["revision"]
+            or previous.get("election_id") != election_id
+            or previous.get("kind") != "finalization"
+            or previous.get("election_revision") != election["revision"]
+            or type(previous.get("id")) is not int or previous["id"] <= 0
+        ):
+            self._state["error"] = "election_reopening_not_ready"
+            self.stateChanged.emit()
+            return
+        reason = reason.strip()
+        if not reason or not password:
+            self._state["error"] = "reason_required" if not reason else "invalid_credentials"
+            self.stateChanged.emit()
+            return
+        payload = {
+            "request_id": str(uuid4()), "expected_election_revision": election["revision"],
+            "previous_finalization_id": previous["id"], "reason": reason,
+        }
+        self._save_election_command("reopenings", payload, password)
+
+    def _save_election_command(
+        self, action: str, payload: dict[str, Any], password: str,
+    ) -> None:
+        election_id = self._state["election_id"]
+        path = f"/api/workspace/elections/{election_id}/{action}"
         command = {
             "namespace": "election", "election_id": election_id,
             "workflow": "election_completion", "method": "POST", "path": path,

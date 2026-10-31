@@ -107,7 +107,8 @@ class DesktopController(QObject):
         self._election_completion = ElectionCompletionController(
             self._authorized_request, self, recovery=self._recovery,
         )
-        self._election_completion.finalized.connect(self._completion_finalized)
+        self._election_completion.finalized.connect(self._completion_saved)
+        self._election_completion.reopened.connect(self._completion_saved)
         self._lifecycle = LifecycleController(self._authorized_request, self)
         self._lifecycle.stateChanged.connect(self._lifecycle_changed)
         self._staff = StaffController(self._authorized_request, self)
@@ -458,7 +459,7 @@ class DesktopController(QObject):
             self._state["election"] = dict(current)
             self.stateChanged.emit()
 
-    def _completion_finalized(self, receipt: dict[str, Any]) -> None:
+    def _completion_saved(self, receipt: dict[str, Any]) -> None:
         self._state["election"] = dict(self._election_completion.property("state")["election"])
         finished = self._election_completion.wait_for_current_lifecycle()
         self._refresh_active_election(force=True, finished=finished)
