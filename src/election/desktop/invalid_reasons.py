@@ -26,6 +26,7 @@ class InvalidReasonsController(QObject):
     """Edit stage-specific reason labels while preserving verified provenance."""
 
     stateChanged = Signal()
+    electionsChanged = Signal()
 
     def __init__(self, request: AuthorizedRequest, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -40,6 +41,14 @@ class InvalidReasonsController(QObject):
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
         return deepcopy(self._state)
+
+    @Property(dict, notify=stateChanged)
+    def viewState(self) -> dict[str, Any]:
+        return deepcopy({key: value for key, value in self._state.items() if key != "elections"})
+
+    @Property(list, notify=electionsChanged)
+    def elections(self) -> list[dict[str, Any]]:
+        return deepcopy(self._state["elections"])
 
     def reset(self) -> None:
         self._generation += 1
@@ -64,6 +73,7 @@ class InvalidReasonsController(QObject):
             "error": "",
             "notice": "",
         }
+        self.electionsChanged.emit()
         self.stateChanged.emit()
 
     def set_available(self, available: bool) -> None:
@@ -249,7 +259,9 @@ class InvalidReasonsController(QObject):
             ):
                 self._error("request_failed")
                 return
-            self._state["elections"] = deepcopy(rows)
+            if rows != self._state["elections"]:
+                self._state["elections"] = deepcopy(rows)
+                self.electionsChanged.emit()
             if self._state["election_id"]:
                 current = next(
                     (row for row in rows if row["id"] == self._state["election_id"]), None

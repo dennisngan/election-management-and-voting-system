@@ -10,7 +10,9 @@ ColumnLayout {
     required property var catalog
     required property var words
     property string locale: "tc"
-    readonly property var editorState: catalog.state
+    readonly property var editorState: catalog.viewState
+    readonly property var electionDirectory: catalog.elections
+    onElectionDirectoryChanged: Qt.callLater(function() { page.syncElectionModel() })
     readonly property var selected: editorState.selected || ({})
     readonly property var form: editorState.form || ({})
     readonly property bool editable: editorState.editing && !editorState.busy
@@ -36,21 +38,23 @@ ColumnLayout {
             if (items[index].id === id) return index
         return -1
     }
+    function syncElectionModel() {
+        var elections = page.electionDirectory || []
+        if (!electionPicker.popup.visible
+                && JSON.stringify(electionRows) !== JSON.stringify(elections))
+            electionRows = JSON.parse(JSON.stringify(elections))
+    }
     function syncPickerModels() {
-        var state = catalog.state
+        var state = page.editorState
         var stages = [
             {id: 0, label: page.t("invalid_reason_f1")},
             {id: 1, label: page.t("invalid_reason_f2")}
         ]
-        var elections = state.elections || []
         var reasons = state.items || []
         var history = (state.history || []).map(function(row) {
             return {revision: row.revision, label: page.historyLabel(row)}
         })
         // Plain value snapshots notify the picker when a refreshed label changes.
-        if (!electionPicker.popup.visible
-                && JSON.stringify(electionRows) !== JSON.stringify(elections))
-            electionRows = JSON.parse(JSON.stringify(elections))
         if (!stagePicker.popup.visible && JSON.stringify(stageRows) !== JSON.stringify(stages))
             stageRows = stages
         if (!reasonPicker.popup.visible
@@ -151,8 +155,10 @@ ColumnLayout {
     Connections {
         target: electionPicker.popup
         function onVisibleChanged() {
-            if (!electionPicker.popup.visible)
-                Qt.callLater(function() { page.syncPickerModels() })
+            if (!electionPicker.popup.visible) Qt.callLater(function() {
+                page.syncElectionModel()
+                page.syncPickerModels()
+            })
         }
     }
     Connections {
@@ -169,7 +175,10 @@ ColumnLayout {
                 Qt.callLater(function() { page.syncPickerModels() })
         }
     }
-    Component.onCompleted: syncPickerModels()
+    Component.onCompleted: {
+        syncElectionModel()
+        syncPickerModels()
+    }
 
     RowLayout {
         Layout.fillWidth: true
