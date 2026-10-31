@@ -3628,3 +3628,173 @@ def test_original_finalization_ack_never_downgrades_workspace_known_reopened_con
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             qt_app.processEvents()
+
+
+def test_supervisor_previews_selected_old_event_without_rebinding_reopened_current_context(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "selected-completion-preview-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    evidence = tmp_path / "selected-completion-preview-evidence"
+    evidence.mkdir(mode=0o700)
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        actor = setup["accounts"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        history_path = base + "/completion/history"
+        assessment_response = supervisor.get(setup["completion_path"])
+        assert assessment_response.status_code == 200, assessment_response.text
+        assessment = assessment_response.json()
+        assert assessment["can_finalize"] is True and assessment["election"]["revision"] == 2
+        finalized_response = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": assessment["election"]["revision"],
+            "basis_digest": assessment["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert finalized_response.status_code == 201, finalized_response.text
+        original = finalized_response.json()
+        assert original["event"]["kind"] == "finalization"
+        assert original["election"]["status"] == "finalized"
+        assert original["election"]["revision"] == 3
+        reopened_response = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": original["event"]["id"],
+            "reason": "Review a preserved earlier statement while current election work is active.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened_response.status_code == 201, reopened_response.text
+        reopened = reopened_response.json()
+        assert reopened["election"]["status"] == "active"
+        assert reopened["election"]["revision"] == 4
+        canonical_history_response = supervisor.get(history_path)
+        assert canonical_history_response.status_code == 200, canonical_history_response.text
+        canonical_history = canonical_history_response.json()
+        assert canonical_history == {
+            "election": reopened["election"], "active_election_id": election_id,
+            "events": [reopened["event"], original["event"]],
+        }
+        preview_path = base + f"/completion/history/{original['event']['id']}/statement"
+        canonical_response = supervisor.get(preview_path, params={"locale": "en"})
+        _write_incomplete_receipt_evidence(
+            evidence / "canonical-old-preview.json", canonical_response.content,
+        )
+        assert canonical_response.status_code == 200, canonical_response.text
+        canonical_preview = canonical_response.json()
+        assert canonical_preview["event"] == original["event"]
+        assert canonical_preview["locale"] == "en"
+        https_server.clock.value = setup["clock"].value
+        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(https_server.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            assert client.property("state")["account"]["id"] == actor["id"]
+            assert client.property("state")["account"]["role"] == "supervisor"
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            completion.loadHistory()
+            wait_for_editor_idle(qt_app, completion)
+            loaded = completion.property("state")
+            assert loaded["error"] == ""
+            assert_public_business_fields(loaded["history"], canonical_history)
+            assert loaded["election"] == reopened["election"]
+            assert loaded["assessment"]["election"] == reopened["election"]
+            assert https_server.request_count("GET", preview_path) == 0
+            active_before = deepcopy(client.property("state")["active_election"])
+            assert {key: active_before[key] for key in reopened["election"]} == reopened["election"]
+
+            def current_context() -> dict:
+                root = client.property("state")
+                current = completion.property("state")
+                return {
+                    "root_election": {
+                        key: (root["election"] or {}).get(key)
+                        for key in ("id", "status", "revision")
+                    },
+                    "completion_election": {
+                        key: current["election"].get(key) for key in ("id", "status", "revision")
+                    },
+                    "active_election": deepcopy(root["active_election"]),
+                }
+
+            before_context = current_context()
+            notifications: list[dict] = []
+
+            def observe_current_context() -> None:
+                notifications.append(current_context())
+
+            client.stateChanged.connect(observe_current_context)
+            completion.stateChanged.connect(observe_current_context)
+            try:
+                # Intended first Qt RED: missing public selection/report seam, not backend404.
+                completion.selectHistoryEvent(str(original["event"]["id"]))
+                selected = completion.property("state")
+                assert https_server.request_count("GET", preview_path) == 0
+                completion.preview("en")
+                wait_for_editor_idle(qt_app, completion)
+                shown = completion.property("state")
+            finally:
+                client.stateChanged.disconnect(observe_current_context)
+                completion.stateChanged.disconnect(observe_current_context)
+                with https_server.lock:
+                    actual_requests = list(https_server.requests)
+                _write_incomplete_receipt_evidence(
+                    evidence / "public-context-observations.json", json.dumps({
+                        "before": before_context, "notifications": notifications,
+                        "after": current_context(), "requests": actual_requests,
+                    }, ensure_ascii=False, sort_keys=True).encode(),
+                )
+            assert str(loaded["selected_event_id"]) == str(reopened["event"]["id"])
+            assert_public_business_fields(loaded["selected_event"], reopened["event"])
+            assert loaded["report"] == {} and loaded["report_text"] == ""
+            assert str(selected["selected_event_id"]) == str(original["event"]["id"])
+            assert_public_business_fields(selected["selected_event"], original["event"])
+            assert selected["report"] == {} and selected["report_text"] == ""
+            assert shown["error"] == ""
+            assert_public_business_fields(shown["selected_event"], original["event"])
+            assert_public_business_fields(shown["report"], canonical_preview)
+            assert shown["report"]["locale"] == "en"
+            assert shown["report"]["rows"] == canonical_preview["rows"]
+            assert isinstance(shown["report_text"], str) and shown["report_text"].strip()
+            assert "Preserved election completion statement" in shown["report_text"]
+            assert "Finalized" in shown["report_text"]
+            for result in original["event"]["outcome"]["results"]:
+                for candidate in result["candidate_totals"]:
+                    assert candidate["name"] in shown["report_text"]
+                    assert str(candidate["quantity"]) in shown["report_text"]
+            known_current = {key: reopened["election"][key] for key in ("id", "status", "revision")}
+            assert before_context["root_election"] == known_current
+            assert before_context["completion_election"] == known_current
+            assert notifications and all(row == before_context for row in notifications)
+            assert current_context() == before_context
+            assert client.property("state")["active_election"] == active_before
+            assert shown["assessment"]["election"] == reopened["election"]
+            assert shown["receipt"] == {} and shown["pending_request_id"] == ""
+            assert shown["uncertain_save"] is False
+            assert workspace.property("state")["selected"] == {}
+            assert https_server.request_count("GET", preview_path) == 1
+            assert not [path for method, path in actual_requests
+                        if method == "GET" and "/request-outcomes/" in path]
+            assert not [(method, path) for method, path in actual_requests
+                        if method in {"POST", "PUT", "PATCH", "DELETE"}
+                        and path.startswith("/api/workspace/")]
+            assert list(journal_directory.rglob("*.json")) == []
+            _assert_completion_credential_free(shown)
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
