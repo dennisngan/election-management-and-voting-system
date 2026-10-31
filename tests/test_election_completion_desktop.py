@@ -2935,3 +2935,193 @@ def test_supervisor_loads_immutable_completion_history_without_selecting_station
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             qt_app.processEvents()
+
+
+def test_supervisor_reopens_its_finalized_election_without_selecting_station(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "election-direct-reopening-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        https_server.clock.value = setup["clock"].value
+        actor = setup["accounts"]["supervisor"]
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        finalization_path = base + "/finalizations"
+        reopening_path = base + "/reopenings"
+        history_path = base + "/completion/history"
+        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(https_server.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            assert client.property("state")["account"]["id"] == actor["id"]
+            assert client.property("state")["account"]["role"] == "supervisor"
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            reviewed = completion.property("state")["assessment"]
+            assert reviewed["can_finalize"] is True
+            assert reviewed["election"]["revision"] == 2
+            completion.finalize(BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, completion)
+            finalized_state = completion.property("state")
+            assert finalized_state["error"] == ""
+            assert finalized_state["uncertain_save"] is False
+            assert finalized_state["pending_request_id"] == ""
+            assert client.property("state")["active_election"] is None
+            assert workspace.property("state")["selected"] == {}
+            original_qt_ack = deepcopy(finalized_state["receipt"])
+            original_request_id = original_qt_ack["request_id"]
+            assert str(UUID(original_request_id)) == original_request_id
+            original_outcome_path = (
+                base + f"/request-outcomes/{original_request_id}?workflow=election_completion"
+            )
+            original_response = supervisor.get(original_outcome_path)
+            assert original_response.status_code == 200, original_response.text
+            original_ack = deepcopy(original_response.json())
+            assert original_ack["status"] == "committed"
+            original = original_ack["record"]
+            assert_public_business_fields(original_qt_ack, original)
+            assert original["election"]["id"] == election_id
+            assert original["election"]["status"] == "finalized"
+            assert original["election"]["revision"] == 3
+            assert original["event"]["kind"] == "finalization"
+            assert original["event"]["actor_id"] == actor["id"]
+            assert private_directory(journal_directory)
+            finalization_files = list(journal_directory.glob("*.json"))
+            assert len(finalization_files) == 1 and private_file(finalization_files[0])
+            finalization_file = finalization_files[0]
+            original_bytes = finalization_file.read_bytes()
+            original_command = json.loads(original_bytes)
+            assert original_command["status"] == "committed"
+            assert original_command["path"] == finalization_path
+            assert original_command["receipt"]["record"] == original
+            canonical_history_response = supervisor.get(history_path)
+            assert canonical_history_response.status_code == 200, canonical_history_response.text
+            finalized_history = canonical_history_response.json()
+            assert finalized_history == {
+                "election": original["election"], "active_election_id": None,
+                "events": [original["event"]],
+            }
+            completion.loadHistory()
+            wait_for_editor_idle(qt_app, completion)
+            ready = completion.property("state")
+            assert ready["error"] == ""
+            assert_public_business_fields(ready["history"], finalized_history)
+            assert ready["election"] == original["election"]
+            assert ready["pending_request_id"] == "" and ready["uncertain_save"] is False
+            assert finalization_file.read_bytes() == original_bytes
+            assert https_server.request_count("POST", finalization_path) == 1
+            assert https_server.request_count("POST", reopening_path) == 0
+            reason = "  Resume reviewed operations from the preserved final outcome.  "
+            expected_reason = reason.strip()
+            # Intended first RED: the new direct public Qt reopening method is missing.
+            completion.reopen(reason, BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, completion)
+            state = completion.property("state")
+            assert state["error"] == ""
+            assert state["pending_request_id"] == "" and state["uncertain_save"] is False
+            reopening_request_id = state["receipt"]["request_id"]
+            assert str(UUID(reopening_request_id)) == reopening_request_id
+            assert reopening_request_id != original_request_id
+            reopening_outcome_path = (
+                base + f"/request-outcomes/{reopening_request_id}?workflow=election_completion"
+            )
+            reopening_response = supervisor.get(reopening_outcome_path)
+            assert reopening_response.status_code == 200, reopening_response.text
+            reopening_ack = reopening_response.json()
+            assert reopening_ack["request_id"] == reopening_request_id
+            assert reopening_ack["workflow"] == "election_completion"
+            assert reopening_ack["status"] == "committed"
+            reopened = reopening_ack["record"]
+            assert_public_business_fields(state["receipt"], reopened)
+            assert reopened["election"] == {
+                **original["election"], "status": "active", "revision": 4,
+            }
+            assert reopened["active_election_id"] == election_id
+            event = reopened["event"]
+            assert event["id"] != original["event"]["id"]
+            assert event["election_id"] == election_id
+            assert event["election_revision"] == 4 and event["kind"] == "reopening"
+            assert event["previous_finalization_id"] == original["event"]["id"]
+            assert event["actor_id"] == actor["id"] and event["reason"] == expected_reason
+            active_response = supervisor.get("/api/active-election")
+            assert active_response.status_code == 200, active_response.text
+            actual_active = active_response.json()["election"]
+            assert isinstance(actual_active, dict)
+            assert {key: actual_active[key] for key in reopened["election"]} == reopened["election"]
+            assert client.property("state")["active_election"] == actual_active
+            assert state["election"] == reopened["election"]
+            assert workspace.property("state")["selected"] == {}
+            assert https_server.request_count("POST", finalization_path) == 1
+            assert https_server.request_count("POST", reopening_path) == 1
+            with https_server.lock:
+                reopening_statuses = [
+                    row["status"] for row in https_server.request_timings
+                    if row["method"] == "POST" and row["path"] == reopening_path
+                ]
+                outcome_reads = [
+                    path for method, path in https_server.requests
+                    if method == "GET" and "/request-outcomes/" in path
+                ]
+            assert reopening_statuses == [201]
+            assert outcome_reads == []
+            files = list(journal_directory.glob("*.json"))
+            assert len(files) == 2 and all(private_file(path) for path in files)
+            assert finalization_file.read_bytes() == original_bytes
+            reopening_file = next(path for path in files if path != finalization_file)
+            reopening_command = json.loads(reopening_file.read_bytes())
+            expected_payload = {
+                "request_id": reopening_request_id,
+                "expected_election_revision": original["election"]["revision"],
+                "previous_finalization_id": original["event"]["id"],
+                "reason": expected_reason,
+            }
+            for command in (original_command, reopening_command):
+                assert command["namespace"] == "election"
+                assert type(command["election_id"]) is int and command["election_id"] == election_id
+                assert election_id > 0 and "station_id" not in command
+                assert command["actor_id"] == actor["id"]
+                assert command["server_url"] == https_server.url
+                assert command["workflow"] == "election_completion"
+                assert command["method"] == "POST" and command["confirmation_required"] is True
+                assert command["status"] == "committed" and command["error"] == ""
+                _assert_completion_credential_free(command)
+            assert reopening_command["path"] == reopening_path
+            assert reopening_command["request_id"] == reopening_request_id
+            assert reopening_command["payload"] == expected_payload
+            assert reopening_command["receipt"]["record"] == reopened
+            retained_original = supervisor.get(original_outcome_path)
+            assert retained_original.status_code == 200, retained_original.text
+            assert retained_original.json() == original_ack
+            history_response = supervisor.get(history_path)
+            assert history_response.status_code == 200, history_response.text
+            history = history_response.json()
+            assert history == {
+                "election": reopened["election"], "active_election_id": election_id,
+                "events": [event, original["event"]],
+            }
+            completion.loadHistory()
+            wait_for_editor_idle(qt_app, completion)
+            assert_public_business_fields(completion.property("state")["history"], history)
+            assert finalization_file.read_bytes() == original_bytes
+            assert https_server.request_count("POST", finalization_path) == 1
+            assert https_server.request_count("POST", reopening_path) == 1
+            _assert_completion_credential_free(completion.property("state"))
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
