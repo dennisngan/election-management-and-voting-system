@@ -299,7 +299,7 @@ def test_assigned_counting_officer_cannot_write_turnout_paper_reentry(
                 assert editor.state["paper_refreshing"] is True
                 assert all(row["id"] != paper["id"] for row in editor.state["paper_records"])
                 QTimer.singleShot(100, https_server.release_staff_response.set)
-                wait_for_editor_idle(qt_app, editor)
+                wait_for(qt_app, lambda: not editor.state["paper_refreshing"])
                 rows = editor.property("state")["paper_records"]
                 assert any(row["id"] == paper["id"] for row in rows)
                 editor.selectPaperRecord(paper["id"])
@@ -314,7 +314,9 @@ def test_assigned_counting_officer_cannot_write_turnout_paper_reentry(
                 record = polling.get(
                     f"/api/workspace/stations/{station_id}/outages/{outage['id']}"
                 ).json()["record"]["paper_records"]
-                assert next(row for row in record if row["id"] == paper["id"])["status"] == "pending"
+                assert next(row for row in record if row["id"] == paper["id"])["status"] == (
+                    "pending"
+                )
             finally:
                 https_server.release_staff_response.set()
 
