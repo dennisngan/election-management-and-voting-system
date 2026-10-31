@@ -53,6 +53,7 @@ class ElectionCompletionController(QObject):
             "assessment": {}, "busy": False, "refreshing": False, "error": "",
             "receipt": {}, "pending_request_id": "", "uncertain_save": False,
             "reconciling": False, "review": {}, "reviewing": False, "newer_basis": False,
+            "history": {},
         }
         self.stateChanged.emit()
 
@@ -132,6 +133,50 @@ class ElectionCompletionController(QObject):
 
         self._request(
             f"/api/workspace/elections/{election_id}/completion", "GET", None, loaded, failed
+        )
+
+    @Slot()
+    def loadHistory(self) -> None:
+        election_id = self._state["election_id"]
+        if (
+            self._state["role"] != "supervisor" or self._state["busy"]
+            or self._state["refreshing"] or type(election_id) is not int or election_id <= 0
+        ):
+            return
+        generation = self._generation
+        self._state.update(refreshing=True, error="")
+        self.stateChanged.emit()
+
+        def failed(code: str) -> None:
+            if generation != self._generation:
+                return
+            self._state.update(refreshing=False, error=code)
+            if code == "full_election_access_required":
+                self._state["history"] = {}
+            self.stateChanged.emit()
+
+        def loaded(data: dict[str, Any]) -> None:
+            if generation != self._generation:
+                return
+            if (
+                not isinstance(data.get("election"), dict)
+                or data["election"].get("id") != election_id
+                or not isinstance(data.get("events"), list)
+                or not all(
+                    isinstance(event, dict) and event.get("election_id") == election_id
+                    and event.get("kind") in {"finalization", "reopening"}
+                    and isinstance(event.get("outcome"), dict)
+                    for event in data["events"]
+                )
+            ):
+                failed("invalid_response")
+                return
+            self._state.update(history=deepcopy(data), refreshing=False, error="")
+            self.stateChanged.emit()
+
+        self._request(
+            f"/api/workspace/elections/{election_id}/completion/history",
+            "GET", None, loaded, failed,
         )
 
     def wait_for_current_lifecycle(self) -> Callable[[str], None]:
