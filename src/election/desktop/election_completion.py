@@ -74,8 +74,8 @@ class ElectionCompletionController(QObject):
             role=account.get("role", ""), election=deepcopy(target),
         )
         if (
-            self._state["reviewing"]
-            and target.get("revision") != self._state["review"]["election"].get("revision")
+            self._state["reviewing"] and type(target.get("revision")) is int
+            and target["revision"] != self._state["review"]["election"].get("revision")
         ):
             self._state["newer_basis"] = True
         self._sync_recovery()
