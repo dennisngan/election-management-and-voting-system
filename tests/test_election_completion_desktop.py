@@ -3402,3 +3402,229 @@ def test_lost_reopening_receipt_survives_refresh_restart_and_original_outcome_ch
         assert reopening_after.json() == canonical
         assert endpoint.request_count("POST", reopening_path) == 1
         assert endpoint.request_count("GET", outcome_path) == 1
+
+
+def test_original_finalization_ack_never_downgrades_workspace_known_reopened_context(
+    admin: TestClient,
+    database_url: str,
+    lost_recount_response: LostSelectionResponse,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "workspace-known-context-original-ack-journal"
+    evidence_directory = tmp_path / "workspace-known-context-original-ack-evidence"
+    evidence_directory.mkdir(mode=0o700)
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        endpoint = lost_recount_response
+        endpoint.clock.value = setup["clock"].value
+        actor = setup["accounts"]["supervisor"]
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        station_id = setup["stations"]["N1"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        target = base + "/finalizations"
+        client = DesktopController(endpoint.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(endpoint.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            workspace.selectStation(station_id)
+            wait_for_editor_idle(qt_app, workspace)
+            assert workspace.property("state")["selected"]["station"]["id"] == station_id
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            reviewed = completion.property("state")["assessment"]
+            assert reviewed["can_finalize"] is True
+            endpoint.drop_path = target
+            completion.finalize(BOX_READY_PASSWORD)
+            wait_for_editor_idle(qt_app, completion)
+            assert endpoint.response_tagged.is_set() and endpoint.response_dropped.is_set()
+            unknown = completion.property("state")
+            assert unknown["uncertain_save"] is True
+            request_id = unknown["pending_request_id"]
+            assert str(UUID(request_id)) == request_id
+            outcome_path = base + f"/request-outcomes/{request_id}"
+            query_path = outcome_path + "?workflow=election_completion"
+            canonical_response = supervisor.get(query_path)
+            assert canonical_response.status_code == 200, canonical_response.text
+            canonical = canonical_response.json()
+            assert canonical["status"] == "committed" and canonical["request_id"] == request_id
+            receipt = canonical["record"]
+            assert receipt["event"]["kind"] == "finalization"
+            assert receipt["election"]["revision"] == reviewed["election"]["revision"] + 1
+            files = list(journal_directory.glob("*.json"))
+            assert len(files) == 1 and private_file(files[0])
+            journal_file = files[0]
+            unknown_bytes = journal_file.read_bytes()
+            _write_incomplete_receipt_evidence(
+                evidence_directory / "original-unknown-command.json", unknown_bytes,
+            )
+            _write_incomplete_receipt_evidence(
+                evidence_directory / "canonical-original-finalization-ack.json",
+                json.dumps(canonical, ensure_ascii=False, indent=2).encode(),
+            )
+            completion_reads_before_reopen = endpoint.request_count(
+                "GET", setup["completion_path"]
+            )
+            reopened_response = supervisor.post(base + "/reopenings", json={
+                "request_id": str(uuid4()),
+                "expected_election_revision": receipt["election"]["revision"],
+                "previous_finalization_id": receipt["event"]["id"],
+                "reason": "Preserve newer workspace metadata while recovering the older ACK.",
+                "password": BOX_READY_PASSWORD,
+            })
+            assert reopened_response.status_code == 201, reopened_response.text
+            reopened = reopened_response.json()["election"]
+            assert reopened["revision"] == receipt["election"]["revision"] + 1
+            assert reopened["status"] == "active"
+            workspace.refresh()
+            wait_for_editor_idle(qt_app, workspace)
+            selected = workspace.property("state")["selected"]
+            known_context = {
+                "id": election_id, "status": "active", "revision": reopened["revision"],
+            }
+            assert selected["station"]["id"] == station_id
+            for key, value in known_context.items():
+                assert selected["election"][key] == value
+            recovery = client.property("recovery")
+            recovery.open()
+            wait_for_editor_idle(qt_app, recovery)
+            original_rows = [
+                row for row in recovery.property("state")["commands"]
+                if row["request_id"] == request_id
+            ]
+            assert len(original_rows) == 1
+            original_command = original_rows[0]
+            assert original_command["status"] == "uncertain"
+            assert original_command["receipt"] is None
+            assert original_command["namespace"] == "election"
+            assert original_command["election_id"] == election_id
+            assert "station_id" not in original_command
+            assert journal_file.read_bytes() == unknown_bytes
+            assert endpoint.request_count("POST", target) == 1
+            assert endpoint.request_count("GET", outcome_path) == 0
+
+            def public_context_observation() -> dict:
+                root_context = client.property("state").get("election") or {}
+                completion_state = completion.property("state")
+                completion_context = completion_state.get("election") or {}
+                assessment_context = completion_state.get("assessment", {}).get("election") or {}
+                return {
+                    "root": {key: root_context.get(key) for key in known_context},
+                    "completion": {
+                        key: completion_context.get(key) for key in known_context
+                    },
+                    "last_complete_assessment": {
+                        key: assessment_context.get(key) for key in known_context
+                    },
+                    "receipt_kind": (completion_state.get("receipt") or {}).get(
+                        "event", {},
+                    ).get("kind"),
+                    "pending_request_id": completion_state.get("pending_request_id"),
+                    "uncertain_save": completion_state.get("uncertain_save"),
+                }
+
+            before_check = public_context_observation()
+            _write_incomplete_receipt_evidence(
+                evidence_directory / "workspace-known-context-before-check.json",
+                json.dumps(before_check, indent=2).encode(),
+            )
+            assert before_check["root"] == known_context
+            assert before_check["completion"] == known_context
+            assert before_check["pending_request_id"] == request_id
+            assert before_check["uncertain_save"] is True
+            notification_observations: list[dict] = []
+
+            def observe_root_context() -> None:
+                notification_observations.append({
+                    "signal": "root.stateChanged", **public_context_observation(),
+                })
+
+            def observe_completion_context() -> None:
+                notification_observations.append({
+                    "signal": "completion.stateChanged", **public_context_observation(),
+                })
+
+            client.stateChanged.connect(observe_root_context)
+            completion.stateChanged.connect(observe_completion_context)
+            try:
+                recovery.checkOutcome(request_id)
+                wait_for_editor_idle(qt_app, recovery)
+                wait_for_editor_idle(qt_app, completion)
+                wait_for_editor_idle(qt_app, workspace)
+            finally:
+                client.stateChanged.disconnect(observe_root_context)
+                completion.stateChanged.disconnect(observe_completion_context)
+                after_check = public_context_observation()
+                after_bytes = journal_file.read_bytes()
+                _write_incomplete_receipt_evidence(
+                    evidence_directory / "original-command-after-check.json", after_bytes,
+                )
+                context_verdict = {
+                    "known_workspace_context": known_context,
+                    "before": before_check,
+                    "notifications": notification_observations,
+                    "after": after_check,
+                    "completion_reads_before_peer_reopen": completion_reads_before_reopen,
+                    "completion_reads_after_check": endpoint.request_count(
+                        "GET", setup["completion_path"],
+                    ),
+                    "finalization_post_count": endpoint.request_count("POST", target),
+                    "explicit_outcome_get_count": endpoint.request_count("GET", outcome_path),
+                }
+                _write_incomplete_receipt_evidence(
+                    evidence_directory / "workspace-known-context-notifications.json",
+                    json.dumps(context_verdict, indent=2).encode(),
+                )
+            assert notification_observations, "No public settlement observation was emitted"
+            assert all(
+                item["root"] == known_context and item["completion"] == known_context
+                for item in notification_observations
+            ), context_verdict
+            assert after_check["root"] == known_context
+            assert after_check["completion"] == known_context
+            settled = completion.property("state")
+            assert settled["pending_request_id"] == "" and settled["uncertain_save"] is False
+            assert settled["error"] == ""
+            assert_public_business_fields(settled["receipt"], receipt)
+            checked = next(
+                row for row in recovery.property("state")["commands"]
+                if row["request_id"] == request_id
+            )
+            for key in (
+                "namespace", "election_id", "request_id", "server_url", "actor_id",
+                "workflow", "path", "method", "payload", "confirmation_required",
+            ):
+                assert checked[key] == original_command[key]
+            assert checked["status"] == "committed" and checked["error"] == ""
+            assert_public_business_fields(checked["receipt"]["record"], receipt)
+            durable = json.loads(after_bytes)
+            assert durable["request_id"] == request_id
+            assert durable["payload"] == original_command["payload"]
+            assert durable["status"] == "committed" and durable["receipt"]["record"] == receipt
+            _assert_completion_credential_free(durable)
+            assert workspace.property("state")["selected"]["station"]["id"] == station_id
+            assert endpoint.request_count("POST", target) == 1
+            assert endpoint.request_count("GET", outcome_path) == 1
+            with endpoint.lock:
+                station_outcomes = [
+                    path for method, path in endpoint.requests
+                    if method == "GET" and path.startswith("/api/workspace/stations/")
+                    and "/request-outcomes/" in path
+                ]
+            assert station_outcomes == []
+            current_response = supervisor.get(setup["completion_path"])
+            assert current_response.status_code == 200, current_response.text
+            assert current_response.json()["election"] == reopened
+            original_after = supervisor.get(query_path)
+            assert original_after.status_code == 200, original_after.text
+            assert original_after.json() == canonical
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
