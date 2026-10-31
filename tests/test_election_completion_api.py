@@ -963,6 +963,7 @@ def test_assigned_polling_staff_retain_finalized_context_while_another_election_
         for row in contexts:
             assert row["election"]["id"] == election_id
             assert row["election"]["status"] == "finalized"
+            assert row["election"]["revision"] == finalized.json()["election"]["revision"]
             assert row["capabilities"] == {
                 "prepare_polling": False, "prepare_counting": False, "approve": False,
             }

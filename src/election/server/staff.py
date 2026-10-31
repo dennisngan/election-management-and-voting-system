@@ -102,7 +102,10 @@ def station_context_view(
     election: Election,
 ) -> dict[str, Any]:
     return {
-        "election": {"id": election.id, "name": election.name, "status": election.status},
+        "election": {
+            "id": election.id, "name": election.name,
+            "status": election.status, "revision": election.revision,
+        },
         "constituency": {
             "id": constituency.id,
             "name": constituency.name,

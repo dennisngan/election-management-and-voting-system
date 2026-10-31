@@ -119,6 +119,7 @@ def test_administrator_manages_officer_access_first_password_reset_and_disabling
             "id": election["id"],
             "name": election["name"],
             "status": election["status"],
+            "revision": election["revision"],
         }
         assert context["constituency"] == {
             "id": constituency["id"],
