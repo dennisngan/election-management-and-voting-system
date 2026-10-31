@@ -1255,8 +1255,8 @@ def test_material_selects_old_completion_event_and_previews_its_localized_saved_
         assert list(journal_directory.rglob("*")) == []
 
 
-@pytest.mark.parametrize("case", ["confirm"])
-@pytest.mark.parametrize("locale", ["en"])
+@pytest.mark.parametrize("case", ["confirm", "peer_reopened"])
+@pytest.mark.parametrize("locale", ["en", "tc", "sc"])
 def test_material_reopening_uses_captured_history_before_password(
     admin: TestClient, database_url: str, https_server: HttpsServer,
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str, locale: str,
