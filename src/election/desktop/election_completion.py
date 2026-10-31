@@ -157,8 +157,9 @@ class ElectionCompletionController(QObject):
             uncertain_save=False, election=deepcopy(election), error="",
             assessment=deepcopy(assessment),
         )
-        self.stateChanged.emit()
+        # Start authoritative reconciliation before observers can see settlement as idle.
         self.finalized.emit(body)
+        self.stateChanged.emit()
 
     def _sync_recovery(self) -> None:
         if self._recovery is None:
