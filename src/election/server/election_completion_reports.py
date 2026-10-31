@@ -9,6 +9,7 @@ from typing import Any
 from election.server.constituency_result_labels import LABELS as RESULT_LABELS
 from election.server.constituency_result_labels import ReportLocale
 from election.server.election_completion_provenance import (
+    completion_recount_tables,
     completion_source_tables,
     completion_tie_tables,
 )
@@ -124,6 +125,7 @@ def _tables(
             labels["none"] if len(complaints) == 1 else "",
         ))
         tables.extend(completion_source_tables(outcome["sources"], locale))
+        tables.extend(completion_recount_tables(outcome["sources"], locale))
     return tables
 
 

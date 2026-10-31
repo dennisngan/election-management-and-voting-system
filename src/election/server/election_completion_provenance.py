@@ -11,6 +11,46 @@ from election.server.turnout_reports import hong_kong_time
 
 _EXTRA: dict[ReportLocale, dict[str, str]] = {
     "en": {
+        "kind_wide": "Recorded constituency recount",
+        "kind_member": "Original constituency recount member",
+        "kind_recount": "Recorded selected recount",
+        "instruction_id": "Instruction ID",
+        "instruction_actor": "Authorized by account ID",
+        "instruction_reason": "Instruction reason",
+        "instruction_event_at": "Instruction occurred at (HKT)",
+        "instruction_entered_at": "Instruction entered at (HKT)",
+        "instruction_basis": "Instruction basis digest",
+        "original_member_count": "Original member count",
+        "completed_member_count": "Completed member count at finalization",
+        "historical_complete": "Historically complete at finalization",
+        "first_completed_at": "First completed at (HKT)",
+        "latest_at_finalization": "Latest at finalization",
+        "parent_instruction_id": "Constituency instruction ID",
+        "local_instruction_id": "Local instruction ID",
+        "source_scope_revision": "Source scope revision",
+        "source_round_id": "Source round ID",
+        "source_round_revision": "Source round revision",
+        "source_selection_revision": "Original source selection revision",
+        "replacement_round_id": "Replacement round ID",
+        "replacement_round_number": "Replacement round number",
+        "first_selection_id": "First completion selection ID",
+        "first_selection_revision": "First completion selection revision",
+        "first_round_revision_id": "First completion round revision record ID",
+        "required_round_id": "Required round ID at finalization",
+        "member_progress": "Progress at finalization",
+        "progress_completed": "Completed",
+        "progress_approved": "Approved",
+        "progress_submitted": "Submitted",
+        "progress_incomplete": "Incomplete",
+        "required_instruction_id": "Required instruction ID at finalization",
+        "round_instruction_id": "Round instruction ID",
+        "required_parent_id": "Parent constituency instruction ID",
+        "instruction_scope_revision": "Instruction scope revision",
+        "instruction_scope_revision_id": "Instruction scope revision record ID",
+        "source_round_revision_id": "Source round revision record ID",
+        "pending_at_finalization": "Pending at finalization",
+        "satisfied_at_finalization": "Current selection satisfies instruction at finalization",
+        "contributes_to_final": "Contributes to finalized result",
         "kind_tie": "Recorded tie resolution",
         "constituency_id": "Constituency ID",
         "tie_revision": "Revision",
@@ -62,6 +102,46 @@ _EXTRA: dict[ReportLocale, dict[str, str]] = {
         "box_receipt_at": "Box received at (HKT)",
     },
     "tc": {
+        "kind_wide": "已記錄全選區重點票",
+        "kind_member": "原有全選區重點票成員",
+        "kind_recount": "已記錄的已選重點票",
+        "instruction_id": "指示編號",
+        "instruction_actor": "授權帳戶編號",
+        "instruction_reason": "指示原因",
+        "instruction_event_at": "指示發生時間（香港時間）",
+        "instruction_entered_at": "指示記錄時間（香港時間）",
+        "instruction_basis": "指示基礎摘要",
+        "original_member_count": "原有成員數目",
+        "completed_member_count": "完成確認時已完成成員數目",
+        "historical_complete": "完成確認時已達歷史完成",
+        "first_completed_at": "首次完成時間（香港時間）",
+        "latest_at_finalization": "完成確認時為最新指示",
+        "parent_instruction_id": "全選區指示編號",
+        "local_instruction_id": "局部指示編號",
+        "source_scope_revision": "來源範圍修訂",
+        "source_round_id": "來源輪次編號",
+        "source_round_revision": "來源輪次修訂",
+        "source_selection_revision": "原有來源選定修訂",
+        "replacement_round_id": "替代輪次編號",
+        "replacement_round_number": "替代輪次號碼",
+        "first_selection_id": "首次完成選定記錄編號",
+        "first_selection_revision": "首次完成選定修訂",
+        "first_round_revision_id": "首次完成輪次版本記錄編號",
+        "required_round_id": "完成確認時所需輪次編號",
+        "member_progress": "完成確認時進度",
+        "progress_completed": "已完成",
+        "progress_approved": "已核准",
+        "progress_submitted": "已提交",
+        "progress_incomplete": "未完成",
+        "required_instruction_id": "完成確認時所需指示編號",
+        "round_instruction_id": "輪次指示編號",
+        "required_parent_id": "所屬全選區指示編號",
+        "instruction_scope_revision": "指示範圍修訂",
+        "instruction_scope_revision_id": "指示範圍版本記錄編號",
+        "source_round_revision_id": "來源輪次版本記錄編號",
+        "pending_at_finalization": "完成確認時仍待處理",
+        "satisfied_at_finalization": "完成確認時目前選定已符合指示",
+        "contributes_to_final": "計入已定案結果",
         "kind_tie": "已記錄平票決定",
         "constituency_id": "選區編號",
         "tie_revision": "修訂",
@@ -113,6 +193,46 @@ _EXTRA: dict[ReportLocale, dict[str, str]] = {
         "box_receipt_at": "票箱接收時間（香港時間）",
     },
     "sc": {
+        "kind_wide": "已记录全选区重新计票",
+        "kind_member": "原有全选区重新计票成员",
+        "kind_recount": "已记录的已选重新计票",
+        "instruction_id": "指示编号",
+        "instruction_actor": "授权账户编号",
+        "instruction_reason": "指示原因",
+        "instruction_event_at": "指示发生时间（香港时间）",
+        "instruction_entered_at": "指示记录时间（香港时间）",
+        "instruction_basis": "指示基础摘要",
+        "original_member_count": "原有成员数目",
+        "completed_member_count": "完成确认时已完成成员数目",
+        "historical_complete": "完成确认时已达历史完成",
+        "first_completed_at": "首次完成时间（香港时间）",
+        "latest_at_finalization": "完成确认时为最新指示",
+        "parent_instruction_id": "全选区指示编号",
+        "local_instruction_id": "局部指示编号",
+        "source_scope_revision": "来源范围修订",
+        "source_round_id": "来源轮次编号",
+        "source_round_revision": "来源轮次修订",
+        "source_selection_revision": "原有来源选定修订",
+        "replacement_round_id": "替代轮次编号",
+        "replacement_round_number": "替代轮次号码",
+        "first_selection_id": "首次完成选定记录编号",
+        "first_selection_revision": "首次完成选定修订",
+        "first_round_revision_id": "首次完成轮次版本记录编号",
+        "required_round_id": "完成确认时所需轮次编号",
+        "member_progress": "完成确认时进度",
+        "progress_completed": "已完成",
+        "progress_approved": "已批准",
+        "progress_submitted": "已提交",
+        "progress_incomplete": "未完成",
+        "required_instruction_id": "完成确认时所需指示编号",
+        "round_instruction_id": "轮次指示编号",
+        "required_parent_id": "所属全选区指示编号",
+        "instruction_scope_revision": "指示范围修订",
+        "instruction_scope_revision_id": "指示范围版本记录编号",
+        "source_round_revision_id": "来源轮次版本记录编号",
+        "pending_at_finalization": "完成确认时仍待处理",
+        "satisfied_at_finalization": "完成确认时当前选定已符合指示",
+        "contributes_to_final": "计入已定案结果",
         "kind_tie": "已记录平票决定",
         "constituency_id": "选区编号",
         "tie_revision": "修订",
@@ -397,4 +517,96 @@ def completion_tie_tables(
             ("tie_current", "is_current"),
         ), labels))
         tables.append(_table(labels["kind_tie"], pairs, labels))
+    return tables
+
+
+def completion_recount_tables(
+    sources: dict[str, Any], locale: ReportLocale,
+) -> list[HistoryTable]:
+    """Render original membership and selection obligations as captured at finalization."""
+    labels = {**RESULT_LABELS[locale], **COUNT_LABELS[locale], **_EXTRA[locale]}
+    tables = _wide_recount_tables(sources, labels)
+    for source in sources["selected_counts"]:
+        record = source["record"]
+        required = record.get("required_recount")
+        if not isinstance(required, dict):
+            continue
+        associated = record.get("recount_instruction") or {}
+        parent = required.get("constituency_recount") or {}
+        pairs = [
+            [labels["station_id"], str(source["station_id"])],
+            [labels["scope_id"], str(source["scope_id"])],
+            [labels["round_id"], str(record["id"])],
+            [labels["required_instruction_id"], str(required["id"])],
+            [labels["round_instruction_id"], _value("id", associated.get("id"), labels)],
+            [labels["required_parent_id"], _value("id", parent.get("id"), labels)],
+        ]
+        pairs.extend(_pairs(required, (
+            ("instruction_scope_revision", "scope_revision"),
+            ("instruction_scope_revision_id", "scope_revision_id"),
+            ("source_round_id", "source_round_id"),
+            ("source_round_revision", "source_round_revision"),
+            ("source_round_revision_id", "source_round_revision_id"),
+            ("replacement_round_id", "new_round_id"),
+            ("replacement_round_number", "new_round_number"),
+            ("instruction_actor", "actor_id"), ("instruction_reason", "reason"),
+            ("instruction_event_at", "event_at"), ("instruction_entered_at", "entered_at"),
+            ("first_completed_at", "completed_at"),
+            ("first_selection_id", "completion_selection_id"),
+            ("first_selection_revision", "completion_selection_revision"),
+            ("first_round_revision_id", "completion_round_revision_id"),
+            ("satisfied_at_finalization", "current_satisfied"),
+        ), labels))
+        pairs.extend(_pairs(record, (
+            ("pending_at_finalization", "recount_pending"),
+            ("contributes_to_final", "contributes_to_result"),
+        ), labels))
+        tables.append(_table(labels["kind_recount"], pairs, labels))
+    return tables
+
+
+def _wide_recount_tables(sources: dict[str, Any], labels: dict[str, str]) -> list[HistoryTable]:
+    tables = []
+    for result in sources.get("constituencies", []):
+        constituency_id = result["context"]["constituency"]["id"]
+        for parent in result.get("constituency_recounts", []):
+            pairs = [[labels["constituency_id"], str(constituency_id)]]
+            pairs.extend(_pairs(parent, (
+                ("instruction_id", "id"), ("instruction_actor", "actor_id"),
+                ("tie_reason", "reason"), ("instruction_event_at", "event_at"),
+                ("instruction_entered_at", "entered_at"), ("instruction_basis", "basis_digest"),
+                ("original_member_count", "member_count"),
+                ("completed_member_count", "completed_member_count"),
+                ("historical_complete", "historical_complete"),
+                ("first_completed_at", "completed_at"), ("latest_at_finalization", "is_latest"),
+            ), labels))
+            tables.append(_table(labels["kind_wide"], pairs, labels))
+            for member in parent["members"]:
+                pairs = [
+                    [labels["constituency_id"], str(constituency_id)],
+                    [labels["parent_instruction_id"], str(parent["id"])],
+                ]
+                pairs.extend(_pairs(member, (
+                    ("station_id", "station_id"), ("scope_id", "scope_id"),
+                    ("local_instruction_id", "local_instruction_id"),
+                    ("replacement_round_id", "new_round_id"),
+                    ("replacement_round_number", "new_round_number"),
+                    ("first_completed_at", "completed_at"),
+                    ("first_selection_id", "completion_selection_id"),
+                    ("first_selection_revision", "completion_selection_revision"),
+                    ("first_round_revision_id", "completion_round_revision_id"),
+                    ("required_round_id", "current_required_round_id"),
+                ), labels))
+                pairs.extend(_pairs(member["scope_source"], (
+                    ("source_scope_revision", "scope_revision"),
+                    ("source_round_id", "source_round_id"),
+                    ("source_round_revision", "source_round_revision"),
+                    ("source_selection_revision", "expected_selection_revision"),
+                ), labels))
+                progress = member.get("progress")
+                pairs.append([
+                    labels["member_progress"],
+                    labels.get("progress_" + str(progress), _value("progress", progress, labels)),
+                ])
+                tables.append(_table(labels["kind_member"], pairs, labels))
     return tables
