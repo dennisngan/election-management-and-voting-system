@@ -2804,3 +2804,134 @@ def test_finalization_prepared_review_retains_original_basis_when_complaint_sour
             client.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             qt_app.processEvents()
+
+
+def test_supervisor_loads_immutable_completion_history_without_selecting_station(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    qt_app: QCoreApplication,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_directory = tmp_path / "election-public-history-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        actor = setup["accounts"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        history_path = base + "/completion/history"
+        reviewed_response = supervisor.get(setup["completion_path"])
+        assert reviewed_response.status_code == 200, reviewed_response.text
+        reviewed = reviewed_response.json()
+        assert reviewed["can_finalize"] is True
+        assert reviewed["election"]["revision"] == 2
+        finalized_response = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        assert finalized_response.status_code == 201, finalized_response.text
+        original = finalized_response.json()
+        assert original["election"]["status"] == "finalized"
+        assert original["election"]["revision"] == 3
+        assert original["active_election_id"] is None
+        outcome_path = (
+            base + f"/request-outcomes/{original['request_id']}?workflow=election_completion"
+        )
+        original_ack_response = supervisor.get(outcome_path)
+        assert original_ack_response.status_code == 200, original_ack_response.text
+        original_ack = deepcopy(original_ack_response.json())
+        assert original_ack == {
+            "request_id": original["request_id"], "workflow": "election_completion",
+            "status": "committed", "record": original,
+        }
+        reopened_response = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": original["event"]["id"],
+            "reason": "Read preserved history while the same election is active again.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened_response.status_code == 201, reopened_response.text
+        reopened = reopened_response.json()
+        assert reopened["election"]["status"] == "active"
+        assert reopened["election"]["revision"] == 4
+        assert reopened["active_election_id"] == election_id
+        canonical_response = supervisor.get(history_path)
+        assert canonical_response.status_code == 200, canonical_response.text
+        canonical_history = deepcopy(canonical_response.json())
+        assert canonical_history == {
+            "election": reopened["election"], "active_election_id": election_id,
+            "events": [reopened["event"], original["event"]],
+        }
+        https_server.clock.value = setup["clock"].value
+        client = DesktopController(https_server.url, str(TLS_DIRECTORY / "ca.pem"))
+        try:
+            client.signIn(https_server.url, actor["username"], BOX_READY_PASSWORD)
+            wait_for(qt_app, lambda: client.property("state")["phase"] == "workspace")
+            workspace = client.property("workspace")
+            wait_for_editor_idle(qt_app, workspace)
+            wait_for(qt_app, lambda: (
+                (client.property("state")["active_election"] or {}).get("id") == election_id
+            ))
+            assert workspace.property("state")["selected"] == {}
+            assert client.property("state")["account"]["id"] == actor["id"]
+            assert client.property("state")["account"]["role"] == "supervisor"
+            active_before = deepcopy(client.property("state")["active_election"])
+            assert {key: active_before[key] for key in reopened["election"]} == reopened["election"]
+            completion = client.property("electionCompletion")
+            completion.open()
+            wait_for_editor_idle(qt_app, completion)
+            opened = completion.property("state")
+            assert opened["error"] == ""
+            assert opened["assessment"]["election"] == reopened["election"]
+            assert opened["assessment"]["active_election_id"] == election_id
+            assert https_server.request_count("GET", history_path) == 0
+            # Intended first RED: the new public Qt loadHistory API is missing.
+            completion.loadHistory()
+            wait_for_editor_idle(qt_app, completion)
+            state = completion.property("state")
+            assert state["error"] == ""
+            assert state["election_id"] == election_id
+            assert_public_business_fields(state["history"], canonical_history)
+            assert state["history"]["election"] == reopened["election"]
+            assert state["history"]["active_election_id"] == election_id
+            events = state["history"]["events"]
+            assert [event["election_revision"] for event in events] == [4, 3]
+            assert events[0]["kind"] == "reopening"
+            assert events[1]["kind"] == "finalization"
+            assert_public_business_fields(events[1]["outcome"], original["event"]["outcome"])
+            assert events[1]["outcome"]["election"] == original["election"]
+            assert state["assessment"]["election"] == reopened["election"]
+            assert state["assessment"]["active_election_id"] == election_id
+            assert state["receipt"] == {} and state["pending_request_id"] == ""
+            assert state["uncertain_save"] is False
+            assert client.property("state")["active_election"] == active_before
+            assert workspace.property("state")["selected"] == {}
+            assert https_server.request_count("GET", history_path) == 1
+            with https_server.lock:
+                history_client_requests = list(https_server.requests)
+            assert not [
+                path for method, path in history_client_requests
+                if method == "GET" and "/request-outcomes/" in path
+            ]
+            assert not [
+                (method, path) for method, path in history_client_requests
+                if method in {"POST", "PUT", "PATCH", "DELETE"}
+                and path.startswith("/api/workspace/")
+            ]
+            assert list(journal_directory.rglob("*.json")) == []
+            _assert_completion_credential_free(state)
+            retained_ack_response = supervisor.get(outcome_path)
+            assert retained_ack_response.status_code == 200, retained_ack_response.text
+            assert retained_ack_response.json() == original_ack
+            retained_history_response = supervisor.get(history_path)
+            assert retained_history_response.status_code == 200, retained_history_response.text
+            assert retained_history_response.json() == canonical_history
+        finally:
+            client.shutdown()
+            client.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
