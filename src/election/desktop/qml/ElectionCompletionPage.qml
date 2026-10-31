@@ -407,12 +407,26 @@ ColumnLayout {
         }
         contentItem: ColumnLayout {
             spacing: 12
-            FormCaption {
-                text: page.electionText() + " · " + page.t("election_completion_revision")
-                    + " " + String(page.reopeningReview.expected_election_revision || "")
-                    + " · #" + String(page.reopeningReview.previous_finalization_id || "")
+            ScrollView {
+                id: reopenReviewScroll
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(reopenReviewDetails.implicitHeight,
+                    Math.max(80, Overlay.overlay.height - 400))
+                contentWidth: availableWidth
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ColumnLayout {
+                    id: reopenReviewDetails
+                    width: reopenReviewScroll.availableWidth
+                    spacing: 8
+                    FormCaption {
+                        text: page.electionText() + " · " + page.t("election_completion_revision")
+                            + " " + String(page.reopeningReview.expected_election_revision || "")
+                            + " · #" + String(page.reopeningReview.previous_finalization_id || "")
+                    }
+                    FormCaption { text: String(page.reopeningReview.reason || "") }
+                }
             }
-            FormCaption { text: String(page.reopeningReview.reason || "") }
             FormCaption { text: page.t("election_completion_reopen_password_hint") }
             FormCaption {
                 objectName: "electionCompletionReopenChanged"
