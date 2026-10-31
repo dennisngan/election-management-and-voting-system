@@ -8,7 +8,10 @@ from typing import Any
 
 from election.server.constituency_result_labels import LABELS as RESULT_LABELS
 from election.server.constituency_result_labels import ReportLocale
-from election.server.election_completion_provenance import completion_source_tables
+from election.server.election_completion_provenance import (
+    completion_source_tables,
+    completion_tie_tables,
+)
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.turnout_reports import hong_kong_time
 
@@ -103,6 +106,7 @@ def _tables(
             str(row["candidate_id"]), row["name"], str(row["quantity"]),
         ] for row in result["candidate_totals"])
         tables.append(HistoryTable(labels["candidate_totals"], votes, (0.20, 0.55, 0.25)))
+    tables.extend(completion_tie_tables(outcome.get("results", []), locale))
     if event["kind"] == "finalization":
         complaints = [[labels[key] for key in (
             "station_id", "case_id", "case_reference", "revision", "status", "completed_at",

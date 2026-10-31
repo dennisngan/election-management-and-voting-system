@@ -11,6 +11,16 @@ from election.server.turnout_reports import hong_kong_time
 
 _EXTRA: dict[ReportLocale, dict[str, str]] = {
     "en": {
+        "kind_tie": "Recorded tie resolution",
+        "constituency_id": "Constituency ID",
+        "tie_revision": "Revision",
+        "tie_winner": "Winner candidate ID",
+        "tie_actor": "Authorized by account ID",
+        "tie_accepted_at": "Accepted at (HKT)",
+        "tie_reason": "Reason",
+        "tie_basis": "Resolution basis digest",
+        "tie_valid": "Valid at finalization",
+        "tie_current": "Current at finalization",
         "counting_station_id": "Counting station ID",
         "accounting_source_station_id": "Accounting source station ID",
         "pinned_source_current": "Source current when scope was frozen",
@@ -52,6 +62,16 @@ _EXTRA: dict[ReportLocale, dict[str, str]] = {
         "box_receipt_at": "Box received at (HKT)",
     },
     "tc": {
+        "kind_tie": "已記錄平票決定",
+        "constituency_id": "選區編號",
+        "tie_revision": "修訂",
+        "tie_winner": "當選候選人編號",
+        "tie_actor": "授權帳戶編號",
+        "tie_accepted_at": "接納時間（香港時間）",
+        "tie_reason": "原因",
+        "tie_basis": "平票決定基礎摘要",
+        "tie_valid": "完成確認時有效",
+        "tie_current": "完成確認時為目前決定",
         "counting_station_id": "點票站編號",
         "accounting_source_station_id": "核算來源投票站編號",
         "pinned_source_current": "範圍凍結時來源仍為目前版本",
@@ -93,6 +113,16 @@ _EXTRA: dict[ReportLocale, dict[str, str]] = {
         "box_receipt_at": "票箱接收時間（香港時間）",
     },
     "sc": {
+        "kind_tie": "已记录平票决定",
+        "constituency_id": "选区编号",
+        "tie_revision": "修订",
+        "tie_winner": "当选候选人编号",
+        "tie_actor": "授权账户编号",
+        "tie_accepted_at": "接纳时间（香港时间）",
+        "tie_reason": "原因",
+        "tie_basis": "平票决定基础摘要",
+        "tie_valid": "完成确认时有效",
+        "tie_current": "完成确认时为当前决定",
         "counting_station_id": "点票站编号",
         "accounting_source_station_id": "核算来源投票站编号",
         "pinned_source_current": "范围冻结时来源仍为当前版本",
@@ -345,4 +375,26 @@ def completion_source_tables(sources: dict[str, Any], locale: ReportLocale) -> l
                 pairs = [[labels["source"], title], *identity]
                 pairs.extend(row for table in rendered for row in table.rows[1:])
                 tables.append(_table(title, pairs, labels))
+    return tables
+
+
+def completion_tie_tables(
+    results: list[dict[str, Any]], locale: ReportLocale,
+) -> list[HistoryTable]:
+    """Explain saved winners using the tie authorization retained with that outcome."""
+    labels = {**RESULT_LABELS[locale], **COUNT_LABELS[locale], **_EXTRA[locale]}
+    tables = []
+    for result in results:
+        decision = result.get("tie_resolution")
+        if not isinstance(decision, dict):
+            continue
+        pairs = [[labels["constituency_id"], str(result["constituency"]["id"])]]
+        pairs.extend(_pairs(decision, (
+            ("decision_id", "id"), ("tie_revision", "revision"),
+            ("tie_winner", "candidate_id"), ("tie_actor", "actor_id"),
+            ("tie_accepted_at", "accepted_at"), ("tie_reason", "reason"),
+            ("tie_basis", "basis_digest"), ("tie_valid", "valid"),
+            ("tie_current", "is_current"),
+        ), labels))
+        tables.append(_table(labels["kind_tie"], pairs, labels))
     return tables
