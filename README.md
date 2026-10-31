@@ -17,6 +17,9 @@ suite, matching packaged-client journeys, protected current-source restore or fi
 [Delivery traceability](docs/DELIVERY-TRACEABILITY.md) records those gates and their actual source/build
 scope. [Windows setup](docs/WINDOWS-SETUP.md) separates the backend/MySQL host from packaged clients.
 
+Follow the [synthetic demo runbook](docs/DEMO-RUNBOOK.md) for a reproducible manual example and the
+[source/evidence delivery guide](docs/DELIVERY-PACKAGE.md) for allowlists, manifests and package checks.
+
 The latest accepted historical batch passed **1,547 tests with 36 warnings** at
 `edaff3020bd6c66aec1ead64c72cd66bb5ad59e9`, followed by Ruff and mypy. Its
 [sealed evidence archive](docs/evidence/integrated/ticket22-23-25-final-edaff/README.md) includes the
