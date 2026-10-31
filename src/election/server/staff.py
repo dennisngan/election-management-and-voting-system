@@ -299,7 +299,9 @@ def staff_router(
                     PollingStation.destination_station_id,
                 ),
                 load_only(Constituency.id, Constituency.name, Constituency.code),
-                load_only(Election.id, Election.name, Election.status),
+                load_only(
+                    Election.id, Election.name, Election.status, Election.revision
+                ),
             )
             .join(Constituency, PollingStation.constituency_id == Constituency.id)
             .join(Election, Constituency.election_id == Election.id)
