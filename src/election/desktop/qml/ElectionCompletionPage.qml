@@ -83,7 +83,7 @@ ColumnLayout {
             + " · " + String((editorState.history_event_times || ({}))[String(event.id)] || "—")
     }
     function currentHistoryText() {
-        var current = history.election || ({})
+        var current = page.election || ({})
         if (!current.id) return ""
         return t("election_completion_current") + " · " + String(current.name || "")
             + " · " + t(current.status) + " · " + t("election_completion_revision")
