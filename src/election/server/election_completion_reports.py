@@ -7,7 +7,7 @@ from typing import Any
 
 from election.server.constituency_result_labels import LABELS as RESULT_LABELS
 from election.server.constituency_result_labels import ReportLocale
-from election.server.history_pdf import HistoryTable
+from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.turnout_reports import hong_kong_time
 
 LABELS: dict[ReportLocale, dict[str, str]] = {
@@ -130,3 +130,16 @@ def completion_csv(event: dict[str, Any], locale: ReportLocale, generated_at: da
         if table.empty_message:
             writer.writerow([table.empty_message])
     return output.getvalue().encode("utf-8-sig")
+
+
+def completion_pdf(event: dict[str, Any], locale: ReportLocale, generated_at: datetime) -> bytes:
+    """Render the same preserved business values as the CSV, with the shared CJK layout."""
+    labels = LABELS[locale]
+    footer = (
+        f"{labels['election_id']} {event['election_id']} | {labels['event_id']} {event['id']}"
+        f" | {event['basis_digest']}"
+    )
+    return history_pdf(
+        labels["title"], _metadata(event, labels, generated_at), _tables(event, labels),
+        footer, labels["page"],
+    )

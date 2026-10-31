@@ -26,7 +26,7 @@ from election.server.election_completion_models import (
     ElectionCompletionEvent,
     ElectionCompletionRequest,
 )
-from election.server.election_completion_reports import completion_csv
+from election.server.election_completion_reports import completion_csv, completion_pdf
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent, LoginSession
 from election.server.polling import as_utc, record_view
@@ -272,11 +272,10 @@ def election_completion_router(
             "events": [_completion_event_view(event) for event in events],
         }
 
-    @router.get("/completion/history/{event_id}/statement.csv")
-    def statement_csv(
-        election_id: int, event_id: int, db: Database, identity: Identity,
-        locale: ReportLocale = "tc",
-    ) -> Response:
+    def report_event(
+        election_id: int, event_id: int, db: Session,
+        identity: tuple[Account, LoginSession],
+    ) -> dict[str, Any]:
         _completion_context(db, identity, election_id, timestamp)
         event = db.scalar(select(ElectionCompletionEvent).where(
             ElectionCompletionEvent.id == event_id,
@@ -286,10 +285,31 @@ def election_completion_router(
             raise HTTPException(404, detail={"code": "election_completion_event_not_found"})
         frozen = _completion_event_view(event)
         db.rollback()
+        return frozen
+
+    @router.get("/completion/history/{event_id}/statement.csv")
+    def statement_csv(
+        election_id: int, event_id: int, db: Database, identity: Identity,
+        locale: ReportLocale = "tc",
+    ) -> Response:
+        frozen = report_event(election_id, event_id, db, identity)
         return Response(
             completion_csv(frozen, locale, timestamp()), media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": (
                 f'attachment; filename="election-{election_id}-completion-{event_id}.csv"'
+            )},
+        )
+
+    @router.get("/completion/history/{event_id}/statement.pdf")
+    def statement_pdf(
+        election_id: int, event_id: int, db: Database, identity: Identity,
+        locale: ReportLocale = "tc",
+    ) -> Response:
+        frozen = report_event(election_id, event_id, db, identity)
+        return Response(
+            completion_pdf(frozen, locale, timestamp()), media_type="application/pdf",
+            headers={"Content-Disposition": (
+                f'attachment; filename="election-{election_id}-completion-{event_id}.pdf"'
             )},
         )
 
