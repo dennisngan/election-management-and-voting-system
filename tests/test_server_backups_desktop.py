@@ -168,20 +168,30 @@ def test_committed_backup_with_lost_tls_response_recovers_by_explicit_read(
         wait_for_editor_idle(qt_app, backups)
         start_gets = endpoint.request_count("GET", "/api/backups")
         endpoint.drop_path = "/api/backups"
+        acknowledged_at = time.monotonic()
         backups.requestBackup()
-        wait_for(qt_app, lambda: backups.state["uncertain_save"])
+        original_request_id = backups.state["pending_request_id"]
+        assert original_request_id and backups.state["busy"]
+        heartbeat: list[bool] = []
+        QTimer.singleShot(0, lambda: heartbeat.append(True))
+        wait_for(qt_app, lambda: bool(heartbeat), timeout=5)
+        assert time.monotonic() - acknowledged_at < 5
+        # The proxy drops the real reply only after the bulk operation finishes.
+        wait_for(qt_app, lambda: backups.state["uncertain_save"], timeout=30)
         request_id = backups.state["pending_request_id"]
-        assert request_id
+        assert request_id == original_request_id
         assert backups.state["error"] == "disconnected"
         assert endpoint.request_count("POST", "/api/backups") == 1
         wait_for(
             qt_app,
             lambda: endpoint.response_tagged.is_set() and endpoint.response_dropped.is_set(),
         )
+        status_started = time.monotonic()
+        listing = admin.get("/api/backups")
+        assert listing.status_code == 200
+        assert time.monotonic() - status_started < 5
         committed = next(
-            row
-            for row in admin.get("/api/backups").json()["backups"]
-            if row["request_id"] == request_id
+            row for row in listing.json()["backups"] if row["request_id"] == request_id
         )
         assert committed["status"] == "succeeded"
 
