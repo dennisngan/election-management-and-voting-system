@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +18,7 @@ from election.server.accounting import accounting_record
 from election.server.accounting import record_view as accounting_view
 from election.server.complaints import complaint_snapshot
 from election.server.configuration_models import Constituency, Election
+from election.server.constituency_result_labels import ReportLocale
 from election.server.constituency_results import constituency_result
 from election.server.counting_round_models import CountRoundRevision
 from election.server.counting_rounds import round_at, round_context, round_view
@@ -25,6 +26,7 @@ from election.server.election_completion_models import (
     ElectionCompletionEvent,
     ElectionCompletionRequest,
 )
+from election.server.election_completion_reports import completion_csv
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent, LoginSession
 from election.server.polling import as_utc, record_view
@@ -269,6 +271,27 @@ def election_completion_router(
             "active_election_id": active.election_id if active is not None else None,
             "events": [_completion_event_view(event) for event in events],
         }
+
+    @router.get("/completion/history/{event_id}/statement.csv")
+    def statement_csv(
+        election_id: int, event_id: int, db: Database, identity: Identity,
+        locale: ReportLocale = "tc",
+    ) -> Response:
+        _completion_context(db, identity, election_id, timestamp)
+        event = db.scalar(select(ElectionCompletionEvent).where(
+            ElectionCompletionEvent.id == event_id,
+            ElectionCompletionEvent.election_id == election_id,
+        ))
+        if event is None:
+            raise HTTPException(404, detail={"code": "election_completion_event_not_found"})
+        frozen = _completion_event_view(event)
+        db.rollback()
+        return Response(
+            completion_csv(frozen, locale, timestamp()), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": (
+                f'attachment; filename="election-{election_id}-completion-{event_id}.csv"'
+            )},
+        )
 
     @router.get("/request-outcomes/{request_id}")
     def outcome(
