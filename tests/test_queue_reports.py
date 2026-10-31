@@ -105,7 +105,10 @@ def test_selected_revision_statement_derives_freshness_from_its_own_history_pref
         response = client.get(path + "/statement?revision=1&locale=tc")
         assert response.status_code == 200
         statement = response.json()
-        assert statement["scope"]["election"] == context["election"]
+        # The report identity is separate from the live workspace lifecycle revision.
+        assert statement["scope"]["election"] == {
+            key: context["election"][key] for key in ("id", "name", "status")
+        }
         assert statement["scope"]["constituency"] == context["constituency"]
         assert statement["scope"]["station"] == {
             key: station[key] for key in ("id", "name", "code")
