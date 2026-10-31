@@ -1751,3 +1751,269 @@ def test_material_exports_captured_old_event_csv_after_ui_locale_changes_in_save
                 if "/completion/history/" in path and "/statement" in path] == [
                     ("GET", csv_path)]
         assert list(journal_directory.rglob('*')) == []
+
+
+def test_material_recovery_shows_original_finalization_receipt_separate_from_current_election(
+    admin: TestClient, database_url: str, https_server: HttpsServer,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from election.desktop.client_command_journal import CommandJournal
+
+    journal_directory = tmp_path / "material-election-receipt-fixture-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    evidence = tmp_path / "material-election-receipt-evidence"
+    evidence.mkdir(mode=0o700)
+    canonical_path = evidence / "canonical-original-finalization.json"
+    pending_path = evidence / "fixture-pending-journal-before-check.json"
+    observation_path = evidence / "material-original-receipt-observation.json"
+    transport_path = evidence / "material-original-receipt-transport.json"
+    readiness_path = evidence / "pre-check-readiness.json"
+
+    def preserve(path: Path, body: bytes) -> None:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(body)
+            output.flush()
+            os.fsync(output.fileno())
+
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        actor = setup["accounts"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        finalization_path = base + "/finalizations"
+        reviewed_response = supervisor.get(setup["completion_path"])
+        assert reviewed_response.status_code == 200, reviewed_response.text
+        reviewed = reviewed_response.json()
+        assert reviewed["can_finalize"] is True
+        original_payload = {
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"],
+        }
+        finalized = supervisor.post(finalization_path, json={
+            **original_payload, "password": BOX_READY_PASSWORD,
+        })
+        preserve(canonical_path, finalized.content)
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        assert original["request_id"] == original_payload["request_id"]
+        assert original["election"]["status"] == "finalized"
+        assert original["election"]["revision"] == 3
+        assert original["event"]["kind"] == "finalization"
+        reopened_response = supervisor.post(base + "/reopenings", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": original["election"]["revision"],
+            "previous_finalization_id": original["event"]["id"],
+            "reason": "Keep the original receipt visible separately from current active work.",
+            "password": BOX_READY_PASSWORD,
+        })
+        assert reopened_response.status_code == 201, reopened_response.text
+        reopened = reopened_response.json()
+        assert reopened["election"]["status"] == "active"
+        assert reopened["election"]["revision"] == 4
+        history_response = supervisor.get(base + "/completion/history")
+        assert history_response.status_code == 200, history_response.text
+        original_history = history_response.json()
+        assert original_history["events"] == [reopened["event"], original["event"]]
+
+        # Approved public filesystem adapter fixture only: a known-server-committed original
+        # command with locally pending metadata. No packet was dropped or runtime UNKNOWN observed.
+        journal = CommandJournal(journal_directory)
+        prepared = journal.prepare_election(
+            https_server.url, actor["id"], election_id, finalization_path, "POST",
+            {**original_payload, "password": BOX_READY_PASSWORD},
+        )
+        assert prepared["namespace"] == "election" and "station_id" not in prepared
+        assert prepared["election_id"] == election_id and prepared["actor_id"] == actor["id"]
+        assert prepared["request_id"] == original["request_id"]
+        assert prepared["status"] == "pending" and prepared["receipt"] is None
+        assert prepared["confirmation_required"] is True
+        assert prepared["payload"] == original_payload
+        files = list(journal_directory.glob("*.json"))
+        assert len(files) == 1
+        journal_path = files[0]
+        pending_bytes = journal_path.read_bytes()
+        preserve(pending_path, pending_bytes)
+        assert BOX_READY_PASSWORD not in pending_bytes.decode('utf-8')
+        accepted_at = datetime.fromisoformat(original["event"]["accepted_at"])
+        assert accepted_at.second == accepted_at.microsecond == 0
+        accepted_hkt = accepted_at.astimezone(timezone(timedelta(hours=8))).strftime(
+            "%Y-%m-%d %H:%M HKT")
+        https_server.clock.value = setup["clock"].value
+        outcome_path = base + f"/request-outcomes/{original['request_id']}"
+        try:
+            run_completion_material(
+                {
+                    "server": https_server.url, "username": actor["username"],
+                    "password": BOX_READY_PASSWORD, "locale": "en",
+                    "station_id": setup["stations"]["N1"]["id"], "election_id": election_id,
+                    "actor_id": actor["id"], "request_id": original["request_id"],
+                    "canonical_path": str(canonical_path), "pending_path": str(pending_path),
+                    "journal_path": str(journal_path), "observation_path": str(observation_path),
+                    "accepted_hkt": accepted_hkt, "current_election": reopened["election"],
+                    "readiness_path": str(readiness_path),
+                },
+                """
+                import os
+                from copy import deepcopy
+                from tests.test_physical_acceptance_recovery_desktop import (
+                    assert_public_business_fields,
+                )
+
+                canonical = json.loads(Path(setup['canonical_path']).read_text('utf-8'))
+                wait(lambda: (controller.property('state')['active_election'] or {}).get('id')
+                    == setup['election_id'])
+                active_before = deepcopy(controller.property('state')['active_election'])
+                completion = controller.property('electionCompletion')
+                recovery = controller.property('recovery')
+                click('recoveryNavigation')
+                wait(lambda: not any(recovery.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                commands = recovery.property('state')['commands']
+                assert len(commands) == 1
+                pending = commands[0]
+                assert pending['request_id'] == setup['request_id']
+                assert pending['namespace'] == 'election' and 'station_id' not in pending
+                assert pending['election_id'] == setup['election_id']
+                assert pending['actor_id'] == setup['actor_id']
+                assert pending['status'] == 'pending' and pending['receipt'] is None
+                assert Path(setup['journal_path']).read_bytes() == (
+                    Path(setup['pending_path']).read_bytes())
+                card_name = 'recoveryCommand_' + setup['request_id']
+                card = focus(card_name)
+                assert card.property('visible') and _pointer_geometry(card) is not None
+                pending_card_text = card.property('text')
+                click(card_name)
+                assert control('recoveryPage').property('selectedRequestId') == setup['request_id']
+                assert control('recoverySelectedCommandPanel').property('visible') is True
+                try:
+                    check = focus('recoveryCheckOutcome')
+                except AssertionError:
+                    # DEBUG-t24-recovery-readiness: public controls only, unchanged focus budget.
+                    button = control('recoveryCheckOutcome')
+                    origin = button.mapToScene(QPointF(0, 0))
+                    ancestors = []
+                    ancestor = button.parentItem()
+                    while ancestor is not None:
+                        ancestors.append({
+                            'name': ancestor.objectName(),
+                            'width': ancestor.width(), 'height': ancestor.height(),
+                            'x': ancestor.x(), 'y': ancestor.y(),
+                            'clip': ancestor.property('clip'),
+                            'contentY': ancestor.property('contentY'),
+                            'contentHeight': ancestor.property('contentHeight'),
+                        })
+                        ancestor = ancestor.parentItem()
+                    diagnostic = {
+                        'button': {key: button.property(key) for key in (
+                            'visible', 'enabled', 'activeFocus', 'width', 'height')},
+                        'scene_origin': [origin.x(), origin.y()], 'ancestors': ancestors,
+                        'working': {key: recovery.property('state')[key]
+                            for key in ('busy', 'refreshing')},
+                        'command_status': control('recoveryPage').property(
+                            'selectedCommand').get('status'),
+                    }
+                    descriptor = os.open(setup['readiness_path'],
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                        json.dump(diagnostic, output, ensure_ascii=False, indent=2)
+                        output.flush()
+                        os.fsync(output.fileno())
+                    raise
+                assert check.property('enabled') and _pointer_geometry(check) is not None
+                assert control('recoveryRetryOriginal').property('visible') is False
+                click('recoveryCheckOutcome')
+                wait(lambda: not any(recovery.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                settled = recovery.property('state')
+                command = next(row for row in settled['commands']
+                    if row['request_id'] == setup['request_id'])
+                frame()
+                card_text = control(card_name).property('text')
+                summary = control('recoveryReceiptSummary')
+                hint = control('recoveryReceiptHistoryHint')
+                summary_text = summary.property('text')
+                hint_text = hint.property('text')
+                durable = json.loads(Path(setup['journal_path']).read_text('utf-8'))
+                observed = {
+                    'fixture_kind': (
+                        'pending metadata for a known committed command; no lost response'),
+                    'pending_card_text': pending_card_text, 'card_text': card_text,
+                    'summary_visible': summary.property('visible'), 'summary_text': summary_text,
+                    'hint_visible': hint.property('visible'), 'hint_text': hint_text,
+                    'command': command, 'durable': durable,
+                    'root_election': controller.property('state')['election'],
+                    'completion_election': completion.property('state')['election'],
+                    'active_before': active_before,
+                    'active_after': controller.property('state')['active_election'],
+                }
+                descriptor = os.open(setup['observation_path'],
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                    json.dump(observed, output, ensure_ascii=False, indent=2)
+                    output.flush()
+                    os.fsync(output.fileno())
+                assert settled['error'] == '' and command['status'] == 'committed'
+                assert_public_business_fields(command['receipt']['record'], canonical)
+                assert durable['receipt']['record'] == canonical
+                assert durable['payload'] == pending['payload']
+                # First expected presentation RED: no localized election workflow/target/summary.
+                assert card_text.startswith('Election completion' + ' · '), card_text
+                for fragment in ('Election #' + str(setup['election_id']),
+                                 'Finalization', 'Recorded by server'):
+                    assert fragment in card_text, (fragment, card_text)
+                assert 'Target not recorded' not in card_text
+                assert summary.property('visible') is True
+                assert summary.width() > 0 and summary.height() > 0
+                for fragment in (
+                    'Original server receipt', 'Finalization',
+                    'Event #' + str(canonical['event']['id']),
+                    'Original revision 3', setup['accepted_hkt'],
+                ):
+                    assert fragment in summary_text, (fragment, summary_text)
+                assert 'No server receipt is available yet.' not in summary_text
+                assert hint.property('visible') is True
+                assert hint_text == (
+                    'The saved outcome is preserved. Current election state is shown separately.')
+                assert control('recoveryCheckOutcome').property('enabled') is False
+                assert control('recoveryRetryOriginal').property('visible') is False
+                assert control('recoveryPage').property('selectedRequestId') == setup['request_id']
+                current = setup['current_election']
+                root_election = controller.property('state')['election']
+                assert {key: root_election[key] for key in current} == current
+                assert completion.property('state')['election'] == current
+                assert controller.property('state')['active_election'] == active_before
+                assert command['receipt']['record']['election']['status'] == 'finalized'
+                assert command['receipt']['record']['election']['revision'] == 3
+                assert setup['password'] not in json.dumps(observed)
+                """,
+            )
+        finally:
+            with https_server.lock:
+                transport = {"requests": list(https_server.requests),
+                             "request_timings": list(https_server.request_timings)}
+            preserve(transport_path, json.dumps(transport, ensure_ascii=False, indent=2).encode())
+            preserve(evidence / "journal-after-actual-material-check.json",
+                     journal_path.read_bytes())
+        assert https_server.request_count('GET', outcome_path) == 1
+        assert [row['status'] for row in transport['request_timings']
+                if row['method'] == 'GET' and row['path'] == outcome_path] == [200]
+        assert [(method, path) for method, path in transport['requests']
+                if method == 'GET' and '/request-outcomes/' in path] == [('GET', outcome_path)]
+        assert not [(method, path) for method, path in transport['requests']
+                    if method in {'POST', 'PUT', 'PATCH', 'DELETE'}
+                    and path.startswith('/api/workspace/')]
+        durable = json.loads(journal_path.read_text('utf-8'))
+        assert durable['status'] == 'committed' and durable['receipt']['record'] == original
+        for key in ('request_id', 'server_url', 'actor_id', 'namespace', 'election_id',
+                    'workflow', 'path', 'method', 'payload', 'confirmation_required'):
+            assert durable[key] == prepared[key]
+        assert list(journal_directory.glob('*.json')) == [journal_path]
+        retained_history = supervisor.get(base + '/completion/history')
+        assert retained_history.status_code == 200, retained_history.text
+        assert retained_history.json() == original_history
