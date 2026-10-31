@@ -148,7 +148,10 @@ def large_election_test_staff_directory(
                 }
                 constituency = constituencies[number % 2]
                 station_contexts[station.id] = {
-                    "election": {"id": election.id, "name": election.name, "status": "draft"},
+                    "election": {
+                        "id": election.id, "name": election.name,
+                        "status": "draft", "revision": 1,
+                    },
                     "constituency": {
                         "id": constituency.id,
                         "name": constituency.name,
