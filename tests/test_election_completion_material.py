@@ -2002,3 +2002,201 @@ def test_material_recovery_shows_original_finalization_receipt_separate_from_cur
         retained_history = supervisor.get(base + '/completion/history')
         assert retained_history.status_code == 200, retained_history.text
         assert retained_history.json() == original_history
+
+
+def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
+    admin: TestClient, database_url: str, https_server: HttpsServer,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unit = "選舉復核Election确认保留原始結果。"
+    tail = "末段必須完整保留END。"
+    reason = (unit * (2000 // len(unit) + 1))[:2000 - len(tail)] + tail
+    assert len(reason) == 2000 and len(reason.encode('utf-16-le')) // 2 == 2000
+    assert reason == reason.strip() and reason.endswith(tail)
+    journal_directory = tmp_path / "material-maximum-reopening-reason-journal"
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    evidence = tmp_path / "material-maximum-reopening-reason-evidence"
+    evidence.mkdir(mode=0o700)
+    original_path = evidence / "original-finalization.json"
+    geometry_path = evidence / "dialog-before-password.json"
+    failure_path = evidence / "actual-control-failure.json"
+    observation_path = evidence / "settled-reopening.json"
+    transport_path = evidence / "transport.json"
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        target = base + "/reopenings"
+        reviewed_response = supervisor.get(setup["completion_path"])
+        assert reviewed_response.status_code == 200, reviewed_response.text
+        reviewed = reviewed_response.json()
+        assert reviewed["can_finalize"] is True
+        finalized = supervisor.post(base + "/finalizations", json={
+            "request_id": str(uuid4()),
+            "expected_election_revision": reviewed["election"]["revision"],
+            "basis_digest": reviewed["basis_digest"], "password": BOX_READY_PASSWORD,
+        })
+        descriptor = os.open(original_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(finalized.content)
+            output.flush()
+            os.fsync(output.fileno())
+        assert finalized.status_code == 201, finalized.text
+        original = finalized.json()
+        assert original["election"]["status"] == "finalized"
+        assert original["election"]["revision"] == 3
+        https_server.clock.value = setup["clock"].value
+        try:
+            run_completion_material(
+                {
+                    "server": https_server.url,
+                    "username": setup["accounts"]["supervisor"]["username"],
+                    "password": BOX_READY_PASSWORD, "locale": "en",
+                    "station_id": setup["stations"]["N1"]["id"], "election_id": election_id,
+                    "reason": reason, "original_path": str(original_path),
+                    "journal_directory": str(journal_directory),
+                    "geometry_path": str(geometry_path), "failure_path": str(failure_path),
+                    "observation_path": str(observation_path),
+                },
+                """
+                import os
+                from copy import deepcopy
+                from tests.test_physical_acceptance_recovery_desktop import (
+                    assert_public_business_fields,
+                )
+
+                def write_evidence(path, value):
+                    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                        json.dump(value, output, ensure_ascii=False, indent=2)
+                        output.flush()
+                        os.fsync(output.fileno())
+
+                assert window.width() == 1280 and window.height() == 800
+                original = json.loads(Path(setup['original_path']).read_text('utf-8'))
+                click('electionCompletionNavigation')
+                completion = controller.property('electionCompletion')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                click('electionCompletionHistoryRefresh')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                assert completion.property('state')['election'] == original['election']
+                assert controller.property('state')['active_election'] is None
+                enter('electionCompletionReopenReason', setup['reason'])
+                assert control('electionCompletionReopenReason').property('text') == setup['reason']
+                click('electionCompletionReopen')
+                dialog = window.findChild(QObject, 'electionCompletionReopenPasswordDialog')
+                assert dialog is not None
+                wait(lambda: dialog.property('opened'))
+                frame()
+                captured = deepcopy(completion.property('state')['reopening_review'])
+                password = control('electionCompletionReopenPassword')
+                confirm = control('electionCompletionReopenConfirm')
+
+                def public_geometry():
+                    return {
+                        'window': [window.width(), window.height()],
+                        'dialog': {key: dialog.property(key) for key in
+                            ('visible', 'opened', 'width', 'height')},
+                        'password': {
+                            'visible': password.property('visible'),
+                            'enabled': password.property('enabled'),
+                            'activeFocus': password.property('activeFocus'),
+                            'geometry': _pointer_geometry(password),
+                            'has_text': bool(password.property('text')),
+                        },
+                        'confirm': {
+                            'visible': confirm.property('visible'),
+                            'enabled': confirm.property('enabled'),
+                            'geometry': _pointer_geometry(confirm),
+                        },
+                        'captured': completion.property('state')['reopening_review'],
+                    }
+
+                write_evidence(setup['geometry_path'], public_geometry())
+                assert captured == {
+                    'election_id': setup['election_id'],
+                    'expected_election_revision': original['election']['revision'],
+                    'previous_finalization_id': original['event']['id'],
+                    'reason': setup['reason'],
+                }
+                assert len(captured['reason']) == 2000
+                assert completion.property('state')['pending_request_id'] == ''
+                assert list(Path(setup['journal_directory']).rglob('*')) == []
+                try:
+                    # Expected genuine failure if max-length caption pushes controls out of view.
+                    # Existing helpers retain their fixed focus/pointer budgets and actual input.
+                    enter('electionCompletionReopenPassword', setup['password'])
+                    assert _pointer_geometry(password) is not None
+                    confirm = focus('electionCompletionReopenConfirm')
+                    assert confirm.property('enabled') and _pointer_geometry(confirm) is not None
+                    assert completion.property('state')['reopening_review'] == captured
+                    click('electionCompletionReopenConfirm')
+                    wait(lambda: not any(completion.property('state')[key]
+                        for key in ('busy', 'refreshing')))
+                except AssertionError:
+                    write_evidence(setup['failure_path'], public_geometry())
+                    raise
+                settled = completion.property('state')
+                wait(lambda: not dialog.property('visible'))
+                files = list(Path(setup['journal_directory']).rglob('*.json'))
+                durable = json.loads(files[0].read_text('utf-8')) if len(files) == 1 else None
+                write_evidence(setup['observation_path'], {
+                    'captured': captured, 'state': settled, 'durable_command': durable,
+                    'root_election': controller.property('state')['election'],
+                    'active_election': controller.property('state')['active_election'],
+                    'password_present': bool(password.property('text')),
+                    'dialog_visible': dialog.property('visible'),
+                })
+                assert settled['error'] == ''
+                assert settled['pending_request_id'] == '' and settled['uncertain_save'] is False
+                assert password.property('text') == '' and not dialog.property('visible')
+                assert settled['reopening_review'] == {}
+                assert durable is not None and durable['status'] == 'committed'
+                assert durable['payload']['reason'] == setup['reason']
+                assert len(durable['payload']['reason']) == 2000
+                assert durable['payload']['expected_election_revision'] == (
+                    captured['expected_election_revision'])
+                assert durable['payload']['previous_finalization_id'] == (
+                    captured['previous_finalization_id'])
+                assert durable['receipt']['record']['event']['reason'] == setup['reason']
+                assert_public_business_fields(settled['receipt'], durable['receipt']['record'])
+                assert settled['receipt']['event']['kind'] == 'reopening'
+                assert settled['election']['status'] == 'active'
+                assert settled['election']['revision'] == 4
+                assert setup['password'] not in json.dumps(durable)
+                """,
+            )
+        finally:
+            with https_server.lock:
+                transport = {"requests": list(https_server.requests),
+                             "request_timings": list(https_server.request_timings)}
+            descriptor = os.open(transport_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                json.dump(transport, output, ensure_ascii=False, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+        assert https_server.request_count('POST', target) == 1
+        assert [row['status'] for row in transport['request_timings']
+                if row['method'] == 'POST' and row['path'] == target] == [201]
+        assert not [path for method, path in transport['requests']
+                    if method == 'GET' and '/request-outcomes/' in path]
+        proof = json.loads(observation_path.read_text('utf-8'))
+        command = proof['durable_command']
+        outcome = supervisor.get(
+            base + f"/request-outcomes/{command['request_id']}?workflow=election_completion"
+        )
+        assert outcome.status_code == 200, outcome.text
+        canonical = outcome.json()['record']
+        assert canonical == command['receipt']['record']
+        assert canonical['event']['reason'] == reason and len(canonical['event']['reason']) == 2000
+        assert canonical['event']['previous_finalization_id'] == original['event']['id']
+        active = supervisor.get('/api/active-election')
+        assert active.status_code == 200, active.text
+        assert proof['active_election'] == active.json()['election']
+        assert {key: proof['root_election'][key] for key in canonical['election']} == (
+            canonical['election'])
+        history = supervisor.get(base + '/completion/history')
+        assert history.status_code == 200, history.text
+        assert history.json()['events'] == [canonical['event'], original['event']]
