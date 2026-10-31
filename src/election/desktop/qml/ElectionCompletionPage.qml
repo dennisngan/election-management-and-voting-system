@@ -14,14 +14,16 @@ ColumnLayout {
 
     readonly property var editorState: completion ? (completion.state || ({})) : ({})
     readonly property var assessment: editorState.assessment || ({})
-    readonly property var election: assessed ? assessment.election : ({})
+    readonly property var election: editorState.election
+        && editorState.election.id === editorState.election_id
+        ? editorState.election : assessed ? assessment.election : ({})
     readonly property var blockers: assessed ? (assessment.blockers || []) : []
     readonly property bool working: !!editorState.busy || !!editorState.refreshing
     readonly property bool hasElection: Number(editorState.election_id || 0) > 0
     readonly property bool assessed: assessment.election !== undefined
         && assessment.election !== null
         && assessment.election.id === editorState.election_id
-    readonly property bool ready: assessment.can_finalize === true
+    readonly property bool ready: editorState.can_finalize === true
     readonly property string errorCode: String(editorState.error || "")
     spacing: 20
 

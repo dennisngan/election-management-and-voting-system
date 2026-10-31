@@ -35,6 +35,7 @@ class ElectionCompletionController(QObject):
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
         view = quantity_display(self._state)
+        view["can_finalize"] = self._can_finalize(self._state["assessment"])
         receipt = self._state["receipt"]
         if (
             self._recovery is not None and receipt
@@ -42,6 +43,22 @@ class ElectionCompletionController(QObject):
         ):
             view["receipt"] = {}
         return qt_state(view)
+
+    def _can_finalize(self, assessment: dict[str, Any]) -> bool:
+        election_id = self._state["election_id"]
+        reviewed = assessment.get("election") or {}
+        current = self._state["election"]
+        return bool(
+            self._state["role"] == "supervisor"
+            and type(election_id) is int and election_id > 0
+            and assessment.get("can_finalize") is True
+            and reviewed.get("id") == election_id and reviewed.get("status") == "active"
+            and type(reviewed.get("revision")) is int and reviewed["revision"] > 0
+            and current.get("id") == election_id and current.get("status") == "active"
+            and ("name" not in current or current["name"] == reviewed.get("name"))
+            and (type(current.get("revision")) is not int
+                 or current["revision"] == reviewed["revision"])
+        )
 
     def reset(self) -> None:
         self._generation += 1
@@ -74,10 +91,7 @@ class ElectionCompletionController(QObject):
             election_id=election_id, actor_id=account.get("id"),
             role=account.get("role", ""), election=deepcopy(target),
         )
-        if (
-            self._state["reviewing"] and type(target.get("revision")) is int
-            and target["revision"] != self._state["review"]["election"].get("revision")
-        ):
+        if self._state["reviewing"] and not self._can_finalize(self._state["review"]):
             self._state["newer_basis"] = True
         self._sync_recovery()
         self.stateChanged.emit()
@@ -122,6 +136,13 @@ class ElectionCompletionController(QObject):
             ):
                 failed("request_failed")
                 return
+            incoming = data["election"]
+            known = self._state["election"]
+            if type(incoming.get("revision")) is int and (
+                type(known.get("revision")) is not int
+                or incoming["revision"] >= known["revision"]
+            ):
+                self._state["election"] = deepcopy(incoming)
             review = self._state["review"]
             if self._state["reviewing"] and (
                 data["election"] != review["election"]
@@ -273,10 +294,8 @@ class ElectionCompletionController(QObject):
     def prepareFinalization(self) -> bool:
         assessment = self._state["assessment"]
         if (
-            self._state["role"] != "supervisor" or self._state["busy"]
-            or self._state["refreshing"] or self._state["uncertain_save"]
-            or assessment.get("can_finalize") is not True
-            or (assessment.get("election") or {}).get("id") != self._state["election_id"]
+            self._state["busy"] or self._state["refreshing"] or self._state["uncertain_save"]
+            or not self._can_finalize(assessment)
         ):
             self._state["error"] = "election_completion_not_ready"
             self.stateChanged.emit()
@@ -306,13 +325,9 @@ class ElectionCompletionController(QObject):
         assessment = (
             self._state["review"] if self._state["reviewing"] else self._state["assessment"]
         )
-        election_id = self._state["election_id"]
         if (
-            self._state["role"] != "supervisor" or self._state["busy"]
-            or self._state["refreshing"] or self._state["uncertain_save"]
-            or assessment.get("can_finalize") is not True
-            or type(election_id) is not int or election_id <= 0
-            or (assessment.get("election") or {}).get("id") != election_id
+            self._state["busy"] or self._state["refreshing"] or self._state["uncertain_save"]
+            or not self._can_finalize(assessment)
         ):
             self._state["error"] = "election_completion_not_ready"
             self.stateChanged.emit()
