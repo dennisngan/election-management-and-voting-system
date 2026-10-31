@@ -3,6 +3,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
+import QtQuick.Dialogs
+import QtCore
 import QtQuick.Layouts
 
 ColumnLayout {
@@ -11,6 +13,12 @@ ColumnLayout {
     required property var completion
     required property var words
     required property string locale
+    property string pendingFormat: "pdf"
+    property string pendingLocale: "tc"
+    property string pendingEventId: ""
+    property string pendingElectionId: ""
+    property string pendingActorId: ""
+    property bool exportChanged: false
     signal reveal(var control)
 
     readonly property var editorState: completion ? (completion.state || ({})) : ({})
@@ -80,6 +88,28 @@ ColumnLayout {
         return t("election_completion_current") + " · " + String(current.name || "")
             + " · " + t(current.status) + " · " + t("election_completion_revision")
             + " " + String(current.revision)
+    }
+
+    function exportScopeCurrent() {
+        return editorState.role === "supervisor" && !!pendingEventId
+            && String(editorState.selected_event_id || "") === pendingEventId
+            && String(editorState.election_id || "") === pendingElectionId
+            && String(editorState.actor_id || "") === pendingActorId
+    }
+    function openExport(format) {
+        if (working || !editorState.selected_event_id || editorState.role !== "supervisor") return
+        pendingFormat = format
+        pendingLocale = locale
+        pendingEventId = String(editorState.selected_event_id)
+        pendingElectionId = String(editorState.election_id)
+        pendingActorId = String(editorState.actor_id)
+        exportChanged = false
+        exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
+        exportDialog.defaultSuffix = format
+        exportDialog.selectedFile = Qt.resolvedUrl(exportDialog.currentFolder.toString()
+            + "/election-" + pendingElectionId + "-completion-" + pendingEventId
+            + "-" + pendingLocale + "." + format)
+        exportDialog.open()
     }
 
     component Heading: Label {
@@ -253,12 +283,43 @@ ColumnLayout {
             onActiveFocusChanged: if (activeFocus)
                 Qt.callLater(function() { page.reveal(historyPicker) })
         }
-        FormButton {
-            objectName: "electionCompletionPreview"
-            text: page.t("election_completion_preview")
-            enabled: !!page.editorState.selected_event_id && !page.working
-            onClicked: page.completion.preview(page.locale)
-            onReveal: control => page.reveal(control)
+        GridLayout {
+            Layout.fillWidth: true
+            columns: width >= 640 ? 3 : 1
+            columnSpacing: 12
+            rowSpacing: 8
+            FormButton {
+                objectName: "electionCompletionPreview"
+                text: page.t("election_completion_preview")
+                enabled: !!page.editorState.selected_event_id && !page.working
+                onClicked: page.completion.preview(page.locale)
+                onReveal: control => page.reveal(control)
+            }
+            FormButton {
+                objectName: "electionCompletionExportPdf"
+                text: page.t("constituency_results_export_pdf")
+                enabled: !!page.editorState.selected_event_id && !page.working
+                onClicked: page.openExport("pdf")
+                onReveal: control => page.reveal(control)
+            }
+            FormButton {
+                objectName: "electionCompletionExportCsv"
+                text: page.t("constituency_results_export_csv")
+                enabled: !!page.editorState.selected_event_id && !page.working
+                onClicked: page.openExport("csv")
+                onReveal: control => page.reveal(control)
+            }
+        }
+        FormCaption {
+            visible: !!page.editorState.notice
+            text: page.t(page.editorState.notice || "")
+                + (page.editorState.export_path ? " · " + page.editorState.export_path : "")
+            color: "#247355"
+        }
+        FormCaption {
+            visible: page.exportChanged
+            text: page.t("election_completion_export_changed")
+            color: "#a13b30"
         }
     }
 
@@ -272,6 +333,19 @@ ColumnLayout {
         wrapMode: Text.WrapAnywhere
         color: "#25344b"
         font.pixelSize: 14
+    }
+
+    FileDialog {
+        id: exportDialog
+        objectName: "electionCompletionExportDialog"
+        fileMode: FileDialog.SaveFile
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        onAccepted: {
+            if (page.exportScopeCurrent() && !page.working)
+                page.completion.exportReport(page.pendingLocale, page.pendingFormat,
+                    Qt.resolvedUrl(selectedFile.toString()).toString())
+            else page.exportChanged = true
+        }
     }
 
     ColumnLayout {
@@ -436,6 +510,10 @@ ColumnLayout {
     Connections {
         target: page.completion
         function onStateChanged() {
+            if (exportDialog.visible && !page.exportScopeCurrent()) {
+                page.exportChanged = true
+                exportDialog.close()
+            }
             if (page.editorState.reopening_changed) reopenPassword.clear()
             if (!page.hasReopeningReview) {
                 reopenPassword.clear()

@@ -2,6 +2,9 @@
 
 ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "election_completion_export_changed": (
+            "所選歷史記錄已變更。請重新開啟匯出。"
+        ),
         "election_completion_reopen": "重新開放選舉",
         "election_completion_reopen_reason": "重新開放原因",
         "election_completion_reopen_hint": "先重新載入歷史記錄，然後記錄重新開放的原因。",
@@ -42,6 +45,9 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "sc": {
+        "election_completion_export_changed": (
+            "所选历史记录已变更。请重新打开导出。"
+        ),
         "election_completion_reopen": "重新开放选举",
         "election_completion_reopen_reason": "重新开放原因",
         "election_completion_reopen_hint": "先重新载入历史记录，然后记录重新开放的原因。",
@@ -82,6 +88,9 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "en": {
+        "election_completion_export_changed": (
+            "The selected history event changed. Open the export again."
+        ),
         "election_completion_reopen": "Reopen election",
         "election_completion_reopen_reason": "Reason for reopening",
         "election_completion_reopen_hint": "Refresh history, then record the reason for reopening.",
