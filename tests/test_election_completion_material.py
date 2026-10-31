@@ -1,6 +1,7 @@
 """A Supervisor reads actionable election completion through the actual Material UI."""
 
 import json
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from textwrap import dedent
@@ -778,3 +779,200 @@ def test_material_source_change_keeps_review_and_clears_confirmation_password(
         assert after["can_finalize"] is True and after["blockers"] == []
         assert after["basis_digest"] != before["basis_digest"]
         assert {"station_id": station_id, "records": [complaint]} in after["sources"]["complaints"]
+
+
+@pytest.mark.parametrize(
+    ("locale", "review_changed_text"),
+    [
+        ("en", "Election data changed. Cancel and review the current facts before confirming."),
+        ("tc", "選舉資料已更新。請取消並重新檢視後再確認。"),
+        ("sc", "选举资料已更新。请取消并重新检视后再确认。"),
+    ],
+)
+def test_material_peer_finalization_invalidates_review_from_workspace_context_refresh(
+    admin: TestClient,
+    database_url: str,
+    https_server: HttpsServer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    locale: str,
+    review_changed_text: str,
+) -> None:
+    journal_directory = tmp_path / "material-peer-finalization-own-journal"
+    observation_path = tmp_path / "material-peer-finalization-observation.json"
+    transport_path = tmp_path / "material-peer-finalization-transport.json"
+    assert not journal_directory.exists()
+    monkeypatch.setenv("ELECTION_CLIENT_STATE_DIR", str(journal_directory))
+    with reviewed_election_setup(admin, database_url) as setup:
+        supervisor = setup["clients"]["supervisor"]
+        election_id = setup["election"]["id"]
+        base = f"/api/workspace/elections/{election_id}"
+        target = base + "/finalizations"
+        before_response = supervisor.get(setup["completion_path"])
+        assert before_response.status_code == 200, before_response.text
+        before = before_response.json()
+        assert before["can_finalize"] is True and before["blockers"] == []
+        https_server.clock.value = setup["clock"].value
+        try:
+            run_completion_material(
+                {
+                    "server": https_server.url,
+                    "username": setup["accounts"]["supervisor"]["username"],
+                    "password": BOX_READY_PASSWORD,
+                    "station_id": setup["stations"]["N1"]["id"],
+                    "election_id": election_id,
+                    "locale": locale,
+                    "review_changed_text": review_changed_text,
+                    "journal_directory": str(journal_directory),
+                    "observation_path": str(observation_path),
+                },
+                """
+                import os
+                import ssl
+                from uuid import uuid4
+                import httpx
+
+                click('electionCompletionNavigation')
+                completion = controller.property('electionCompletion')
+                wait(lambda: not any(completion.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                assert completion.property('state')['assessment']['can_finalize'] is True
+                click('electionCompletionFinalize')
+                dialog = window.findChild(QObject, 'electionCompletionPasswordDialog')
+                assert dialog is not None
+                wait(lambda: dialog.property('opened'))
+                reviewed = completion.property('state')['review']
+                assert reviewed['election']['id'] == setup['election_id']
+                enter('electionCompletionPassword', setup['password'])
+                password = control('electionCompletionPassword')
+                assert password.property('text') == setup['password']
+                assert control('electionCompletionPasswordConfirm').property('enabled') is True
+                trust = ssl.create_default_context(
+                    cafile=str(Path('.runtime/tls/ca.pem').resolve()))
+                with httpx.Client(base_url=setup['server'], verify=trust) as peer:
+                    login = peer.post('/api/auth/login', json={
+                        'username': setup['username'], 'password': setup['password'],
+                    })
+                    assert login.status_code == 200, 'Normal peer Supervisor login failed'
+                    peer.headers['Authorization'] = 'Bearer ' + login.json()['token']
+                    try:
+                        base = '/api/workspace/elections/' + str(setup['election_id'])
+                        ready_response = peer.get(base + '/completion')
+                        assert ready_response.status_code == 200, 'Peer readiness read failed'
+                        ready = ready_response.json()
+                        assert ready['can_finalize'] is True
+                        assert ready['election'] == reviewed['election']
+                        assert ready['basis_digest'] == reviewed['basis_digest']
+                        peer_request_id = str(uuid4())
+                        saved = peer.post(base + '/finalizations', json={
+                            'request_id': peer_request_id,
+                            'expected_election_revision': ready['election']['revision'],
+                            'basis_digest': ready['basis_digest'],
+                            'password': setup['password'],
+                        })
+                        assert saved.status_code == 201, 'Expected genuine peer finalization201'
+                        peer_ack = saved.json()
+                        assert peer_ack['request_id'] == peer_request_id
+                        assert peer_ack['event']['kind'] == 'finalization'
+                        assert peer_ack['election']['status'] == 'finalized'
+                        assert peer_ack['event']['outcome']['sources'] == ready['sources']
+                        history_response = peer.get(base + '/completion/history')
+                        assert history_response.status_code == 200, 'Peer history read failed'
+                        peer_history = history_response.json()
+                        assert peer_history['events'] == [peer_ack['event']]
+                    finally:
+                        logout = peer.delete('/api/auth/session')
+                        assert logout.status_code == 204, 'Normal peer logout did not complete'
+
+                workspace = controller.property('workspace')
+                workspace.refresh()
+                wait(lambda: not any(workspace.property('state')[key]
+                    for key in ('busy', 'refreshing')))
+                selected = workspace.property('state')['selected']
+                observed = completion.property('state')
+                root_election = controller.property('state').get('election') or {}
+                completion_election = observed.get('election') or {}
+                notice = control('electionCompletionReviewChanged')
+                observation = {
+                    'peer_ack': peer_ack,
+                    'peer_history': peer_history,
+                    'workspace_election': selected.get('election', {}),
+                    'workspace_election_keys': sorted(selected.get('election', {})),
+                    'root_election': root_election,
+                    'completion_election': completion_election,
+                    'assessment_election': observed.get('assessment', {}).get('election'),
+                    'prepared_election': reviewed['election'],
+                    'prepared_review_unchanged': observed.get('review') == reviewed,
+                    'newer_basis': observed.get('newer_basis'),
+                    'password_visible': bool(password.property('text')),
+                    'confirm_enabled': control(
+                        'electionCompletionPasswordConfirm').property('enabled'),
+                    'dialog_visible': dialog.property('visible'),
+                    'notice_visible': notice.property('visible'),
+                    'notice_text': notice.property('text'),
+                    'only_explicit_refresh': 'workspace.refresh',
+                }
+                descriptor = os.open(setup['observation_path'],
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                    json.dump(observation, output, ensure_ascii=False, indent=2)
+                    output.flush()
+                    os.fsync(output.fileno())
+                assert selected['station']['id'] == setup['station_id']
+                assert selected['election']['id'] == setup['election_id']
+                assert selected['election']['status'] == 'finalized'
+                assert root_election['id'] == setup['election_id']
+                assert root_election['status'] == 'finalized'
+                assert completion_election['id'] == setup['election_id']
+                assert completion_election['status'] == 'finalized'
+                assert observed['review'] == reviewed and observed['reviewing'] is True
+                assert observed['newer_basis'] is True
+                assert dialog.property('visible') is True
+                assert notice.property('visible') is True
+                assert notice.property('text') == setup['review_changed_text']
+                frame()
+                assert _pointer_geometry(notice) is not None
+                assert password.property('text') == ''
+                assert control('electionCompletionPasswordConfirm').property('enabled') is False
+                assert observed['pending_request_id'] == '' and observed['uncertain_save'] is False
+                assert observed['receipt'] == {}
+                assert list(Path(setup['journal_directory']).rglob('*')) == []
+                """,
+            )
+        finally:
+            with https_server.lock:
+                transport = {
+                    "requests": list(https_server.requests),
+                    "request_timings": list(https_server.request_timings),
+                }
+            descriptor = os.open(transport_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                json.dump(transport, output, ensure_ascii=False, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+        assert https_server.request_count("POST", target) == 1
+        statuses = [
+            row["status"] for row in transport["request_timings"]
+            if row["method"] == "POST" and row["path"] == target
+        ]
+        assert statuses == [201]
+        peer_write = transport["requests"].index(("POST", target))
+        # Health polling is allowed; a fresh completion read would mask this boundary.
+        assert not any(
+            method == "GET" and path == base + "/completion"
+            for method, path in transport["requests"][peer_write + 1:]
+        ), transport["requests"]
+        assert list(journal_directory.rglob("*")) == []
+        proof = json.loads(observation_path.read_text(encoding="utf-8"))
+        peer_ack = proof["peer_ack"]
+        cached = supervisor.get(
+            base + f"/request-outcomes/{peer_ack['request_id']}?workflow=election_completion"
+        )
+        assert cached.status_code == 200, cached.text
+        assert cached.json()["record"] == peer_ack
+        assert peer_ack["event"]["outcome"]["sources"] == before["sources"]
+        history = supervisor.get(base + "/completion/history")
+        assert history.status_code == 200, history.text
+        assert history.json() == proof["peer_history"]
+        assert history.json()["election"]["status"] == "finalized"
+        assert history.json()["election"]["revision"] == before["election"]["revision"] + 1
