@@ -37,8 +37,8 @@ def completion_blocker_labels(station_id):
 """
 
 
-def run_completion_material(setup: dict, scenario: str) -> None:
-    run_workspace_qml(setup, COMPLETION_LABELS + dedent(scenario))
+def run_completion_material(setup: dict, scenario: str) -> str:
+    return run_workspace_qml(setup, COMPLETION_LABELS + dedent(scenario))
 
 
 @pytest.fixture(scope="module")
@@ -2051,6 +2051,7 @@ def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
     failure_path = evidence / "actual-control-failure.json"
     observation_path = evidence / "settled-reopening.json"
     transport_path = evidence / "transport.json"
+    stderr_path = evidence / "material.stderr.txt"
     with reviewed_election_setup(admin, database_url) as setup:
         supervisor = setup["clients"]["supervisor"]
         election_id = setup["election"]["id"]
@@ -2076,7 +2077,7 @@ def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
         assert original["election"]["revision"] == 3
         https_server.clock.value = setup["clock"].value
         try:
-            run_completion_material(
+            material_stderr = run_completion_material(
                 {
                     "server": https_server.url,
                     "username": setup["accounts"]["supervisor"]["username"],
@@ -2197,6 +2198,11 @@ def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
                 assert setup['password'] not in json.dumps(durable)
                 """,
             )
+            descriptor = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write(material_stderr)
+                output.flush()
+                os.fsync(output.fileno())
         finally:
             with https_server.lock:
                 transport = {"requests": list(https_server.requests),
@@ -2229,3 +2235,4 @@ def test_material_reopening_maximum_reason_keeps_password_and_confirm_reachable(
         history = supervisor.get(base + '/completion/history')
         assert history.status_code == 200, history.text
         assert history.json()['events'] == [canonical['event'], original['event']]
+        assert "TypeError" not in material_stderr, material_stderr
