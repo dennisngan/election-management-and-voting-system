@@ -721,7 +721,10 @@ class DesktopController(QObject):
     ) -> QNetworkReply:
         request = QNetworkRequest(QUrl(self._state["server_url"] + path))
         request.setSslConfiguration(self._ssl)
-        request.setTransferTimeout(8000)
+        # Bulk backup creation has a separate transfer budget from short reads.
+        request.setTransferTimeout(
+            30_000 if method == "POST" and path == "/api/backups" else 8_000
+        )
         request.setAttribute(
             QNetworkRequest.Attribute.RedirectPolicyAttribute,
             QNetworkRequest.RedirectPolicy.ManualRedirectPolicy,
