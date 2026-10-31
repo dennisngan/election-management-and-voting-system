@@ -1002,6 +1002,7 @@ ApplicationWindow {
                     Layout.rightMargin: 28
                     Layout.bottomMargin: 28
                     completion: controller.electionCompletion
+                    locale: window.state.locale
                     words: window.words
                     onReveal: control => window.revealField(control)
                 }

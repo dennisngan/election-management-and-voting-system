@@ -8,6 +8,7 @@ from uuid import uuid4
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from election.desktop.configuration import AuthorizedRequest
+from election.desktop.event_times import format_event_time
 from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.operational_receipts import valid_operational_receipt
 from election.desktop.recovery import NETWORK_ERRORS, RecoveryController
@@ -38,6 +39,10 @@ class ElectionCompletionController(QObject):
         view = quantity_display(self._state)
         view["can_finalize"] = self._can_finalize(self._state["assessment"])
         view["selected_event"] = quantity_display(self._selected_event())
+        view["history_event_times"] = {
+            str(event["id"]): format_event_time(event.get("accepted_at"))
+            for event in self._state["history"].get("events", [])
+        }
         receipt = self._state["receipt"]
         if (
             self._recovery is not None and receipt

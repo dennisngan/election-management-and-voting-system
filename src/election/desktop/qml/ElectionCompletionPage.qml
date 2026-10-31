@@ -10,6 +10,7 @@ ColumnLayout {
     objectName: "electionCompletionPage"
     required property var completion
     required property var words
+    required property string locale
     signal reveal(var control)
 
     readonly property var editorState: completion ? (completion.state || ({})) : ({})
@@ -17,6 +18,8 @@ ColumnLayout {
     readonly property var election: editorState.election
         && editorState.election.id === editorState.election_id
         ? editorState.election : assessed ? assessment.election : ({})
+    readonly property var history: editorState.history || ({})
+    readonly property var historyEvents: history.events || []
     readonly property var blockers: assessed ? (assessment.blockers || []) : []
     readonly property bool working: !!editorState.busy || !!editorState.refreshing
     readonly property bool hasElection: Number(editorState.election_id || 0) > 0
@@ -57,6 +60,24 @@ ColumnLayout {
         if (row.box_ids && row.box_ids.length > 0)
             text += " · " + t("constituency_results_boxes") + " " + row.box_ids.join(", ")
         return text
+    }
+
+    function historyIndex() {
+        for (var i = 0; i < historyEvents.length; i++)
+            if (historyEvents[i].id === editorState.selected_event_id) return i
+        return -1
+    }
+    function eventLabel(event) {
+        return t("election_completion_" + event.kind) + " #" + String(event.id)
+            + " · " + t("election_completion_revision") + " " + String(event.election_revision)
+            + " · " + String((editorState.history_event_times || ({}))[String(event.id)] || "—")
+    }
+    function currentHistoryText() {
+        var current = history.election || ({})
+        if (!current.id) return ""
+        return t("election_completion_current") + " · " + String(current.name || "")
+            + " · " + t(current.status) + " · " + t("election_completion_revision")
+            + " " + String(current.revision)
     }
 
     component Heading: Label {
@@ -165,6 +186,90 @@ ColumnLayout {
             if (page.completion.prepareFinalization()) passwordDialog.open()
         }
         onReveal: control => page.reveal(control)
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        Heading { text: page.t("election_completion_history") }
+        FormButton {
+            objectName: "electionCompletionHistoryRefresh"
+            text: page.t("refresh")
+            flat: true
+            highlighted: false
+            enabled: page.hasElection && !page.working
+            onClicked: page.completion.loadHistory()
+            onReveal: control => page.reveal(control)
+        }
+    }
+
+    FormCaption {
+        objectName: "electionCompletionHistoryCurrent"
+        visible: !!page.history.election
+        text: page.currentHistoryText()
+    }
+
+    ColumnLayout {
+        Layout.fillWidth: true
+        spacing: 8
+        FormCaption { text: page.t("election_completion_event") }
+        ComboBox {
+            id: historyPicker
+            objectName: "electionCompletionHistoryEvent"
+            Layout.fillWidth: true
+            enabled: page.historyEvents.length > 0 && !page.working
+            model: page.historyEvents.map(event => page.eventLabel(event))
+            currentIndex: page.historyIndex()
+            Accessible.name: page.t("election_completion_event")
+            contentItem: Text {
+                text: historyPicker.displayText
+                textFormat: Text.PlainText
+                font: historyPicker.font
+                color: "#25344b"
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+            }
+            delegate: ItemDelegate {
+                id: eventDelegate
+                required property string modelData
+                required property int index
+                width: historyPicker.width
+                text: modelData
+                highlighted: historyPicker.highlightedIndex === index
+                contentItem: Text {
+                    text: eventDelegate.text
+                    textFormat: Text.PlainText
+                    color: "#25344b"
+                    font: eventDelegate.font
+                    wrapMode: Text.WordWrap
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            onActivated: {
+                page.completion.selectHistoryEvent(String(page.historyEvents[currentIndex].id))
+                currentIndex = Qt.binding(function() { return page.historyIndex() })
+            }
+            onActiveFocusChanged: if (activeFocus)
+                Qt.callLater(function() { page.reveal(historyPicker) })
+        }
+        FormButton {
+            objectName: "electionCompletionPreview"
+            text: page.t("election_completion_preview")
+            enabled: !!page.editorState.selected_event_id && !page.working
+            onClicked: page.completion.preview(page.locale)
+            onReveal: control => page.reveal(control)
+        }
+    }
+
+    Label {
+        objectName: "electionCompletionReportPreview"
+        Layout.fillWidth: true
+        visible: !!page.editorState.report_text
+            && (page.editorState.report || ({})).locale === page.locale
+        text: visible ? page.editorState.report_text : ""
+        textFormat: Text.PlainText
+        wrapMode: Text.WrapAnywhere
+        color: "#25344b"
+        font.pixelSize: 14
     }
 
     Dialog {

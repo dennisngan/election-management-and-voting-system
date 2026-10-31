@@ -2,6 +2,13 @@
 
 ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
+        "election_completion_history": "已保留完成確認記錄",
+        "election_completion_event": "選擇歷史記錄",
+        "election_completion_finalization": "完成確認",
+        "election_completion_reopening": "重新開放",
+        "election_completion_current": "目前選舉狀態",
+        "election_completion_revision": "版本",
+        "election_completion_preview": "預覽報表",
         "election_completion_review_changed": (
             "選舉資料已更新。請取消並重新檢視後再確認。"
         ),
@@ -25,6 +32,13 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "sc": {
+        "election_completion_history": "已保留完成确认记录",
+        "election_completion_event": "选择历史记录",
+        "election_completion_finalization": "完成确认",
+        "election_completion_reopening": "重新开放",
+        "election_completion_current": "目前选举状态",
+        "election_completion_revision": "版本",
+        "election_completion_preview": "预览报表",
         "election_completion_review_changed": (
             "选举资料已更新。请取消并重新检视后再确认。"
         ),
@@ -48,6 +62,13 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
     },
     "en": {
+        "election_completion_history": "Preserved completion history",
+        "election_completion_event": "Select history event",
+        "election_completion_finalization": "Finalization",
+        "election_completion_reopening": "Reopening",
+        "election_completion_current": "Current election state",
+        "election_completion_revision": "Revision",
+        "election_completion_preview": "Preview statement",
         "election_completion_review_changed": (
             "Election data changed. Cancel and review the current facts before confirming."
         ),
