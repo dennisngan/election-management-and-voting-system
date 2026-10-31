@@ -2,13 +2,14 @@
 
 import json
 import re
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer
 from sqlalchemy.engine import make_url
 
 from election.desktop.controller import DesktopController
@@ -74,13 +75,36 @@ def test_admin_backup_exposes_safe_metadata_and_blocks_polling_officer(
     assert backups.open() is True
     wait_for_editor_idle(qt_app, backups)
 
+    # UI acknowledgment and reads keep their short budget while the real
+    # retained-data export has a separate finite completion budget.
+    acknowledged_at = time.monotonic()
     backups.requestBackup()
     request_id = backups.state["pending_request_id"]
-    assert request_id
-    wait_for(
-        qt_app,
-        lambda: _controller_job(backups, request_id).get("status") in ("succeeded", "failed"),
-    )
+    assert request_id and backups.state["busy"]
+    heartbeat: list[bool] = []
+    QTimer.singleShot(0, lambda: heartbeat.append(True))
+    wait_for(qt_app, lambda: bool(heartbeat), timeout=5)
+    assert time.monotonic() - acknowledged_at < 5
+
+    observed: dict = {}
+
+    def current_request_is_visible() -> bool:
+        status_started = time.monotonic()
+        listing = admin.get("/api/backups")
+        assert listing.status_code == 200
+        assert time.monotonic() - status_started < 5
+        row = next(
+            (row for row in listing.json()["backups"] if row["request_id"] == request_id),
+            None,
+        )
+        if row is not None:
+            observed.update(row)
+        return bool(observed)
+
+    wait_for(qt_app, current_request_is_visible, timeout=5)
+    assert observed["status"] in ("running", "succeeded", "failed")
+
+    wait_for(qt_app, lambda: not backups.state["busy"], timeout=30)
     job = _controller_job(backups, request_id)
     assert job["status"] == "succeeded"
     assert job["size_bytes"] > 0
