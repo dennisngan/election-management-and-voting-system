@@ -7,6 +7,7 @@ import socket
 import ssl
 import stat
 import threading
+import time
 from collections.abc import Awaitable, Callable, Iterator
 from copy import deepcopy
 from dataclasses import dataclass
@@ -116,19 +117,70 @@ def test_lifecycle_refresh_propagates_no_active_election_after_real_finalization
                 assert active.status_code == 200, active.text
                 assert active.json()["election"] is None
                 assert desktop.property("state")["active_election"]["id"] == election_id
+                https_server.configuration_list_entered.clear()
+                https_server.release_configuration_list.clear()
+                https_server.staff_response_entered.clear()
+                https_server.staff_response_finished.clear()
+                https_server.release_staff_response.clear()
                 before = https_server.request_count("GET", "/api/active-election")
-                lifecycle.refresh()
-                wait_for(qt_app, lambda: setup_idle(lifecycle))
-                observed_lifecycle = lifecycle.property("state")
-                observed_root = desktop.property("state")
-                after = https_server.request_count("GET", "/api/active-election")
+                try:
+                    list_hold_armed_at = time.monotonic()
+                    https_server.hold_configuration_list = True
+                    https_server.hold_staff_response_path = "/api/active-election"
+                    lifecycle.refresh()
+                    wait_for(qt_app, https_server.configuration_list_entered.is_set)
+                    list_entered_observed_at = time.monotonic()
+                    assert list_entered_observed_at - list_hold_armed_at < 5
+                    assert https_server.hold_configuration_list is False
+                    assert not https_server.release_configuration_list.is_set()
+                    active_reads_at_list_hold = https_server.request_count(
+                        "GET", "/api/active-election"
+                    )
+                    assert active_reads_at_list_hold >= before
+
+                    desktop.refresh()
+                    wait_for(qt_app, https_server.staff_response_entered.is_set)
+                    independent_entered_observed_at = time.monotonic()
+                    assert independent_entered_observed_at - list_hold_armed_at < 5
+                    assert https_server.hold_staff_response_path == ""
+                    assert not https_server.release_configuration_list.is_set()
+                    assert not https_server.release_staff_response.is_set()
+                    assert not https_server.staff_response_finished.is_set()
+                    lifecycle_waiting = bool(lifecycle.property("state")["refreshing"])
+                    lifecycle_still_active = (
+                        lifecycle.property("state")["active_election"] or {}
+                    ).get("id") == election_id
+                    root_still_active = (
+                        desktop.property("state")["active_election"] or {}
+                    ).get("id") == election_id
+                    assert lifecycle_waiting
+                    assert lifecycle_still_active
+                    assert root_still_active
+                    independent_reads = https_server.request_count("GET", "/api/active-election")
+                    assert independent_reads == before + 1
+
+                    https_server.release_configuration_list.set()
+                    list_released_observed_at = time.monotonic()
+                    assert list_released_observed_at - list_hold_armed_at < 5
+                    wait_for(qt_app, lambda: setup_idle(lifecycle))
+                    observed_lifecycle = lifecycle.property("state")
+                    observed_root = desktop.property("state")
+                    after = https_server.request_count("GET", "/api/active-election")
+                    assert not https_server.release_staff_response.is_set()
+                    assert not https_server.staff_response_finished.is_set()
+                    assert observed_lifecycle["error"] == ""
+                    assert observed_lifecycle["active_election"] is None
+                    assert observed_root["active_election"] is None
+                    assert after == independent_reads + 1
+                    assert after == before + 1, (
+                        "An independent active-election refresh overlapped this seam"
+                    )
+                finally:
+                    https_server.release_configuration_list.set()
+                    https_server.release_staff_response.set()
             finally:
                 logout = supervisor.delete("/api/auth/session")
                 assert logout.status_code == 204, logout.text
-        assert after == before + 1, "An independent active-election refresh overlapped this seam"
-        assert observed_lifecycle["error"] == ""
-        assert observed_lifecycle["active_election"] is None
-        assert observed_root["active_election"] is None
 
 
 def _assert_completion_credential_free(value: object) -> None:
