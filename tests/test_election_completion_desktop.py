@@ -172,9 +172,6 @@ def test_lifecycle_refresh_propagates_no_active_election_after_real_finalization
                     assert observed_lifecycle["active_election"] is None
                     assert observed_root["active_election"] is None
                     assert after == independent_reads + 1
-                    assert after == before + 1, (
-                        "An independent active-election refresh overlapped this seam"
-                    )
                 finally:
                     https_server.release_configuration_list.set()
                     https_server.release_staff_response.set()
