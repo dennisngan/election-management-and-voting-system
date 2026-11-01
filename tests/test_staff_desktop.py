@@ -120,6 +120,16 @@ def test_desktop_creates_assigned_officer_and_edit_revokes_their_first_login_ses
     assert option["constituency"]["id"] == constituency["id"]
     assert option["station"]["name"] == station["name"]
 
+    original_snapshot = staff.state
+    edited_snapshot = staff.state
+    edited_snapshot["form"]["station_ids"].append(station["id"])
+    edited_snapshot["accounts"][0]["enabled"] = not original_snapshot["accounts"][0]["enabled"]
+    edited_snapshot["station_options"][0]["station"]["name"] += " edited snapshot"
+    edited_snapshot["station_options"][0]["account"]["station_ids"].append(station["id"])
+    edited_snapshot["station_options"][0]["capabilities"]["approve"] = True
+    assert staff.state == original_snapshot
+    del original_snapshot, edited_snapshot
+
     username = "desktop_staff_" + uuid4().hex[:12]
     temporary_password = "Desktop-Staff-Initial-42!"
     assert staff.loadAccount(0, False)

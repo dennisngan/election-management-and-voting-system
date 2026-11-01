@@ -1,5 +1,6 @@
 """Staff administration editor; credentials never enter persistent form state."""
 
+import json
 from copy import deepcopy
 from typing import Any
 
@@ -37,7 +38,12 @@ class StaffController(QObject):
 
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
-        return deepcopy(self._state)
+        # Responses and form values are JSON data. The C codec avoids a Python
+        # deepcopy call for every object in the large directories.
+        snapshot: dict[str, Any] = json.loads(
+            json.dumps(self._state, ensure_ascii=False, separators=(",", ":"))
+        )
+        return snapshot
 
     def reset(self) -> None:
         self._generation += 1

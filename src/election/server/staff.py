@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy.orm import Session
 
 from election.server.configuration_models import Constituency, Election
 from election.server.lifecycle_models import ActiveElection
@@ -233,11 +233,10 @@ def staff_router(
 
     @router.get("")
     def list_accounts(db: Database, actor: Admin) -> dict[str, Any]:
-        # Directory DTOs need no credential hashes or creation metadata.
-        accounts = db.scalars(
-            select(Account)
-            .options(
-                load_only(
+        # Bulk DTO columns avoid creating ORM instance state for every directory row.
+        accounts = (
+            db.execute(
+                select(
                     Account.id,
                     Account.username,
                     Account.display_name,
@@ -245,10 +244,11 @@ def staff_router(
                     Account.enabled,
                     Account.must_change_password,
                     Account.revision,
-                )
+                ).order_by(Account.id.desc())
             )
-            .order_by(Account.id.desc())
-        ).all()
+            .mappings()
+            .all()
+        )
         station_ids: dict[int, list[int]] = {}
         for account_id, station_id in db.execute(
             select(StationAssignment.account_id, StationAssignment.station_id).order_by(
@@ -256,7 +256,9 @@ def staff_router(
             )
         ):
             station_ids.setdefault(account_id, []).append(station_id)
-        return {"items": [staff_snapshot(row, station_ids.get(row.id, [])) for row in accounts]}
+        return {
+            "items": [dict(row, station_ids=station_ids.get(row["id"], [])) for row in accounts]
+        }
 
     @router.post("", status_code=201)
     def create_account(data: StaffCreate, db: Database, actor: Admin) -> dict[str, Any]:
@@ -288,29 +290,55 @@ def staff_router(
     @router.get("/station-options")
     def station_options(db: Database, actor: Admin) -> dict[str, Any]:
         account = staff_view(db, actor)
+        # This administrator-only directory keeps the full context DTO while selecting
+        # scalar columns without materializing the joined ORM entities for a large catalogue.
         stations = db.execute(
-            select(PollingStation, Constituency, Election)
-            .options(
-                load_only(
-                    PollingStation.id,
-                    PollingStation.name,
-                    PollingStation.code,
-                    PollingStation.counting_mode,
-                    PollingStation.destination_station_id,
-                ),
-                load_only(Constituency.id, Constituency.name, Constituency.code),
-                load_only(
-                    Election.id, Election.name, Election.status, Election.revision
-                ),
+            select(
+                PollingStation.id.label("station_id"),
+                PollingStation.name.label("station_name"),
+                PollingStation.code.label("station_code"),
+                PollingStation.counting_mode,
+                PollingStation.destination_station_id,
+                Constituency.id.label("constituency_id"),
+                Constituency.name.label("constituency_name"),
+                Constituency.code.label("constituency_code"),
+                Election.id.label("election_id"),
+                Election.name.label("election_name"),
+                Election.status.label("election_status"),
+                Election.revision.label("election_revision"),
             )
+            .select_from(PollingStation)
             .join(Constituency, PollingStation.constituency_id == Constituency.id)
             .join(Election, Constituency.election_id == Election.id)
             .order_by(PollingStation.id)
-        )
+        ).mappings()
+        # Administrators have no operational station capabilities, including finalized rows.
+        capabilities = {"prepare_polling": False, "prepare_counting": False, "approve": False}
         return {
             "items": [
-                station_context_view(account, station, constituency, election)
-                for station, constituency, election in stations
+                {
+                    "election": {
+                        "id": row["election_id"],
+                        "name": row["election_name"],
+                        "status": row["election_status"],
+                        "revision": row["election_revision"],
+                    },
+                    "constituency": {
+                        "id": row["constituency_id"],
+                        "name": row["constituency_name"],
+                        "code": row["constituency_code"],
+                    },
+                    "station": {
+                        "id": row["station_id"],
+                        "name": row["station_name"],
+                        "code": row["station_code"],
+                        "counting_mode": row["counting_mode"],
+                        "destination_station_id": row["destination_station_id"],
+                    },
+                    "account": account,
+                    "capabilities": capabilities,
+                }
+                for row in stations
             ]
         }
 
