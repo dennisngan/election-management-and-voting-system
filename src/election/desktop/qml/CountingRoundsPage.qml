@@ -396,7 +396,7 @@ ColumnLayout {
                     visible: !page.editorState.correction_stage && !!page.selected.source_current
                         && page.selected.status !== "draft"
                     enabled: !page.working && !page.editorState.dirty && !page.recountProtected && !page.editorState.newer_revision
-                        && page.editorState.context.election
+                        && !!page.editorState.context.election
                         && page.editorState.context.election.status === "active"
                     onClicked: page.countingRounds.startCorrection("f1", false)
                 }
@@ -406,7 +406,7 @@ ColumnLayout {
                     visible: !page.editorState.correction_stage && !!page.selected.source_current
                         && !!page.selected.f1_complete && page.selected.status !== "draft"
                     enabled: !page.working && !page.editorState.dirty && !page.recountProtected && !page.editorState.newer_revision
-                        && page.editorState.context.election
+                        && !!page.editorState.context.election
                         && page.editorState.context.election.status === "active"
                     onClicked: page.countingRounds.startCorrection("f2", false)
                 }

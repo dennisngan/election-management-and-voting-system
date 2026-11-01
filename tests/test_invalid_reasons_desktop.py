@@ -79,6 +79,14 @@ def test_admin_edits_display_labels_creates_project_reason_and_reads_history(
         catalog = controller.property('invalidReasons')
         wait(lambda: not catalog.property('state')['refreshing'])
         frame()
+        text_notify = window.metaObject().indexOfSignal('wordsChanged()')
+        assert text_notify >= 0
+        words_changed = QSignalSpy(window, window.metaObject().method(text_notify))
+        assert words_changed.isValid()
+        assert controller.configureServer(setup['server']) is True
+        frame()
+        assert words_changed.count() == 0, (
+            'Translation bindings refreshed without a language change', words_changed.count())
         assert control('invalidReasonsNavigation').property('text') == (
             setup['navigation_caption']
         )

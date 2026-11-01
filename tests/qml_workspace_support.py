@@ -38,6 +38,7 @@ def wait(predicate, timeout=8):
         assert time.monotonic() < deadline, 'Material controls did not reach the expected state'
         time.sleep(.005)
     application.processEvents()
+    assert time.monotonic() < deadline, 'Material controls did not reach the expected state'
 
 def frame():
     rendered = QSignalSpy(window.frameSwapped)

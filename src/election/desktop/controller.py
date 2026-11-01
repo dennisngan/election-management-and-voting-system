@@ -65,6 +65,7 @@ ResultHandler = Callable[[dict[str, Any]], None]
 
 class DesktopController(QObject):
     stateChanged = Signal()
+    textsChanged = Signal()
     eraseSecrets = Signal()
 
     def __init__(self, server_url: str = "https://localhost:8443", ca_file: str = "") -> None:
@@ -246,7 +247,7 @@ class DesktopController(QObject):
     def state(self) -> dict[str, Any]:
         return self._state.copy()
 
-    @Property(dict, notify=stateChanged)
+    @Property(dict, notify=textsChanged)
     def texts(self) -> dict[str, str]:
         return TRANSLATIONS[self._state["locale"]]
 
@@ -675,7 +676,10 @@ class DesktopController(QObject):
     @Slot(str)
     def setLocale(self, locale: str) -> None:
         if locale in TRANSLATIONS:
+            changed = locale != self._state["locale"]
             self._state["locale"] = locale
+            if changed:
+                self.textsChanged.emit()
             self.stateChanged.emit()
 
     @Slot(str, result=bool)
