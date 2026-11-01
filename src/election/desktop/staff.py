@@ -83,7 +83,9 @@ class StaffController(QObject):
             if generation == self._generation:
                 self._state[activity] = False
                 success(data)
-                self.stateChanged.emit()
+                # refresh() already publishes the accepted state before returning.
+                if not self._state["refreshing"]:
+                    self.stateChanged.emit()
 
         def failed(code: str) -> None:
             if generation == self._generation:
