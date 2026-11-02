@@ -393,7 +393,7 @@ wheels = [
 name = "election-management-voting-system"
 version = "0.1.0"
 source = { virtual = "." }
-default-groups = []
+default-groups = "all"
 
 [package.dev-dependencies]
 desktop = [

@@ -1,16 +1,33 @@
-.venv/
+# Local environments and private runtime state, including symlinks.
+/.venv
+/.venv-*
+/.idea
+/.runtime
+.env
+.env.*
+!.env.example
+
+# Python, test and analysis caches.
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-.coverage
-htmlcov/
-.env
-.env.*
-!.env.example
-.runtime/
-build/
-dist/
+
+# Generated coverage and build outputs at the project root.
+/.coverage
+/.coverage.*
+/coverage.xml
+/htmlcov/
+/build/
+/dist/
 *.egg-info/
+
+# macOS/Windows metadata and editor temporary files.
 .DS_Store
+._*
+Thumbs.db
+[Dd]esktop.ini
+*~
+*.swp
+*.swo

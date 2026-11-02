@@ -1,22 +1,5 @@
 # Project agent instructions
 
-## Subagent delegation
-
-For large tasks, the main agent may delegate small, independent, clearly
-bounded work to `luna_worker`.
-
-Suitable work includes:
-
-- Small bug fixes
-- Focused refactoring
-- Tests
-- Documentation
-- Log analysis
-- Configuration-file changes
-
-The main agent must retain architectural decisions, wait for the worker,
-review its changes, and independently verify the result.
-
 ## Agent skills
 
 ### Issue tracker
