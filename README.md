@@ -18,6 +18,11 @@ suite, matching packaged-client journeys, protected current-source restore or fi
 scope. [Linux Docker deployment](docs/DOCKER-DEPLOYMENT.md) covers the central server;
 [Windows setup](docs/WINDOWS-SETUP.md) covers native client builds and installation.
 
+The Docker deployment and Windows ZIP tooling have [current verification evidence](docs/evidence/docker-deployment/README.md):
+**1,676 passed, 1 skipped, 35 warnings** at `d9453ceb`, plus the separate real Docker/Qt/PDF/CSV
+journey and database-container replacement check. Ruff, mypy and both review axes pass. Actual
+Windows build/smoke and the broader final delivery gates below remain incomplete.
+
 Follow the [synthetic demo runbook](docs/DEMO-RUNBOOK.md) for a reproducible manual example and the
 [source/evidence delivery guide](docs/DELIVERY-PACKAGE.md) for allowlists, manifests and package checks.
 
