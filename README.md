@@ -15,7 +15,8 @@ authorized reopening retains that earlier outcome while later work receives new 
 is outstanding.** Current Ticket 24 focused results are not a replacement for the required final full
 suite, matching packaged-client journeys, protected current-source restore or final Main integration.
 [Delivery traceability](docs/DELIVERY-TRACEABILITY.md) records those gates and their actual source/build
-scope. [Windows setup](docs/WINDOWS-SETUP.md) separates the backend/MySQL host from packaged clients.
+scope. [Linux Docker deployment](docs/DOCKER-DEPLOYMENT.md) covers the central server;
+[Windows setup](docs/WINDOWS-SETUP.md) covers native client builds and installation.
 
 Follow the [synthetic demo runbook](docs/DEMO-RUNBOOK.md) for a reproducible manual example and the
 [source/evidence delivery guide](docs/DELIVERY-PACKAGE.md) for allowlists, manifests and package checks.
@@ -127,6 +128,34 @@ destination. Local boxes still require receipt. Counting Officers record convers
 first-box opening and the start of questionable-paper determination. Count completion remains
 unrecorded until the later counting workflow supplies it. Translated PDF/CSV statements retain
 origin, destination, event corrections and exact source references.
+
+## Deploy the central service
+
+The accepted deployment uses Docker Engine/Compose and a shell on one Linux host or VM, with
+native Windows clients on the private LAN/VPN. [ADR 0011](docs/adr/0011-linux-container-server-native-windows-clients.md)
+replaces the earlier Windows-native server target. No host Python or MySQL installation is required.
+
+Follow [the deployment guide](docs/DOCKER-DEPLOYMENT.md) for one-time setup, private storage,
+trusted HTTPS and the hidden Administrator-password prompt. Setup starts a fresh independent
+database; the old development database and retained datasets stay separate. The default persistent
+root is `/srv/election-system`, and the default published bind `127.0.0.1` needs explicit private-interface
+configuration for clients on another computer.
+
+After setup, load its **NON-SECRET** profile in the same shell with the required Docker/storage access:
+
+```sh
+set -a
+. /srv/election-system/config/compose.env
+set +a
+docker compose up -d --build
+```
+
+Adjust the profile path for a custom storage root; administrative permissions may be needed.
+Ordinary rebuilds retain state and do not migrate schema. Before a schema-changing release, resolve
+uncertain saves, close clients and use `sh deploy/maintenance.sh upgrade` for the explicit protected
+backup/migrate workflow. The API refuses incompatible schema or a pending maintenance interlock.
+Keep the stable endpoint, public CA and per-user recovery journals when installing a matching
+[versioned Windows runtime ZIP](docs/WINDOWS-SETUP.md#windows-client-package).
 
 ## Development prerequisites
 

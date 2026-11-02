@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.backup_support import mysql_test_container
 from tests.desktop_support import HttpsServer
 from tests.lifecycle_support import lifecycle_database_url
 from tests.qml_workspace_support import run_workspace_qml
@@ -29,7 +30,7 @@ def configure_private_backup_runtime(
     directory.mkdir(mode=0o700)
     directory.chmod(0o700)
     monkeypatch.setenv("ELECTION_BACKUP_DIRECTORY", str(directory))
-    monkeypatch.setenv("ELECTION_MYSQL_CONTAINER", "election-system-mysql")
+    monkeypatch.setenv("ELECTION_MYSQL_CONTAINER", mysql_test_container())
     monkeypatch.setenv("ELECTION_MYSQLDUMP_BINARY", "mysqldump")
     yield directory
 

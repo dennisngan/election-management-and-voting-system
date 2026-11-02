@@ -10,6 +10,13 @@ import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from package_windows_release import (
+    ReleaseError,
+    build_identity,
+    package_release,
+    source_identity,
+)
+
 
 def main() -> None:
     if sys.platform != "win32":
@@ -22,6 +29,12 @@ def main() -> None:
         raise SystemExit("Use the project's uv-managed Python3.14 build environment")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-name", required=True)
+    parser.add_argument(
+        "--release-version", help="Versioned ZIP label; defaults to project version",
+    )
+    parser.add_argument(
+        "--backend-release", help="Intended backend pair label; Windows smoke stays INCOMPLETE",
+    )
     args = parser.parse_args()
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", args.run_name) is None:
         parser.error("run-name must be a new simple name, with no path components")
@@ -51,6 +64,7 @@ def main() -> None:
     packages = {package["name"]: package for package in locked["package"]}
     if not any("win_amd64" in wheel["url"] for wheel in packages["pyinstaller"].get("wheels", [])):
         raise SystemExit("The lock does not yet pin a Windowsx64 PyInstaller wheel")
+    tool_versions = {}
     for name in ("pyinstaller", "pyinstaller-hooks-contrib", "pyside6", "shiboken6"):
         try:
             installed = version(name)
@@ -58,6 +72,7 @@ def main() -> None:
             raise SystemExit(f"Missing locked build dependency: {name}") from error
         if installed != packages[name]["version"]:
             raise SystemExit(f"Installed build dependency differs from uv.lock: {name}")
+        tool_versions[name] = installed
     qml = root / "src/election/desktop/qml"
     qml_files = sorted(qml.rglob("*.qml"))
     if not (qml / "Main.qml").is_file() or not qml_files:
@@ -65,6 +80,9 @@ def main() -> None:
     for path in qml_files:
         if path.is_symlink() or not path.is_file():
             raise SystemExit("Refuse non-regular QML input")
+    source = source_identity(root)
+    release_version = args.release_version or project["project"]["version"]
+    backend_release = args.backend_release or "source-" + source["inputs_sha256"]
     build_root = root / ".runtime" / ("windows-package-" + args.run_name)
     build_root.mkdir(parents=True, exist_ok=False)
     entry = build_root / "desktop-entry.py"
@@ -101,6 +119,18 @@ def main() -> None:
     if not executable.is_file():
         raise SystemExit("PyInstaller did not produce the expected onedir executable")
     print(executable)
+    build = build_identity(native_windows_build=True, tool_versions=tool_versions)
+    build.update(run_name=args.run_name, windows_build=sys.getwindowsversion().build)
+    try:
+        archive = package_release(
+            executable.parent, build_root / "release", release_version=release_version,
+            backend_release=backend_release, source_root=root, source=source, build=build,
+        )
+    except (OSError, ReleaseError):
+        raise SystemExit(
+            "Release packaging failed; retain this build for review and use a fresh run name"
+        ) from None
+    print(archive)
     print("Build artifact only; Windows smoke/DACL/scaling/printer acceptance remains incomplete")
 
 

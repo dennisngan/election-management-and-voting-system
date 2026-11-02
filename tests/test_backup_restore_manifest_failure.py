@@ -18,6 +18,7 @@ from sqlalchemy.engine import make_url
 
 from election.manage import bootstrap_account
 from election.server.app import create_app
+from tests.backup_support import mysql_test_container
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 
 TARGET_SCHEMA = "election_t17_reports_test"
@@ -64,7 +65,7 @@ def backup_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     directory.mkdir(mode=0o700)
     directory.chmod(0o700)
     monkeypatch.setenv("ELECTION_BACKUP_DIRECTORY", str(directory))
-    monkeypatch.setenv("ELECTION_MYSQL_CONTAINER", "election-system-mysql")
+    monkeypatch.setenv("ELECTION_MYSQL_CONTAINER", mysql_test_container())
     return directory
 
 
@@ -198,12 +199,12 @@ def test_restore_survives_final_manifest_failure_after_target_import(
             "--target-schema",
             TARGET_SCHEMA,
             "--mysql-container",
-            "election-system-mysql",
+            mysql_test_container(),
         ]
         child_env = os.environ.copy()
         child_env["ELECTION_DATABASE_URL"] = source_url
         child_env["ELECTION_RESTORE_DATABASE_URL"] = restore_database_url
-        child_env["ELECTION_MYSQL_CONTAINER"] = "election-system-mysql"
+        child_env["ELECTION_MYSQL_CONTAINER"] = mysql_test_container()
         source_path = str(Path(__file__).resolve().parents[1] / "src")
         child_env["PYTHONPATH"] = os.pathsep.join(
             part for part in (source_path, child_env.get("PYTHONPATH", "")) if part

@@ -20,6 +20,7 @@ from election.server.app import create_app
 from election.server.configuration_models import Constituency, Election
 from election.server.db import make_engine
 from election.server.station_models import PollingStation
+from tests.backup_support import mysql_test_port
 from tests.lifecycle_support import lifecycle_database_url
 
 COHORT_SIZE = 1200
@@ -68,7 +69,9 @@ def _check_upstream(database_url: _PrivateDatabaseUrl) -> tuple[str, int]:
         loopback = ip_address(host).is_loopback
     except ValueError:
         loopback = host == "localhost"
-    assert loopback and parsed.port == 13307, "Only the approved loopback MySQL is allowed"
+    assert loopback and parsed.port == mysql_test_port(), (
+        "Only the explicitly configured loopback fixture MySQL is allowed"
+    )
     return host, parsed.port
 
 
@@ -172,9 +175,7 @@ class _DelayedMysqlProxy:
                 downstream.settimeout(REQUEST_BUDGET_SECONDS)
                 with self._lock:
                     self._accepted_connections += 1
-                if not self._start(
-                    lambda downstream=downstream: self._connect(downstream)
-                ):
+                if not self._start(lambda downstream=downstream: self._connect(downstream)):
                     self._release(downstream)
             except BaseException:
                 self._release(downstream)
@@ -183,9 +184,7 @@ class _DelayedMysqlProxy:
     def _connect(self, downstream: socket.socket) -> None:
         upstream: socket.socket | None = None
         try:
-            upstream = socket.create_connection(
-                self._upstream, timeout=REQUEST_BUDGET_SECONDS
-            )
+            upstream = socket.create_connection(self._upstream, timeout=REQUEST_BUDGET_SECONDS)
             if not self._own(upstream):
                 return
             if not self._start(lambda: self._relay(upstream, downstream, delayed=False)):
@@ -196,9 +195,7 @@ class _DelayedMysqlProxy:
         finally:
             self._release(downstream, *(() if upstream is None else (upstream,)))
 
-    def _relay(
-        self, source: socket.socket, destination: socket.socket, *, delayed: bool
-    ) -> None:
+    def _relay(self, source: socket.socket, destination: socket.socket, *, delayed: bool) -> None:
         try:
             while not self._stop.is_set():
                 chunk = source.recv(65536)
@@ -401,9 +398,7 @@ def test_station_options_preserves_every_station_within_five_seconds(
                     expired.set()
                     proxy.interrupt()
 
-                deadline_timer = Timer(
-                    max(0.0, deadline - monotonic()), interrupt_expired_read
-                )
+                deadline_timer = Timer(max(0.0, deadline - monotonic()), interrupt_expired_read)
                 deadline_timer.name = "station-options-latency-deadline"
                 deadline_timer.daemon = False
                 deadline_timer.start()
@@ -424,9 +419,7 @@ def test_station_options_preserves_every_station_within_five_seconds(
                 by_station_id = {item["station"]["id"]: item for item in items}
                 assert len(items) == len(by_station_id)
                 cohort = station_options_cohort
-                assert set(by_station_id) == (
-                    cohort.baseline_station_ids | set(cohort.expected)
-                )
+                assert set(by_station_id) == (cohort.baseline_station_ids | set(cohort.expected))
                 owned_public_rows = [
                     item for item in items if item["station"]["id"] in cohort.expected
                 ]

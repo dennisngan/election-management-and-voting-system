@@ -187,8 +187,7 @@ def test_database_outage_returns_a_safe_service_error() -> None:
     url = (
         "mysql+pymysql://fixture:Never-Expose-This@127.0.0.1:65531/election_test?connect_timeout=1"
     )
-    with TestClient(create_app(url), base_url="https://testserver") as unavailable:
-        response = unavailable.get("/api/health")
-        assert response.status_code == 503
-        assert response.json() == {"detail": {"code": "database_unavailable"}}
-        assert "Never-Expose-This" not in response.text
+    with pytest.raises(RuntimeError, match="database_unavailable") as failed:
+        with TestClient(create_app(url), base_url="https://testserver"):
+            pytest.fail("An unavailable database must prevent API startup")
+    assert "Never-Expose-This" not in str(failed.value)

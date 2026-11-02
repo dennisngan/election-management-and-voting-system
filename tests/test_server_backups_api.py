@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.backup_support import mysql_test_container
 from tests.box_support import READY_PASSWORD
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 from tests.outcomes_support import complete_f2_command
@@ -35,7 +36,7 @@ def backup_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     directory.mkdir(mode=0o700)
     directory.chmod(0o700)
     monkeypatch.setenv("ELECTION_BACKUP_DIRECTORY", str(directory))
-    monkeypatch.setenv("ELECTION_MYSQL_CONTAINER", "election-system-mysql")
+    monkeypatch.setenv("ELECTION_MYSQL_CONTAINER", mysql_test_container())
     return directory
 
 

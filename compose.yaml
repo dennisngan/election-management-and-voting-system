@@ -1,0 +1,126 @@
+name: ${ELECTION_DEPLOY_PROJECT:-election-deployment}
+
+x-image: &image
+  image: ${ELECTION_DEPLOY_PROJECT:-election-deployment}-api:local
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile
+
+x-runtime: &runtime
+  <<: *image
+  environment:
+    ELECTION_ENV_FILE: /run/election/server.env
+  volumes: &runtime-volumes
+    - type: bind
+      source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/config/server.env
+      target: /run/election/server.env
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/config/state
+      target: /run/election/state
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/tls/server.pem
+      target: /run/election/tls/server.pem
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/tls/server-key.pem
+      target: /run/election/tls/server-key.pem
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/tls/ca.pem
+      target: /run/election/tls/ca.pem
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/backups
+      target: /var/lib/election/backups
+      bind: {create_host_path: false}
+
+services:
+  db:
+    image: mysql:8.4@sha256:a0225d1ea6631c8bc2385dc4c2faba17bbf1834ecf369e1659a9a382bd8d5dd7
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: election
+      MYSQL_USER: election
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/root-password
+      MYSQL_PASSWORD_FILE: /run/secrets/app-password
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci]
+    volumes:
+      - type: bind
+        source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/mysql
+        target: /var/lib/mysql
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/config/mysql-root-password
+        target: /run/secrets/root-password
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/config/mysql-app-password
+        target: /run/secrets/app-password
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/config/mysql-health.cnf
+        target: /run/secrets/health.cnf
+        read_only: true
+        bind: {create_host_path: false}
+    healthcheck:
+      test: [CMD, mysql, --defaults-extra-file=/run/secrets/health.cnf, --execute=SELECT 1]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+  api:
+    <<: *runtime
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    ports:
+      - target: 8443
+        published: ${ELECTION_DEPLOY_PORT:-8443}
+        host_ip: ${ELECTION_DEPLOY_BIND:-127.0.0.1}
+    healthcheck:
+      test: [CMD, python, -m, election.deployment, health]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+  admin:
+    <<: *runtime
+    profiles: [tools]
+    user: "0:0"
+    entrypoint: [python, -m, election.deployment]
+    command: [status]
+    volumes:
+      - type: bind
+        source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/config
+        target: /run/election/config
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/config/state
+        target: /run/election/state
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}/backups
+        target: /var/lib/election/backups
+        bind: {create_host_path: false}
+    environment:
+      ELECTION_ENV_FILE: /run/election/config/server.env
+  prepare:
+    <<: *image
+    profiles: [setup]
+    user: "0:0"
+    entrypoint: [python, -m, election.deployment, prepare]
+    volumes:
+      - type: bind
+        source: ${ELECTION_DEPLOY_ROOT:-/srv/election-system}
+        target: /data
+        bind: {create_host_path: false}

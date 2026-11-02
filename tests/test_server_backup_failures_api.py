@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import make_url
 
 from election.server.app import create_app
+from tests.backup_support import mysql_test_container
 from tests.lifecycle_support import lifecycle_database_url, lifecycle_test_state
 
 
@@ -29,7 +30,7 @@ def configure_backup_runtime(
     directory.mkdir(mode=0o700)
     directory.chmod(0o700)
     monkeypatch.setenv("ELECTION_BACKUP_DIRECTORY", str(directory))
-    monkeypatch.setenv("ELECTION_MYSQL_CONTAINER", "election-system-mysql")
+    monkeypatch.setenv("ELECTION_MYSQL_CONTAINER", mysql_test_container())
     monkeypatch.setenv("ELECTION_MYSQLDUMP_BINARY", "mysqldump")
     with lifecycle_test_state(database_url):
         yield

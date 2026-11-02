@@ -50,6 +50,7 @@ from election.server.outages import outage_router
 from election.server.polling import polling_router
 from election.server.queue import queue_router
 from election.server.queue_reports import queue_reports_router
+from election.server.readiness import require_schema
 from election.server.request_outcomes import request_outcomes_router
 from election.server.security import hash_password, token_digest, verify_password
 from election.server.special_paper_reports import special_paper_reports_router
@@ -96,8 +97,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        yield
-        engine.dispose()
+        try:
+            require_schema(engine)
+            yield
+        finally:
+            engine.dispose()
 
     app = FastAPI(title="Election management", lifespan=lifespan)
     bearer = HTTPBearer(auto_error=False)
