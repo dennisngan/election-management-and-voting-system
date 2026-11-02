@@ -6,11 +6,24 @@ import socket
 import ssl
 import subprocess
 import time
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 import httpx
 import pytest
+from pypdf import PdfReader
+from PySide6.QtCore import QCoreApplication, QEvent
+
+from election.desktop.controller import DesktopController
+from tests.desktop_support import state_of, wait_for
+from tests.stock_support import (
+    INITIAL_PASSWORD,
+    READY_PASSWORD,
+    staff_account,
+    stock_payload,
+    stock_stations,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.skipif(
@@ -63,6 +76,18 @@ def docker_deployment():
             assert result.returncode == 0, result.stdout + result.stderr
         return result
 
+    def operate(script, *arguments, input=None):
+        result = subprocess.run(
+            ["sh", str(ROOT / "deploy" / script), *arguments],
+            cwd=ROOT,
+            env=environment,
+            input=input,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result
+
     try:
         compose("build", "api")
         compose(
@@ -83,7 +108,7 @@ def docker_deployment():
             str(port),
         )
         compose("up", "--detach", "--wait", "--wait-timeout", "180", "db")
-        yield compose, directory, port
+        yield compose, operate, directory, port
     finally:
         logs = compose("logs", "--no-color", "api", check=False)
         log_path = directory / "validation-api.log"
@@ -92,23 +117,14 @@ def docker_deployment():
         compose("down", "--remove-orphans", check=False)
 
 
-def test_fresh_bootstrap_persistence_restore_and_guarded_maintenance(docker_deployment):
-    compose, directory, port = docker_deployment
+def test_fresh_bootstrap_persistence_restore_and_guarded_maintenance(docker_deployment, qt_app):
+    compose, operate, directory, port = docker_deployment
     refused = compose("run", "--rm", "--no-deps", "-T", "api", check=False)
     assert refused.returncode != 0
     assert "database_schema_incompatible" in refused.stderr
     password = "Docker-Initial-Password-84!"
     ready_password = "Docker-Personal-Password-84!"
-    compose(
-        "run",
-        "--rm",
-        "--no-deps",
-        "-T",
-        "admin",
-        "initialize",
-        input=password + "\n" + password + "\n",
-    )
-    compose("up", "--detach", "--wait", "--wait-timeout", "90", "api")
+    operate("setup.sh", "--host", "127.0.0.1", input=password + "\n" + password + "\n")
     context = ssl.create_default_context(cafile=str(directory / "tls/ca.pem"))
     with httpx.Client(base_url=f"https://127.0.0.1:{port}", verify=context, timeout=30) as client:
         wait_for_public_health(client)
@@ -131,6 +147,48 @@ def test_fresh_bootstrap_persistence_restore_and_guarded_maintenance(docker_depl
         saved = client.post("/api/elections", json={"name": name, "request_id": str(uuid4())})
         assert saved.status_code == 201, saved.text
         election_id = saved.json()["id"]
+        station = stock_stations(client)[0]
+        account = staff_account(client, [station["id"]])
+        with httpx.Client(base_url=client.base_url, verify=context, timeout=30) as officer:
+            login = officer.post(
+                "/api/auth/login",
+                json={
+                    "username": account["username"],
+                    "password": INITIAL_PASSWORD,
+                },
+            )
+            assert login.status_code == 200
+            officer.headers["Authorization"] = "Bearer " + login.json()["token"]
+            changed_officer = officer.post(
+                "/api/auth/password",
+                json={
+                    "current_password": INITIAL_PASSWORD,
+                    "new_password": READY_PASSWORD,
+                },
+            )
+            assert changed_officer.status_code == 200
+            officer.headers["Authorization"] = "Bearer " + changed_officer.json()["token"]
+            path = f"/api/workspace/stations/{station['id']}/stock"
+            receipt = officer.post(path, json=stock_payload())
+            assert receipt.status_code == 201, receipt.text
+            report = path + f"/{receipt.json()['id']}"
+            pdf = officer.get(report + "/statement.pdf?revision=1&locale=tc")
+            assert pdf.status_code == 200, pdf.text
+            text = "".join(page.extract_text() for page in PdfReader(BytesIO(pdf.content)).pages)
+            assert "普通系列 A" in text
+            csv = officer.get(report + "/statement.csv?revision=1&locale=tc")
+            assert csv.status_code == 200
+            assert "普通系列 A" in csv.text and "000001" in csv.text
+        desktop = DesktopController(str(client.base_url), str(directory / "tls/ca.pem"))
+        try:
+            desktop.signIn(str(client.base_url), account["username"], READY_PASSWORD)
+            wait_for(qt_app, lambda: state_of(desktop)["phase"] == "workspace", timeout=15)
+            assert state_of(desktop)["account"]["id"] == account["id"]
+        finally:
+            desktop.shutdown()
+            desktop.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            qt_app.processEvents()
         compose("build", "api")
         compose("up", "--detach", "--force-recreate", "--wait", "--wait-timeout", "90", "api")
         wait_for_public_health(client)
@@ -203,6 +261,11 @@ def test_fresh_bootstrap_persistence_restore_and_guarded_maintenance(docker_depl
         no_backup = compose("run", "--rm", "--no-deps", "-T", "admin", "migrate", check=False)
         assert "pre_migration_backup_required" in no_backup.stderr
         compose("stop", "api")
+        backup_directory = directory / "backups"
+        backup_directory.chmod(0o755)
+        unsafe_storage = compose("run", "--rm", "--no-deps", "-T", "admin", "backup", check=False)
+        assert "backup_directory_not_private" in unsafe_storage.stderr
+        backup_directory.chmod(0o700)
         failure = compose(
             "run",
             "--rm",
@@ -217,9 +280,20 @@ def test_fresh_bootstrap_persistence_restore_and_guarded_maintenance(docker_depl
         assert failure.returncode != 0
         blocked = compose("run", "--rm", "--no-deps", "-T", "api", check=False)
         assert "deployment_maintenance_pending" in blocked.stderr
-        compose("run", "--rm", "--no-deps", "-T", "admin", "backup")
+        backed_up = compose("run", "--rm", "--no-deps", "-T", "admin", "backup")
+        backup_id = json.loads(backed_up.stdout)["backup_id"]
+        manifest_path = backup_directory / (backup_id + ".manifest.json")
+        original_manifest = manifest_path.read_text()
+        manifest = json.loads(original_manifest)
+        manifest["application_source_sha256"] = "0" * 64
+        manifest_path.write_text(json.dumps(manifest))
+        invalid_provenance = compose(
+            "run", "--rm", "--no-deps", "-T", "admin", "migrate", check=False
+        )
+        assert "pre_migration_backup_mismatch" in invalid_provenance.stderr
+        manifest_path.write_text(original_manifest)
         compose("run", "--rm", "--no-deps", "-T", "admin", "migrate")
         compose("run", "--rm", "--no-deps", "-T", "admin", "finish")
-        compose("up", "--detach", "--wait", "--wait-timeout", "90", "api")
+        operate("maintenance.sh", "upgrade")
         wait_for_public_health(client)
         assert any(row["id"] == election_id for row in client.get("/api/elections").json()["items"])

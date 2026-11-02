@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import Engine, create_engine, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,7 @@ from election.server.backups import BackupSettings, _file_hash, _private_manifes
 from election.server.config import Settings
 from election.server.db import make_engine
 from election.server.models import Account
-from election.server.mysql_backup_tools import dump_mysql
+from election.server.mysql_backup_tools import BackupToolError, dump_mysql
 from election.server.readiness import require_schema
 
 
@@ -129,10 +129,11 @@ def backup(*, image_id: str | None = None) -> dict[str, str]:
     }
     _state(record)
     directory = Path(os.environ["ELECTION_BACKUP_DIRECTORY"])
-    if not private_directory(directory):
-        raise DeploymentError("backup_directory_not_private")
-    engine = make_engine(Settings().database_url)
+    engine: Engine | None = None
     try:
+        if not private_directory(directory):
+            raise DeploymentError("backup_directory_not_private")
+        engine = make_engine(Settings().database_url)
         with engine.connect() as connection:
             lock = (
                 "election-backup-"
@@ -189,13 +190,25 @@ def backup(*, image_id: str | None = None) -> dict[str, str]:
                 _state(record)
             finally:
                 connection.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock})
-    except Exception:
-        record["phase"] = "backup_failed"
+    except Exception as error:
+        record.update(
+            phase="backup_failed",
+            error_code=(
+                error.code
+                if isinstance(error, BackupToolError)
+                else str(error)
+                if isinstance(error, DeploymentError)
+                else "backup_failed"
+            ),
+        )
         _state(record)
         raise
     finally:
-        engine.dispose()
-        _private_manifest(directory / (operation + ".maintenance.json"), record)
+        if engine is not None:
+            engine.dispose()
+        record["finished_at"] = datetime.now(UTC).isoformat()
+        receipts = directory if private_directory(directory) else state_directory()
+        _private_manifest(receipts / (operation + ".maintenance.json"), record)
     return {"status": "backed_up", "backup_id": operation}
 
 
@@ -218,9 +231,15 @@ def migrate() -> dict[str, str]:
         with engine.connect() as connection:
             revisions = list(connection.scalars(text("SELECT version_num FROM alembic_version")))
         if (
-            manifest.get("status") != "complete"
+            manifest.get("format") != "election-mysql-backup-v1"
+            or manifest.get("status") != "complete"
+            or manifest.get("backup_id") != backup_id
+            or manifest.get("request_id") != record["operation_id"]
+            or manifest.get("artifact") != artifact.name
+            or manifest.get("application_source_sha256") != record["previous_source_sha256"]
             or manifest["source_schema"] != engine.url.database
             or sorted(manifest["schema_revisions"]) != sorted(revisions)
+            or sorted(manifest["schema_revisions"]) != sorted(record["schema_revisions"])
             or manifest["sha256"] != _file_hash(artifact)
             or manifest["size_bytes"] != artifact.stat().st_size
         ):

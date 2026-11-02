@@ -56,3 +56,28 @@ def test_prepare_rerun_preserves_material_and_refuses_partial_or_unrelated_state
     refused = deployment("prepare", "--root", str(unrelated), "--host", "127.0.0.1")
     assert refused.returncode != 0
     assert (unrelated / "keep.txt").read_text() == "preserve"
+
+
+def test_upgrade_rejects_an_existing_workflow_lease_before_contacting_docker(tmp_path):
+    config = tmp_path / "data/config"
+    config.mkdir(parents=True)
+    (config / "upgrade.lock").mkdir()
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    docker = binaries / "docker"
+    docker.write_text("#!/bin/sh\nprintf 'unexpected_external_call' >&2\nexit 89\n")
+    docker.chmod(0o755)
+    result = subprocess.run(
+        ["sh", str(ROOT / "deploy/maintenance.sh"), "upgrade"],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "ELECTION_DEPLOY_ROOT": str(tmp_path / "data"),
+            "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "upgrade_workflow_busy" in result.stderr
+    assert "unexpected_external_call" not in result.stderr

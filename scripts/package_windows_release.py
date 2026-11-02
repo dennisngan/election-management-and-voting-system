@@ -8,7 +8,7 @@ import re
 import stat
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
 
@@ -17,8 +17,15 @@ class ReleaseError(ValueError):
 
 
 def _private_name(path: Path) -> bool:
-    private_parts = {"operational-commands", "journals", "journal", "backups", "restore-jobs",
-                     "private", "logs"}
+    private_parts = {
+        "operational-commands",
+        "journals",
+        "journal",
+        "backups",
+        "restore-jobs",
+        "private",
+        "logs",
+    }
     for part in path.parts:
         name = part.casefold()
         if name.startswith(".") or name in private_parts:
@@ -64,12 +71,16 @@ def _json(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
 
 
-def _hash(path: Path) -> str:
+def _stream_hash(source: IO[bytes]) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for block in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(block)
+    for block in iter(lambda: source.read(1024 * 1024), b""):
+        digest.update(block)
     return digest.hexdigest()
+
+
+def _hash(path: Path) -> str:
+    with path.open("rb") as source:
+        return _stream_hash(source)
 
 
 def source_identity(root: Path) -> dict[str, Any]:
@@ -77,15 +88,22 @@ def source_identity(root: Path) -> dict[str, Any]:
     root = root.absolute()
     if _regular_object(root):
         raise ReleaseError("Source input must be a directory")
-    inputs = [root / name for name in (
-        "pyproject.toml", "uv.lock", "scripts/build_windows_candidate.py",
-        "scripts/package_windows_release.py",
-    )]
+    inputs = [
+        root / name
+        for name in (
+            "pyproject.toml",
+            "uv.lock",
+            "scripts/build_windows_candidate.py",
+            "scripts/package_windows_release.py",
+        )
+    ]
     inputs.extend(
-        path for path in _tree(root / "src/election")
+        path
+        for path in _tree(root / "src/election")
         if path.suffix in {".py", ".qml"}
-        and not any(part.startswith(".") or part == "__pycache__"
-                    for part in path.relative_to(root).parts)
+        and not any(
+            part.startswith(".") or part == "__pycache__" for part in path.relative_to(root).parts
+        )
     )
     for path in inputs:
         for part in [path, *path.relative_to(root).parents]:
@@ -93,15 +111,20 @@ def source_identity(root: Path) -> dict[str, Any]:
                 continue
             _regular_object(part if part.is_absolute() else root / part)
     files = [
-        {"path": path.relative_to(root).as_posix(), "size_bytes": path.stat().st_size,
-         "sha256": _hash(path)}
+        {
+            "path": path.relative_to(root).as_posix(),
+            "size_bytes": path.stat().st_size,
+            "sha256": _hash(path),
+        }
         for path in sorted(inputs)
     ]
     revision = "UNAVAILABLE"
     try:
         result = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         candidate = result.stdout.strip()
         if result.returncode == 0 and re.fullmatch(r"[0-9a-f]{40,64}", candidate):
@@ -117,27 +140,35 @@ def source_identity(root: Path) -> dict[str, Any]:
     }
 
 
-def build_identity(*, native_windows_build: bool = False,
-                   tool_versions: dict[str, str] | None = None) -> dict[str, Any]:
+def build_identity(
+    *, native_windows_build: bool = False, tool_versions: dict[str, str] | None = None
+) -> dict[str, Any]:
     """Record host/tool facts separately from unavailable native acceptance evidence."""
     return {
         "native_windows_build": "Windows11_x64" if native_windows_build else "NOT_VERIFIED",
-        "host": {"system": platform.system(), "release": platform.release(),
-                 "machine": platform.machine()},
+        "host": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+        },
         "python": platform.python_version(),
         "tools": tool_versions or {},
     }
 
 
 def package_release(
-    runtime: Path, output: Path, *, release_version: str, backend_release: str,
-    source_root: Path, source: dict[str, Any] | None = None,
+    runtime: Path,
+    output: Path,
+    *,
+    release_version: str,
+    backend_release: str,
+    source_root: Path,
+    source: dict[str, Any] | None = None,
     build: dict[str, Any] | None = None,
 ) -> Path:
     """Publish a fresh versioned ZIP, manifest and checksum without changing client state."""
     for label in (release_version, backend_release):
-        if (re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,79}", label) is None
-                or label.endswith(".")):
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,79}", label) is None or label.endswith("."):
             raise ReleaseError("Release labels must be simple version or source labels")
     current_source = source_identity(source_root)
     if source is not None and current_source != source:
@@ -158,20 +189,30 @@ def package_release(
     if any(_private_name(path.relative_to(runtime)) for path in entries):
         raise ReleaseError("Runtime contains private material; packaging refused")
     empty_directories = [
-        path.relative_to(runtime).as_posix() for path in entries
+        path.relative_to(runtime).as_posix()
+        for path in entries
         if path.is_dir() and not any(path.iterdir())
     ]
     files = [
-        {"path": path.relative_to(runtime).as_posix(), "size_bytes": path.stat().st_size,
-         "sha256": _hash(path)}
+        {
+            "path": path.relative_to(runtime).as_posix(),
+            "size_bytes": path.stat().st_size,
+            "sha256": _hash(path),
+        }
         for path in paths
     ]
     identity = {
-        "format": "election-windows-release-v1", "release_version": release_version,
-        "platform": "Windows11_x64", "source": source, "build": build or build_identity(),
+        "format": "election-windows-release-v1",
+        "release_version": release_version,
+        "platform": "Windows11_x64",
+        "source": source,
+        "build": build or build_identity(),
         "backend_pair": {"backend_release": backend_release, "windows_smoke": "INCOMPLETE"},
-        "acceptance": {"clean_client": "INCOMPLETE", "journal_upgrade": "INCOMPLETE",
-                       "dacl_scaling_languages_printer": "INCOMPLETE"},
+        "acceptance": {
+            "clean_client": "INCOMPLETE",
+            "journal_upgrade": "INCOMPLETE",
+            "dacl_scaling_languages_printer": "INCOMPLETE",
+        },
         "runtime_files": files,
         "runtime_empty_directories": empty_directories,
     }
@@ -219,22 +260,23 @@ acceptance remain INCOMPLETE until their evidence is recorded separately.
         for row in files:
             info = release.getinfo(f"{prefix}/Election Desk/{row['path']}")
             with release.open(info) as delivered:
-                digest = hashlib.sha256()
-                for block in iter(lambda: delivered.read(1024 * 1024), b""):
-                    digest.update(block)
-                actual = digest.hexdigest()
+                actual = _stream_hash(delivered)
             if info.file_size != row["size_bytes"] or actual != row["sha256"]:
                 raise ReleaseError("Runtime changed during packaging; receipt not published")
     manifest: dict[str, Any] = {
         **identity,
-        "archive": {"filename": archive.name, "size_bytes": archive.stat().st_size,
-                    "sha256": _hash(archive)},
+        "archive": {
+            "filename": archive.name,
+            "size_bytes": archive.stat().st_size,
+            "sha256": _hash(archive),
+        },
     }
     manifest_path = output / "release-manifest.json"
     manifest_path.write_bytes(_json(manifest))
     (output / "SHA256SUMS").write_text(
         f"{manifest['archive']['sha256']}  {archive.name}\n"
-        f"{_hash(manifest_path)}  {manifest_path.name}\n", encoding="utf-8",
+        f"{_hash(manifest_path)}  {manifest_path.name}\n",
+        encoding="utf-8",
     )
     return archive
 
@@ -249,8 +291,11 @@ def main() -> None:
     args = parser.parse_args()
     try:
         archive = package_release(
-            args.runtime_dir, args.output_dir, release_version=args.release_version,
-            backend_release=args.backend_release, source_root=args.source_root,
+            args.runtime_dir,
+            args.output_dir,
+            release_version=args.release_version,
+            backend_release=args.backend_release,
+            source_root=args.source_root,
         )
     except ReleaseError as error:
         raise SystemExit(str(error)) from None

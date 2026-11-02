@@ -34,15 +34,15 @@ case "$deployment_root" in
 esac
 export ELECTION_DEPLOY_ROOT="$deployment_root" ELECTION_DEPLOY_BIND="$deployment_bind"
 export ELECTION_DEPLOY_PORT="$deployment_port" ELECTION_DEPLOY_PROJECT="$deployment_project"
-docker compose build api
+docker compose build api </dev/null
 mkdir -p "$deployment_root"
 docker compose run --rm --no-deps -T prepare --root /data --host-root "$deployment_root" \
     --host "$deployment_host" --bind "$deployment_bind" --port "$deployment_port" \
-    --project "$deployment_project"
-docker compose up --detach --wait --wait-timeout 180 db
+    --project "$deployment_project" </dev/null
+docker compose up --detach --wait --wait-timeout 180 db </dev/null
 docker compose run --rm --no-deps admin initialize --username "$administrator" \
     --display-name "$display_name"
-docker compose up --detach --wait --wait-timeout 90 api
+docker compose up --detach --wait --wait-timeout 90 api </dev/null
 printf '\nDeployment ready. Public trust certificate: %s/tls/ca.pem\n' "$deployment_root"
 printf 'For later commands, load the NON-SECRET Compose profile: %s/config/compose.env\n' "$deployment_root"
 printf 'Use the deployment guide for client setup, explicit upgrades and restore verification.\n'

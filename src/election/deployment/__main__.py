@@ -135,6 +135,12 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = run(args)
+    except EOFError:
+        print(
+            json.dumps({"status": "failed", "code": "administrator_input_unavailable"}),
+            file=sys.stderr,
+        )
+        return 1
     except (DeploymentError, BackupToolError, RestoreError) as error:
         print(json.dumps({"status": "failed", "code": str(error)}), file=sys.stderr)
         return 1
