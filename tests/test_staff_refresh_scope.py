@@ -104,6 +104,7 @@ def test_profile_polling_defers_staff_directories_until_open_and_keeps_manual_re
         ]
         with ThreadPoolExecutor(max_workers=4) as readers:
             for _ in range(5):
+                cycle_profiles = len(profile_cycles)
                 before_refresh = {path: https_server.request_count("GET", path) for path in paths}
                 other_reads = [
                     readers.submit(read_directory, client, path)
@@ -135,6 +136,11 @@ def test_profile_polling_defers_staff_directories_until_open_and_keeps_manual_re
                     https_server.request_count("GET", path) >= before_refresh[path] + 3
                     for path in paths
                 )
+                # The profile callback can start a background staff refresh after
+                # the manual batch settles. Finish that public cycle before the
+                # next baseline includes some of its already-issued requests.
+                wait_for(qt_app, lambda: len(profile_cycles) > cycle_profiles)
+                wait_for(qt_app, lambda: setup_idle(configuration) and setup_idle(staff))
     desktop.signOut()
     assert staff.property("state")["accounts"] == []
     assert staff.property("state")["station_options"] == []
