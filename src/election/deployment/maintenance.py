@@ -113,12 +113,34 @@ def initialize(username: str, display_name: str) -> dict[str, str]:
         engine.dispose()
 
 
+def reserve() -> dict[str, str]:
+    """Interlock startup before a portable operator workflow stops the API."""
+    path = state_directory() / "maintenance.json"
+    try:
+        private_write(
+            path,
+            json.dumps(
+                {
+                    "operation_id": str(uuid4()),
+                    "phase": "reserved",
+                    "started_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            + "\n",
+            uid=API_UID,
+        )
+    except FileExistsError:
+        raise DeploymentError("maintenance_already_pending") from None
+    _sync_directory(path.parent)
+    return {"status": "maintenance_reserved"}
+
+
 def backup(*, image_id: str | None = None) -> dict[str, str]:
     """The shell entry point stops the API before this offline operation."""
     state = state_directory() / "maintenance.json"
     if state.exists():
         previous = json.loads(state.read_text())
-        if previous.get("phase") != "backup_failed":
+        if previous.get("phase") not in {"backup_failed", "reserved"}:
             raise DeploymentError("maintenance_already_pending")
     operation = str(uuid4())
     record: dict[str, Any] = {
@@ -294,7 +316,9 @@ def prepare_test_schema(schema: str, *, restore_target: bool) -> dict[str, str]:
     registry = config / "test-targets.json"
     targets: list[str] = json.loads(registry.read_text()) if registry.exists() else []
     url = make_url(Settings().database_url)
-    root_password = (config / "mysql-root-password").read_text()
+    root_password = Path(
+        os.environ.get("ELECTION_MYSQL_ROOT_PASSWORD_FILE", str(config / "mysql-root-password"))
+    ).read_text()
     engine = create_engine(url.set(username="root", password=root_password, database=None))
     try:
         with engine.begin() as connection:

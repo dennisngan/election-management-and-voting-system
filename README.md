@@ -5,6 +5,10 @@ MySQL 8.4/InnoDB, and a PySide6 Qt Quick desktop client. The selected interface 
 workspace**. The approved scope and ordered tickets are in [the specification](docs/SPECIFICATION.md)
 and [ticket plan](docs/TICKET-PLAN.md).
 
+For a new server, use the [Docker quickstart](docs/QUICKSTART.md): copy `config.example.yml` to
+`config.yml`, edit its settings and account list, then run `docker compose -f config.yml up -d --build`.
+Docker Desktop uses Linux containers on Windows or macOS; Linux hosts use Docker Engine/Compose.
+
 The implementation covers election/station/staff configuration, approved polling events, separate
 ballot-stock pools and counter ownership, stock snapshots and turnout, EPR fallback, complaints and
 queues, box handover, P(18)/F1–F4, selected approved counts, local and constituency recounts, outage
@@ -15,12 +19,13 @@ authorized reopening retains that earlier outcome while later work receives new 
 is outstanding.** Current Ticket 24 focused results are not a replacement for the required final full
 suite, matching packaged-client journeys, protected current-source restore or final Main integration.
 [Delivery traceability](docs/DELIVERY-TRACEABILITY.md) records those gates and their actual source/build
-scope. [Linux Docker deployment](docs/DOCKER-DEPLOYMENT.md) covers the central server;
+scope. [Docker quickstart](docs/QUICKSTART.md) covers the central server;
 [Windows setup](docs/WINDOWS-SETUP.md) covers native client builds and installation.
 
-The Docker deployment and Windows ZIP tooling have [current verification evidence](docs/evidence/docker-deployment/README.md):
+The earlier advanced Docker deployment and Windows ZIP tooling have [previous-source verification evidence](docs/evidence/docker-deployment/README.md):
 **1,676 passed, 1 skipped, 35 warnings** at `d9453ceb`, plus the separate real Docker/Qt/PDF/CSV
-journey and database-container replacement check. Ruff, mypy and both review axes pass. Actual
+journey and database-container replacement check. Ruff, mypy and both review axes passed for that
+source. Those results predate the `config.yml` quickstart and do not verify its changes. Actual
 Windows build/smoke and the broader final delivery gates below remain incomplete.
 
 Follow the [synthetic demo runbook](docs/DEMO-RUNBOOK.md) for a reproducible manual example and the
@@ -136,31 +141,42 @@ origin, destination, event corrections and exact source references.
 
 ## Deploy the central service
 
-The accepted deployment uses Docker Engine/Compose and a shell on one Linux host or VM, with
-native Windows clients on the private LAN/VPN. [ADR 0011](docs/adr/0011-linux-container-server-native-windows-clients.md)
-replaces the earlier Windows-native server target. No host Python or MySQL installation is required.
-
-Follow [the deployment guide](docs/DOCKER-DEPLOYMENT.md) for one-time setup, private storage,
-trusted HTTPS and the hidden Administrator-password prompt. Setup starts a fresh independent
-database; the old development database and retained datasets stay separate. The default persistent
-root is `/srv/election-system`, and the default published bind `127.0.0.1` needs explicit private-interface
-configuration for clients on another computer.
-
-After setup, load its **NON-SECRET** profile in the same shell with the required Docker/storage access:
+Install Docker with Compose, then run these commands from the repository folder. On macOS/Linux:
 
 ```sh
-set -a
-. /srv/election-system/config/compose.env
-set +a
-docker compose up -d --build
+cp config.example.yml config.yml
 ```
 
-Adjust the profile path for a custom storage root; administrative permissions may be needed.
-Ordinary rebuilds retain state and do not migrate schema. Before a schema-changing release, resolve
-uncertain saves, close clients and use `sh deploy/maintenance.sh upgrade` for the explicit protected
-backup/migrate workflow. The API refuses incompatible schema or a pending maintenance interlock.
-Keep the stable endpoint, public CA and per-user recovery journals when installing a matching
-[versioned Windows runtime ZIP](docs/WINDOWS-SETUP.md#windows-client-package).
+On Windows, use PowerShell with Docker Desktop set to Linux containers:
+
+```powershell
+Copy-Item config.example.yml config.yml
+```
+
+Edit only the `x-election` settings at the top of `config.yml`: the server hostname, bind address,
+port, MySQL data directory and initial account list. Replace every example password with a unique
+temporary password of 12–128 characters and include an Administrator. Then start the server:
+
+```sh
+docker compose -f config.yml up -d --build
+```
+
+The same Compose command works in PowerShell, macOS Terminal and a Linux terminal. No host Python,
+MySQL, WSL terminal, setup script or environment profile is needed. Docker prepares HTTPS and a
+fresh independent database, waits for MySQL, initializes the schema and creates the configured
+accounts together. The first sign-in requires a password change. Existing accounts are preserved
+on restart; editing the list does not add, reset, change or disable accounts after bootstrap.
+
+The default `localhost`/`127.0.0.1` settings accept clients on the server computer. Choose a stable
+reachable hostname/IP and private bind address before first startup for other computers. MySQL data
+defaults to `./data/mysql`; private keys, generated secrets and backups use persistent Docker volumes.
+Keep the new deployment separate from old development databases and retained datasets.
+
+Follow the [quickstart](docs/QUICKSTART.md) to export the public CA, connect a desktop client and
+retain state on stop/restart. Startup refuses an incompatible existing schema; the quickstart also
+documents explicit schema maintenance. The [advanced deployment guide](docs/DOCKER-DEPLOYMENT.md) retains the
+separate `compose.yaml`/shell workflow and its maintenance procedures. Actual Windows verification
+remains incomplete.
 
 ## Development prerequisites
 

@@ -6,6 +6,8 @@
 .env
 .env.*
 !.env.example
+/config.yml
+/data/
 
 # Python, test and analysis caches.
 __pycache__/

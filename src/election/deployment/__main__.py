@@ -22,6 +22,7 @@ from election.deployment.maintenance import (
     migrate,
     operator_lease,
     prepare_test_schema,
+    reserve,
 )
 from election.private_paths import private_file
 from election.server.backup_restore import RestoreError, restore
@@ -75,7 +76,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "identity":
         return identity()
     load_environment()
-    if args.command in {"initialize", "backup", "migrate", "finish", "prepare-test", "restore"}:
+    if args.command in {
+        "initialize",
+        "reserve",
+        "backup",
+        "migrate",
+        "finish",
+        "prepare-test",
+        "restore",
+    }:
         with operator_lease():
             return run_administration(args)
     if args.command == "health":
@@ -93,6 +102,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def run_administration(args: argparse.Namespace) -> dict[str, Any]:
+    if args.command == "reserve":
+        return reserve()
     if args.command == "initialize":
         return initialize(args.username, args.display_name)
     if args.command == "backup":
@@ -112,7 +123,7 @@ def run_administration(args: argparse.Namespace) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("identity", "serve", "health", "status", "migrate", "finish"):
+    for name in ("identity", "serve", "health", "status", "reserve", "migrate", "finish"):
         commands.add_parser(name)
     setup = commands.add_parser("prepare")
     setup.add_argument("--root", type=Path, required=True)
