@@ -9,6 +9,10 @@ For a new server, use the [Docker quickstart](docs/QUICKSTART.md): copy `config.
 `config.yml`, edit its settings and account list, then run `docker compose -f config.yml up -d --build`.
 Docker Desktop uses Linux containers on Windows or macOS; Linux hosts use Docker Engine/Compose.
 
+[Quickstart verification](docs/evidence/docker-deployment/QUICKSTART-VERIFICATION.md) at `733d28ac`:
+**1,708 passed, 2 skipped, 27 warnings**, plus both separate real Docker journeys; Ruff, mypy and
+both review axes pass. Actual Windows execution and native-client verification remain incomplete.
+
 The implementation covers election/station/staff configuration, approved polling events, separate
 ballot-stock pools and counter ownership, stock snapshots and turnout, EPR fallback, complaints and
 queues, box handover, P(18)/F1–F4, selected approved counts, local and constituency recounts, outage
