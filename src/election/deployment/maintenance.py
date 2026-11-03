@@ -137,6 +137,8 @@ def reserve() -> dict[str, str]:
 
 def backup(*, image_id: str | None = None) -> dict[str, str]:
     """The shell entry point stops the API before this offline operation."""
+    if image_id is not None and not image_id.strip():
+        raise DeploymentError("installed_image_identity_unavailable")
     state = state_directory() / "maintenance.json"
     if state.exists():
         previous = json.loads(state.read_text())

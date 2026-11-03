@@ -34,6 +34,7 @@ def quick_stack():
     text = text.replace("context: .", "context: " + json.dumps(str(ROOT)))
     text = text.replace("./data/mysql", str(folder / "mysql"))
     text = text.replace("&server_port 8443", "&server_port " + str(port))
+    text = text.replace("username: admin", "username: ' admin '")
     text = text.replace("CHANGE_ME_TO_A_UNIQUE_TEMPORARY_PASSWORD", "Initial-Admin-Password-84!")
     text = text.replace(
         "# No settings below this line need editing.",
@@ -179,7 +180,28 @@ def test_one_command_seeds_accounts_and_preserves_them_and_data_on_restart(quick
         competing = compose("run", "--rm", "--no-deps", "-T", "admin", "reserve", check=False)
         assert competing.returncode != 0 and "maintenance_already_pending" in competing.stderr
         compose("stop", "api")
-        compose("run", "--rm", "--no-deps", "-T", "admin", "backup")
+        image_id = compose("images", "--quiet", "api").stdout.strip()
+        backed_up = compose(
+            "run", "--rm", "--no-deps", "-T", "admin", "backup", "--image-id", image_id
+        )
+        backup_id = json.loads(backed_up.stdout)["backup_id"]
+        receipt = compose(
+            "run",
+            "--rm",
+            "--no-deps",
+            "-T",
+            "--entrypoint",
+            "python",
+            "admin",
+            "-c",
+            "import json,sys; from pathlib import Path; "
+            "path=Path('/var/lib/election/backups')/(sys.argv[1]+'.maintenance.json'); "
+            "value=json.loads(path.read_text()); "
+            "assert value['image_id']==sys.argv[2]; print('identity_retained')",
+            backup_id,
+            image_id,
+        )
+        assert receipt.stdout.strip() == "identity_retained"
         compose("run", "--rm", "--no-deps", "-T", "admin", "migrate")
         compose("run", "--rm", "--no-deps", "-T", "admin", "finish")
         compose("up", "-d", "--wait", "--wait-timeout", "180")

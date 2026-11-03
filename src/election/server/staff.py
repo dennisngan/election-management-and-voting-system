@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from election.server.configuration_models import Constituency, Election
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent, LoginSession
-from election.server.security import hash_password
+from election.server.security import hash_password, normalize_username
 from election.server.staff_models import StationAssignment
 from election.server.station_models import PollingStation
 
@@ -48,9 +48,7 @@ class StaffCreate(StaffSettings):
     @field_validator("username")
     @classmethod
     def normalized_username(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("A username is required")
-        return value.strip()
+        return normalize_username(value)
 
 
 class StaffEdit(StaffSettings):
@@ -103,8 +101,10 @@ def station_context_view(
 ) -> dict[str, Any]:
     return {
         "election": {
-            "id": election.id, "name": election.name,
-            "status": election.status, "revision": election.revision,
+            "id": election.id,
+            "name": election.name,
+            "status": election.status,
+            "revision": election.revision,
         },
         "constituency": {
             "id": constituency.id,
@@ -436,9 +436,12 @@ def station_access_router(
         )
         active = db.get(ActiveElection, 1)
         if active and active.election_id is not None:
-            query = query.where(or_(
-                Constituency.election_id == active.election_id, Election.status == "finalized",
-            ))
+            query = query.where(
+                or_(
+                    Constituency.election_id == active.election_id,
+                    Election.status == "finalized",
+                )
+            )
         stations = db.scalars(query)
         return {"items": [station_context(db, account, station) for station in stations]}
 

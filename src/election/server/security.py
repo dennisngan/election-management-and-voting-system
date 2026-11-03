@@ -7,6 +7,12 @@ password_hasher = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
 _dummy_hash = password_hasher.hash("unusable-dummy-account")
 
 
+def normalize_username(value: str) -> str:
+    if not value.strip():
+        raise ValueError("A username is required")
+    return value.strip()
+
+
 def hash_password(password: str) -> str:
     return password_hasher.hash(password)
 

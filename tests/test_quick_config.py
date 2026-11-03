@@ -21,6 +21,30 @@ def test_compose_file_defaults_do_not_require_account_seeding(tmp_path: Path) ->
     assert config.accounts == []
 
 
+def test_initial_usernames_match_desktop_and_account_api_normalization(tmp_path: Path) -> None:
+    path = tmp_path / "config.yml"
+    account = {"username": " admin ", "password": "Initial-Private-Password42!"}
+    path.write_text(yaml.safe_dump({"x-election": {"accounts": [account]}}))
+    assert load_quick_config(path).accounts[0].username == "admin"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "x-election": {
+                    "accounts": [
+                        account,
+                        {**account, "username": "admin"},
+                    ]
+                }
+            }
+        )
+    )
+    with pytest.raises(QuickConfigError):
+        load_quick_config(path)
+    path.write_text(yaml.safe_dump({"x-election": {"accounts": [{**account, "username": "   "}]}}))
+    with pytest.raises(QuickConfigError):
+        load_quick_config(path)
+
+
 def test_real_password_is_not_rejected_for_starting_with_replacement(tmp_path: Path) -> None:
     path = tmp_path / "config.yml"
     path.write_text(

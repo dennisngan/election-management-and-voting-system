@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from election.deployment.configuration import DeploymentError, host_name
 from election.server.models import Account, AuditEvent
-from election.server.security import hash_password
+from election.server.security import hash_password, normalize_username
 
 
 class QuickConfigError(DeploymentError):
@@ -53,6 +53,11 @@ class QuickAccount(_Settings):
         "administrator"
     )
     password: SecretStr = Field(repr=False)
+
+    @field_validator("username")
+    @classmethod
+    def normalized_username(cls, value: str) -> str:
+        return normalize_username(value)
 
     @field_validator("password")
     @classmethod
