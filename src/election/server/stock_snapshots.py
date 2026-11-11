@@ -245,7 +245,11 @@ def snapshot_accounting(
 
 
 def snapshot_basis_current(
-    db: Session, station_id: int, row: StockSnapshotRevision, *, lock: bool = False,
+    db: Session,
+    station_id: int,
+    row: StockSnapshotRevision,
+    *,
+    lock: bool = False,
 ) -> bool:
     allocations = {
         (item.allocation_id, item.revision)

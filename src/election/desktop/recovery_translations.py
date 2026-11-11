@@ -4,15 +4,12 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
         "recovery_election": "選舉",
         "recovery_event": "事件",
-        "recovery_election_receipt_hint": (
-            "已保留原有結果。目前選舉狀態會分開顯示。"
-        ),
+        "recovery_election_receipt_hint": ("已保留原有結果。目前選舉狀態會分開顯示。"),
         "recovery_recount_instruction": "重新點票指示",
         "recovery_recount_new_round": "新點票輪次",
         "recovery_original_receipt": "原伺服器收據",
         "recovery_original_receipt_hint": (
-            "此收據保留原指示及空白輪次的回覆，"
-            "不代表目前點票或重新點票狀態。"
+            "此收據保留原指示及空白輪次的回覆，不代表目前點票或重新點票狀態。"
         ),
         "recovery_recount_original_event_at": "原指示時間（香港時間）",
         "recovery_title": "要求恢復核對",
@@ -64,8 +61,7 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "recovery_context_unavailable": "請選取已指派票站並以職員帳戶登入。",
         "recovery_journal_unavailable": "無法讀取或更新本機恢復記錄；操作未重送。",
         "recovery_journal_outcome_unavailable": (
-            "操作已送出，但本機恢復記錄未能更新。"
-            "請先核對伺服器結果，再決定是否重試。"
+            "操作已送出，但本機恢復記錄未能更新。請先核對伺服器結果，再決定是否重試。"
         ),
         "recovery_command_not_found": "找不到所選恢復操作。",
         "recovery_command_conflict": "此要求編號已用於另一項操作。",
@@ -87,15 +83,12 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "sc": {
         "recovery_election": "选举",
         "recovery_event": "事件",
-        "recovery_election_receipt_hint": (
-            "已保留原有结果。目前选举状态会分开显示。"
-        ),
+        "recovery_election_receipt_hint": ("已保留原有结果。目前选举状态会分开显示。"),
         "recovery_recount_instruction": "重新点票指示",
         "recovery_recount_new_round": "新点票轮次",
         "recovery_original_receipt": "原服务器收据",
         "recovery_original_receipt_hint": (
-            "此收据保留原指示及空白轮次的回复，"
-            "不代表当前点票或重新点票状态。"
+            "此收据保留原指示及空白轮次的回复，不代表当前点票或重新点票状态。"
         ),
         "recovery_recount_original_event_at": "原指示时间（香港时间）",
         "recovery_title": "请求恢复核对",
@@ -147,8 +140,7 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
         "recovery_context_unavailable": "请选择已指派票站并以职员账户登录。",
         "recovery_journal_unavailable": "无法读取或更新本机恢复记录；操作未重送。",
         "recovery_journal_outcome_unavailable": (
-            "操作已送出，但本机恢复记录未能更新。"
-            "请先核对服务器结果，再决定是否重试。"
+            "操作已送出，但本机恢复记录未能更新。请先核对服务器结果，再决定是否重试。"
         ),
         "recovery_command_not_found": "找不到所选恢复操作。",
         "recovery_command_conflict": "此请求编号已用于另一项操作。",
@@ -257,14 +249,20 @@ RECOVERY_TRANSLATIONS: dict[str, dict[str, str]] = {
 
 _CONSTITUENCY_RECEIPT_LABELS = {
     "constituency_recount": (
-        "整個選區重新點票", "整个选区重新点票", "Constituency-wide recount",
+        "整個選區重新點票",
+        "整个选区重新点票",
+        "Constituency-wide recount",
     ),
     "recovery_constituency": ("選區", "选区", "Constituency"),
     "recovery_constituency_instruction": (
-        "整個選區重新點票指示", "整个选区重新点票指示", "Constituency recount instruction",
+        "整個選區重新點票指示",
+        "整个选区重新点票指示",
+        "Constituency recount instruction",
     ),
     "recovery_constituency_member_count": (
-        "原有所需範圍數目", "原有所需范围数目", "Original member count",
+        "原有所需範圍數目",
+        "原有所需范围数目",
+        "Original member count",
     ),
     "recovery_constituency_receipt_hint": (
         "此收據保留原有選區指示及各範圍的空白輪次；目前重新點票進度另行顯示。",
@@ -274,6 +272,6 @@ _CONSTITUENCY_RECEIPT_LABELS = {
     ),
 }
 for index, locale in enumerate(("tc", "sc", "en")):
-    RECOVERY_TRANSLATIONS[locale].update({
-        key: values[index] for key, values in _CONSTITUENCY_RECEIPT_LABELS.items()
-    })
+    RECOVERY_TRANSLATIONS[locale].update(
+        {key: values[index] for key, values in _CONSTITUENCY_RECEIPT_LABELS.items()}
+    )

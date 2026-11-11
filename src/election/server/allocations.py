@@ -168,7 +168,10 @@ def allocation_router(
         return counter, basis
 
     def write_scope(
-        db: Session, actor: Account, station_id: int, data: AllocationInput,
+        db: Session,
+        actor: Account,
+        station_id: int,
+        data: AllocationInput,
     ) -> dict[str, Any]:
         if data.paper_record_id is not None:
             # Paper workflows share the active-election-first writer order.

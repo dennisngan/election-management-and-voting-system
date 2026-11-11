@@ -79,7 +79,7 @@ _ACCOUNTING: dict[ReportLocale, dict[str, str]] = {
     "en": {
         "title": "P(18) stock accounting and box-paper estimates",
         "scope_note": "Figures and frozen sources belong to the selected P(18) revision; "
-                      "current validity is shown separately.",
+        "current validity is shown separately.",
         "estimate_note": (
             "Box-paper estimates remain separate from actual counted papers. Replacements "
             "substitute for cancelled originals and are not deducted again. Retrieved-unused "
@@ -117,8 +117,10 @@ _ACCOUNTING: dict[ReportLocale, dict[str, str]] = {
 
 LABELS: dict[ReportLocale, dict[str, str]] = {
     locale: {
-        **SPECIAL_LABELS[locale], **SNAPSHOT_LABELS[locale],
-        **TURNOUT_LABELS[locale], **_ACCOUNTING[locale],
+        **SPECIAL_LABELS[locale],
+        **SNAPSHOT_LABELS[locale],
+        **TURNOUT_LABELS[locale],
+        **_ACCOUNTING[locale],
     }
     for locale in _ACCOUNTING
 }

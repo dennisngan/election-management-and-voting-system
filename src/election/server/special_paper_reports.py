@@ -35,9 +35,10 @@ def _metadata_rows(projection: dict[str, Any]) -> list[list[str]]:
         ("event_at", hong_kong_time(snapshot["event_at"])),
         ("stock_snapshot_id", str(snapshot["stock_snapshot_id"])),
         ("stock_snapshot_revision", str(snapshot["stock_snapshot_revision"])),
-        ("stock_snapshot_event_at", hong_kong_time(
-            datetime.fromisoformat(snapshot["stock_snapshot_event_at"])
-        )),
+        (
+            "stock_snapshot_event_at",
+            hong_kong_time(datetime.fromisoformat(snapshot["stock_snapshot_event_at"])),
+        ),
         ("entered_at", hong_kong_time(snapshot["entered_at"])),
         ("actor_id", str(snapshot["actor_id"])),
         ("reason", snapshot["reason"] or labels["none"]),
@@ -57,12 +58,17 @@ def _report_rows(projection: dict[str, Any]) -> list[list[str]]:
         rows.extend([[], [labels["series"], series["series"]]])
         rows.extend([labels[key], str(series[key])] for key in QUANTITIES)
     rows.extend([[], [labels["receipt_basis"]], [labels["receipt_id"], labels["revision"]]])
-    rows.extend([str(row["receipt_id"]), str(row["revision"])]
-                for row in snapshot["receipt_basis"])
+    rows.extend([str(row["receipt_id"]), str(row["revision"])] for row in snapshot["receipt_basis"])
     if not snapshot["receipt_basis"]:
         rows.append([labels["none"]])
     range_keys = (
-        "receipt_id", "revision", "series", "pool", "serial_from", "serial_to", "quantity",
+        "receipt_id",
+        "revision",
+        "series",
+        "pool",
+        "serial_from",
+        "serial_to",
+        "quantity",
     )
     rows.extend([[], [labels["received_ranges"]], [labels[key] for key in range_keys]])
     for row in snapshot["received_ranges"]:
@@ -80,50 +86,113 @@ def _csv_report(projection: dict[str, Any]) -> bytes:
 
 def _pdf_report(projection: dict[str, Any]) -> bytes:
     labels, snapshot = projection["labels"], projection["items"][0]
-    sections = [HistoryTable(
-        labels["summary"],
-        [[labels["field"], labels["value"]]]
-        + [[labels["report_scope"], labels["scope_note"]],
-           [labels["provenance"], labels["provenance_note"]],
-           [labels["estimated_box_papers_quantity"], labels["estimate_note"]]]
-        + [[labels[key], str(snapshot[key])] for key in QUANTITIES],
-        (0.50, 0.50),
-    )]
+    sections = [
+        HistoryTable(
+            labels["summary"],
+            [[labels["field"], labels["value"]]]
+            + [
+                [labels["report_scope"], labels["scope_note"]],
+                [labels["provenance"], labels["provenance_note"]],
+                [labels["estimated_box_papers_quantity"], labels["estimate_note"]],
+            ]
+            + [[labels[key], str(snapshot[key])] for key in QUANTITIES],
+            (0.50, 0.50),
+        )
+    ]
     for heading, keys, widths in (
-        ("source", ("received_quantity", "ordinary_issued_quantity",
-                    "estimated_box_papers_quantity"), (0.40, 0.20, 0.20, 0.20)),
-        ("issues", ("replacement_issued_quantity", "spoilt_original_quantity",
-                    "tendered_issued_quantity"), (0.40, 0.20, 0.20, 0.20)),
-        ("retrieved", ("retrieved_refused_quantity", "retrieved_found_quantity",
-                       "retrieved_held_quantity", "retrieved_unused_quantity"),
-         (0.36, 0.16, 0.16, 0.16, 0.16)),
-        ("unused", ("ordinary_unissued_quantity", "replacement_unissued_quantity",
-                    "tendered_unissued_quantity", "never_issued_quantity"),
-         (0.36, 0.16, 0.16, 0.16, 0.16)),
+        (
+            "source",
+            ("received_quantity", "ordinary_issued_quantity", "estimated_box_papers_quantity"),
+            (0.40, 0.20, 0.20, 0.20),
+        ),
+        (
+            "issues",
+            ("replacement_issued_quantity", "spoilt_original_quantity", "tendered_issued_quantity"),
+            (0.40, 0.20, 0.20, 0.20),
+        ),
+        (
+            "retrieved",
+            (
+                "retrieved_refused_quantity",
+                "retrieved_found_quantity",
+                "retrieved_held_quantity",
+                "retrieved_unused_quantity",
+            ),
+            (0.36, 0.16, 0.16, 0.16, 0.16),
+        ),
+        (
+            "unused",
+            (
+                "ordinary_unissued_quantity",
+                "replacement_unissued_quantity",
+                "tendered_unissued_quantity",
+                "never_issued_quantity",
+            ),
+            (0.36, 0.16, 0.16, 0.16, 0.16),
+        ),
     ):
-        sections.append(HistoryTable(
-            labels[heading], [[labels["series"], *[labels[key] for key in keys]]]
-            + [[row["series"], *[str(row[key]) for key in keys]] for row in snapshot["series"]],
-            widths, labels["none"] if not snapshot["series"] else "", split_in_row=False,
-        ))
-    sections.append(HistoryTable(
-        labels["receipt_basis"], [[labels["receipt_id"], labels["revision"]]]
-        + [[str(row["receipt_id"]), str(row["revision"])] for row in snapshot["receipt_basis"]],
-        (0.50, 0.50), labels["none"] if not snapshot["receipt_basis"] else "", split_in_row=False,
-    ))
-    sections.append(HistoryTable(
-        labels["received_ranges"],
-        [[labels[key] for key in ("source", "pool", "serial_from", "serial_to", "quantity")]]
-        + [[str(row["receipt_id"]) + " · " + labels["revision"] + " " + str(row["revision"])
-            + " · " + row["series"], labels[row["pool"]], row["serial_from"],
-            row["serial_to"], str(row["quantity"])] for row in snapshot["received_ranges"]],
-        (0.30, 0.10, 0.21, 0.21, 0.18),
-        labels["none"] if not snapshot["received_ranges"] else "", split_in_row=False,
-    ))
-    footer = (projection["scope"]["station"]["code"] + " · " + labels["snapshot_id"] + " "
-              + str(snapshot["id"]) + " · " + labels["revision"] + " " + str(snapshot["revision"]))
+        sections.append(
+            HistoryTable(
+                labels[heading],
+                [[labels["series"], *[labels[key] for key in keys]]]
+                + [[row["series"], *[str(row[key]) for key in keys]] for row in snapshot["series"]],
+                widths,
+                labels["none"] if not snapshot["series"] else "",
+                split_in_row=False,
+            )
+        )
+    sections.append(
+        HistoryTable(
+            labels["receipt_basis"],
+            [[labels["receipt_id"], labels["revision"]]]
+            + [[str(row["receipt_id"]), str(row["revision"])] for row in snapshot["receipt_basis"]],
+            (0.50, 0.50),
+            labels["none"] if not snapshot["receipt_basis"] else "",
+            split_in_row=False,
+        )
+    )
+    sections.append(
+        HistoryTable(
+            labels["received_ranges"],
+            [[labels[key] for key in ("source", "pool", "serial_from", "serial_to", "quantity")]]
+            + [
+                [
+                    str(row["receipt_id"])
+                    + " · "
+                    + labels["revision"]
+                    + " "
+                    + str(row["revision"])
+                    + " · "
+                    + row["series"],
+                    labels[row["pool"]],
+                    row["serial_from"],
+                    row["serial_to"],
+                    str(row["quantity"]),
+                ]
+                for row in snapshot["received_ranges"]
+            ],
+            (0.30, 0.10, 0.21, 0.21, 0.18),
+            labels["none"] if not snapshot["received_ranges"] else "",
+            split_in_row=False,
+        )
+    )
+    footer = (
+        projection["scope"]["station"]["code"]
+        + " · "
+        + labels["snapshot_id"]
+        + " "
+        + str(snapshot["id"])
+        + " · "
+        + labels["revision"]
+        + " "
+        + str(snapshot["revision"])
+    )
     return history_pdf(
-        projection["title"], _metadata_rows(projection), sections, footer, labels["page"],
+        projection["title"],
+        _metadata_rows(projection),
+        sections,
+        footer,
+        labels["page"],
     )
 
 
@@ -141,39 +210,55 @@ def special_paper_reports_router(
 
     @router.get("/statement")
     def statement(
-        station_id: int, db: Database, actor: Ready,
+        station_id: int,
+        db: Database,
+        actor: Ready,
         snapshot_id: Annotated[int, Query(ge=1)],
         revision: Annotated[int, Query(ge=1)],
         locale: ReportLocale = "tc",
     ) -> dict[str, Any]:
         stock_scope(db, actor, station_id)
-        head = db.scalar(select(SpecialPaperSnapshot).where(
-            SpecialPaperSnapshot.id == snapshot_id, SpecialPaperSnapshot.station_id == station_id,
-        ))
+        head = db.scalar(
+            select(SpecialPaperSnapshot).where(
+                SpecialPaperSnapshot.id == snapshot_id,
+                SpecialPaperSnapshot.station_id == station_id,
+            )
+        )
         if head is None:
             raise HTTPException(404, detail={"code": "special_paper_not_found"})
-        row = db.scalar(select(SpecialPaperRevision).where(
-            SpecialPaperRevision.snapshot_id == snapshot_id,
-            SpecialPaperRevision.revision == revision,
-        ))
+        row = db.scalar(
+            select(SpecialPaperRevision).where(
+                SpecialPaperRevision.snapshot_id == snapshot_id,
+                SpecialPaperRevision.revision == revision,
+            )
+        )
         if row is None:
             raise HTTPException(404, detail={"code": "special_paper_not_found"})
         snapshot = special_paper_view(row, station_id)
         projection = {
-            "scope": snapshot["scope"], "items": [snapshot], "availability": None,
-            "report_scope": "snapshot_revision", "snapshot_id": snapshot_id, "revision": revision,
+            "scope": snapshot["scope"],
+            "items": [snapshot],
+            "availability": None,
+            "report_scope": "snapshot_revision",
+            "snapshot_id": snapshot_id,
+            "revision": revision,
             "revision_state": "current" if head.revision == revision else "historical",
-            "locale": locale, "title": LABELS[locale]["title"], "labels": LABELS[locale],
+            "locale": locale,
+            "title": LABELS[locale]["title"],
+            "labels": LABELS[locale],
             "generated_at": timestamp().replace(tzinfo=UTC),
             "generation_timezone": "Asia/Hong_Kong",
         }
         return {
-            **projection, "preview_lines": [" · ".join(row) for row in _report_rows(projection)],
+            **projection,
+            "preview_lines": [" · ".join(row) for row in _report_rows(projection)],
         }
 
     @router.get("/statement.csv")
     def statement_csv(
-        station_id: int, db: Database, actor: Ready,
+        station_id: int,
+        db: Database,
+        actor: Ready,
         snapshot_id: Annotated[int, Query(ge=1)],
         revision: Annotated[int, Query(ge=1)],
         locale: ReportLocale = "tc",
@@ -181,13 +266,16 @@ def special_paper_reports_router(
         projection = statement(station_id, db, actor, snapshot_id, revision, locale)
         filename = f"special-papers-{snapshot_id}-r{revision}-{locale}.csv"
         return Response(
-            _csv_report(projection), media_type="text/csv; charset=utf-8",
+            _csv_report(projection),
+            media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @router.get("/statement.pdf")
     def statement_pdf(
-        station_id: int, db: Database, actor: Ready,
+        station_id: int,
+        db: Database,
+        actor: Ready,
         snapshot_id: Annotated[int, Query(ge=1)],
         revision: Annotated[int, Query(ge=1)],
         locale: ReportLocale = "tc",
@@ -195,7 +283,8 @@ def special_paper_reports_router(
         projection = statement(station_id, db, actor, snapshot_id, revision, locale)
         filename = f"special-papers-{snapshot_id}-r{revision}-{locale}.pdf"
         return Response(
-            _pdf_report(projection), media_type="application/pdf",
+            _pdf_report(projection),
+            media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 

@@ -145,9 +145,7 @@ class InvalidReasonsController(QObject):
             and row.get("translation_provenance") == "project_translation"
         )
 
-    def _accept_catalog(
-        self, data: dict[str, Any], *, saved: dict[str, Any] | None = None
-    ) -> bool:
+    def _accept_catalog(self, data: dict[str, Any], *, saved: dict[str, Any] | None = None) -> bool:
         rows = data.get("items")
         if not isinstance(rows, list) or not all(self._valid_row(row) for row in rows):
             self._error("request_failed")
@@ -207,9 +205,7 @@ class InvalidReasonsController(QObject):
                 (item for item in self._state["items"] if item["id"] == reason_id), None
             )
             if catalog_head is not None and row["revision"] < catalog_head["revision"]:
-                self._send(
-                    f"{self._path()}/{reason_id}", "GET", None, loaded, background=True
-                )
+                self._send(f"{self._path()}/{reason_id}", "GET", None, loaded, background=True)
                 return
             self._state["history"] = deepcopy(history)
             self._state["historical"] = revision != row["revision"]
@@ -219,9 +215,7 @@ class InvalidReasonsController(QObject):
                     row if item["id"] == reason_id else item for item in self._state["items"]
                 ]
 
-        self._send(
-            f"{self._path()}/{reason_id}", "GET", None, loaded, background=True
-        )
+        self._send(f"{self._path()}/{reason_id}", "GET", None, loaded, background=True)
 
     def _accept(self, row: dict[str, Any], *, historical: bool = False) -> None:
         self._state.update(
@@ -337,8 +331,13 @@ class InvalidReasonsController(QObject):
             return False
         if not reason_id:
             self._state.update(
-                selected={}, history=[], historical=False, form=empty_form(), editing=True,
-                dirty=False, newer_revision=False,
+                selected={},
+                history=[],
+                historical=False,
+                form=empty_form(),
+                editing=True,
+                dirty=False,
+                newer_revision=False,
             )
             self.stateChanged.emit()
             return True
@@ -367,7 +366,8 @@ class InvalidReasonsController(QObject):
         if self._state["busy"] or self._state["dirty"] or self._state["newer_revision"]:
             if self._state["dirty"] or self._state["newer_revision"]:
                 self._error(
-                    "revision_conflict" if self._state["newer_revision"]
+                    "revision_conflict"
+                    if self._state["newer_revision"]
                     else "unsaved_invalid_reason_changes"
                 )
             return
@@ -391,8 +391,13 @@ class InvalidReasonsController(QObject):
                 self.loadReason(reason_id, True)
             else:
                 self._state.update(
-                    selected={}, history=[], historical=False, form=empty_form(), editing=True,
-                    dirty=False, newer_revision=False,
+                    selected={},
+                    history=[],
+                    historical=False,
+                    form=empty_form(),
+                    editing=True,
+                    dirty=False,
+                    newer_revision=False,
                 )
 
         self._send(self._catalog_path(), "GET", None, loaded)
@@ -410,8 +415,7 @@ class InvalidReasonsController(QObject):
 
     def _edited(self) -> None:
         original = {
-            key: self._state["selected"].get(key, default)
-            for key, default in empty_form().items()
+            key: self._state["selected"].get(key, default) for key, default in empty_form().items()
         }
         self._state.update(dirty=self._state["form"] != original, error="", notice="")
         self.stateChanged.emit()
@@ -436,18 +440,6 @@ class InvalidReasonsController(QObject):
         if self._editable() and not self._state["selected"].get("is_other"):
             self._state["form"]["explanation_required"] = value
             self._edited()
-
-    @Slot()
-    def newReason(self) -> None:
-        if not self._state["election_id"] or self._state["election"].get("status") == "finalized":
-            return
-        if not self._can_load(False):
-            return
-        self._state.update(
-            selected={}, history=[], historical=False, form=empty_form(), editing=True,
-            dirty=False, newer_revision=False,
-        )
-        self.stateChanged.emit()
 
     @Slot()
     def save(self) -> None:

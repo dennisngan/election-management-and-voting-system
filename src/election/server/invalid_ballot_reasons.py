@@ -22,7 +22,7 @@ from election.server.invalid_ballot_models import (
 )
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
-from election.server.polling import as_utc
+from election.server.timestamps import as_utc
 from election.server.turnout_basis import turnout_scope
 
 

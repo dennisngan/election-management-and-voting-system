@@ -10,9 +10,15 @@ depends_on: str | None = None
 
 
 def upgrade() -> None:
-    op.add_column("turnout_records", sa.Column(
-        "provenance", sa.String(32), server_default="external_manual", nullable=False,
-    ))
+    op.add_column(
+        "turnout_records",
+        sa.Column(
+            "provenance",
+            sa.String(32),
+            server_default="external_manual",
+            nullable=False,
+        ),
+    )
     op.add_column("turnout_records", sa.Column("source_basis", sa.JSON(), nullable=True))
 
 

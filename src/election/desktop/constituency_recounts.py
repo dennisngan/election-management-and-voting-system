@@ -12,10 +12,14 @@ from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.operational_receipts import valid_operational_receipt
 from election.desktop.recovery import NETWORK_ERRORS, RecoveryController
 
-STALE_ERRORS = frozenset({
-    "constituency_result_basis_stale", "constituency_result_incomplete",
-    "constituency_recount_sources_stale", "active_election_required",
-})
+STALE_ERRORS = frozenset(
+    {
+        "constituency_result_basis_stale",
+        "constituency_result_incomplete",
+        "constituency_recount_sources_stale",
+        "active_election_required",
+    }
+)
 
 
 class ConstituencyRecountsController(QObject):
@@ -23,7 +27,9 @@ class ConstituencyRecountsController(QObject):
     instructed = Signal()
 
     def __init__(
-        self, request: AuthorizedRequest, parent: QObject,
+        self,
+        request: AuthorizedRequest,
+        parent: QObject,
         recovery: RecoveryController | None,
     ) -> None:
         super().__init__(parent)
@@ -43,12 +49,24 @@ class ConstituencyRecountsController(QObject):
         self._opened = False
         self._command: dict[str, Any] | None = None
         self._state = {
-            "context": {}, "constituency_id": 0, "account_id": 0, "station_id": 0,
-            "role": "", "basis_digest": "", "scope_sources": [], "instructions": [],
-            "forms": {"event_at": "", "reason": ""}, "can_instruct": False,
-            "dirty": False, "newer_basis": False, "uncertain_save": False,
-            "pending_request_id": "", "busy": False, "refreshing": False,
-            "error": "", "notice": "",
+            "context": {},
+            "constituency_id": 0,
+            "account_id": 0,
+            "station_id": 0,
+            "role": "",
+            "basis_digest": "",
+            "scope_sources": [],
+            "instructions": [],
+            "forms": {"event_at": "", "reason": ""},
+            "can_instruct": False,
+            "dirty": False,
+            "newer_basis": False,
+            "uncertain_save": False,
+            "pending_request_id": "",
+            "busy": False,
+            "refreshing": False,
+            "error": "",
+            "notice": "",
         }
         self.stateChanged.emit()
 
@@ -71,9 +89,15 @@ class ConstituencyRecountsController(QObject):
             self.reload()
 
     def blocks_navigation(self) -> bool:
-        return any(self._state[key] for key in (
-            "dirty", "busy", "uncertain_save", "newer_basis",
-        ))
+        return any(
+            self._state[key]
+            for key in (
+                "dirty",
+                "busy",
+                "uncertain_save",
+                "newer_basis",
+            )
+        )
 
     def blocks_context_change(self) -> bool:
         return bool(self._state["uncertain_save"] or (self._command and self._state["busy"]))
@@ -87,7 +111,8 @@ class ConstituencyRecountsController(QObject):
 
     def _editable(self) -> bool:
         return bool(
-            self._state["role"] == "supervisor" and self._state["constituency_id"]
+            self._state["role"] == "supervisor"
+            and self._state["constituency_id"]
             and self._state["context"].get("election", {}).get("status") == "active"
             and not any(self._state[key] for key in ("busy", "uncertain_save", "newer_basis"))
         )
@@ -111,8 +136,12 @@ class ConstituencyRecountsController(QObject):
             self._load(background=True)
 
     def _load(self, *, background: bool) -> None:
-        if (not self._state["constituency_id"] or self._state["role"] != "supervisor"
-                or self._state["busy"] or self._state["refreshing"]):
+        if (
+            not self._state["constituency_id"]
+            or self._state["role"] != "supervisor"
+            or self._state["busy"]
+            or self._state["refreshing"]
+        ):
             return
         self._generation += 1
         generation = self._generation
@@ -143,8 +172,10 @@ class ConstituencyRecountsController(QObject):
                 return
             protected = self._state["dirty"] or self._state["uncertain_save"]
             if protected and self._state["basis_digest"]:
-                if (self._state["basis_digest"] != body["basis_digest"]
-                        or self._state["scope_sources"] != body["scope_sources"]):
+                if (
+                    self._state["basis_digest"] != body["basis_digest"]
+                    or self._state["scope_sources"] != body["scope_sources"]
+                ):
                     self._state.update(newer_basis=True)
             else:
                 self._state.update(
@@ -152,8 +183,9 @@ class ConstituencyRecountsController(QObject):
                     scope_sources=deepcopy(body["scope_sources"]),
                     newer_basis=False,
                 )
-            self._state.update(instructions=deepcopy(body["instructions"]),
-                               can_instruct=body["can_instruct"])
+            self._state.update(
+                instructions=deepcopy(body["instructions"]), can_instruct=body["can_instruct"]
+            )
             self.stateChanged.emit()
 
         def failed(code: str) -> None:
@@ -171,8 +203,9 @@ class ConstituencyRecountsController(QObject):
             return
         self._command = None
         self._state["forms"][field] = value
-        self._state.update(dirty=any(self._state["forms"].values()),
-                           pending_request_id="", error="", notice="")
+        self._state.update(
+            dirty=any(self._state["forms"].values()), pending_request_id="", error="", notice=""
+        )
         self.stateChanged.emit()
 
     @Slot()
@@ -180,8 +213,14 @@ class ConstituencyRecountsController(QObject):
         if self._state["busy"] or self._state["uncertain_save"]:
             return
         self._command = None
-        self._state.update(forms={"event_at": "", "reason": ""}, dirty=False,
-                           newer_basis=False, pending_request_id="", error="", notice="")
+        self._state.update(
+            forms={"event_at": "", "reason": ""},
+            dirty=False,
+            newer_basis=False,
+            pending_request_id="",
+            error="",
+            notice="",
+        )
         self.reload()
 
     @Slot()
@@ -193,9 +232,16 @@ class ConstituencyRecountsController(QObject):
     def _settled(self) -> None:
         self._command = None
         self._state.update(
-            busy=False, refreshing=False, forms={"event_at": "", "reason": ""},
-            dirty=False, uncertain_save=False, pending_request_id="", newer_basis=True,
-            can_instruct=False, error="", notice="constituency_recount_saved",
+            busy=False,
+            refreshing=False,
+            forms={"event_at": "", "reason": ""},
+            dirty=False,
+            uncertain_save=False,
+            pending_request_id="",
+            newer_basis=True,
+            can_instruct=False,
+            error="",
+            notice="constituency_recount_saved",
         )
         self.stateChanged.emit()
         self.instructed.emit()
@@ -204,15 +250,24 @@ class ConstituencyRecountsController(QObject):
     def _sync_recovery(self) -> None:
         if self._recovery is None:
             return
-        command = next((row for row in self._recovery.property("state")["commands"] if (
-            row.get("workflow") == "constituency_recount"
-            and row.get("path") == self._path()
-            and row.get("actor_id") == self._state["account_id"]
-            and row.get("station_id") == self._state["station_id"]
-            and (row.get("request_id") == self._state["pending_request_id"]
-                 if self._state["pending_request_id"]
-                 else row.get("status") in {"pending", "uncertain"})
-        )), None)
+        command = next(
+            (
+                row
+                for row in self._recovery.property("state")["commands"]
+                if (
+                    row.get("workflow") == "constituency_recount"
+                    and row.get("path") == self._path()
+                    and row.get("actor_id") == self._state["account_id"]
+                    and row.get("station_id") == self._state["station_id"]
+                    and (
+                        row.get("request_id") == self._state["pending_request_id"]
+                        if self._state["pending_request_id"]
+                        else row.get("status") in {"pending", "uncertain"}
+                    )
+                )
+            ),
+            None,
+        )
         if command is None:
             return
         if command.get("status") in {"pending", "uncertain"}:
@@ -222,8 +277,11 @@ class ConstituencyRecountsController(QObject):
                 self._state.update(
                     basis_digest=payload["basis_digest"],
                     scope_sources=deepcopy(payload["scope_sources"]),
-                    forms={"event_at": format_event_time(payload["event_at"]).removesuffix(" HKT"),
-                           "reason": payload["reason"]}, dirty=True,
+                    forms={
+                        "event_at": format_event_time(payload["event_at"]).removesuffix(" HKT"),
+                        "reason": payload["reason"],
+                    },
+                    dirty=True,
                 )
             self._state.update(uncertain_save=True, pending_request_id=command["request_id"])
             self.stateChanged.emit()
@@ -234,8 +292,9 @@ class ConstituencyRecountsController(QObject):
         elif command.get("status") == "rejected":
             code = command.get("error") or "constituency_recount_not_ready"
             self._command = None
-            self._state.update(uncertain_save=False, pending_request_id="",
-                               newer_basis=code in STALE_ERRORS)
+            self._state.update(
+                uncertain_save=False, pending_request_id="", newer_basis=code in STALE_ERRORS
+            )
             self._error(code)
 
     @Slot(str)
@@ -256,20 +315,31 @@ class ConstituencyRecountsController(QObject):
             self._error("constituency_recount_event_required")
             return
         payload = {
-            "request_id": str(uuid4()), "basis_digest": self._state["basis_digest"],
+            "request_id": str(uuid4()),
+            "basis_digest": self._state["basis_digest"],
             "scope_sources": deepcopy(self._state["scope_sources"]),
-            "event_at": event_at, "reason": form["reason"],
+            "event_at": event_at,
+            "reason": form["reason"],
         }
         command = {
-            "workflow": "constituency_recount", "method": "POST", "path": self._path(),
-            "request_id": payload["request_id"], "payload": payload,
-            "actor_id": self._state["account_id"], "station_id": self._state["station_id"],
+            "workflow": "constituency_recount",
+            "method": "POST",
+            "path": self._path(),
+            "request_id": payload["request_id"],
+            "payload": payload,
+            "actor_id": self._state["account_id"],
+            "station_id": self._state["station_id"],
         }
         self._command = command
         self._generation += 1
         generation = self._generation
-        self._state.update(busy=True, refreshing=False, error="", notice="",
-                           pending_request_id=payload["request_id"])
+        self._state.update(
+            busy=True,
+            refreshing=False,
+            error="",
+            notice="",
+            pending_request_id=payload["request_id"],
+        )
         self.stateChanged.emit()
 
         def saved(body: dict[str, Any]) -> None:
@@ -285,8 +355,9 @@ class ConstituencyRecountsController(QObject):
             if generation != self._generation:
                 return
             uncertain = code in NETWORK_ERRORS - {"recovery_journal_unavailable"}
-            self._state.update(busy=False, uncertain_save=uncertain,
-                               newer_basis=code in STALE_ERRORS)
+            self._state.update(
+                busy=False, uncertain_save=uncertain, newer_basis=code in STALE_ERRORS
+            )
             if not uncertain:
                 self._command = None
                 self._state["pending_request_id"] = ""

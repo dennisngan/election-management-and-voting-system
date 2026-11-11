@@ -13,14 +13,24 @@ from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.operational_receipts import valid_operational_receipt
 from election.desktop.recovery import RecoveryController
 
-NETWORK_ERRORS = frozenset({
-    "request_failed", "disconnected", "database_unavailable", "certificate_error",
-    "recovery_journal_outcome_unavailable",
-})
-STALE_ERRORS = frozenset({
-    "count_scope_revision_conflict", "count_scope_not_ready", "local_recount_selection_stale",
-    "local_recount_source_stale", "local_recount_pending",
-})
+NETWORK_ERRORS = frozenset(
+    {
+        "request_failed",
+        "disconnected",
+        "database_unavailable",
+        "certificate_error",
+        "recovery_journal_outcome_unavailable",
+    }
+)
+STALE_ERRORS = frozenset(
+    {
+        "count_scope_revision_conflict",
+        "count_scope_not_ready",
+        "local_recount_selection_stale",
+        "local_recount_source_stale",
+        "local_recount_pending",
+    }
+)
 
 
 def _positive(value: Any) -> bool:
@@ -35,8 +45,11 @@ def _aware(value: Any) -> bool:
 
 
 def _same_time(first: Any, second: Any) -> bool:
-    return bool(_aware(first) and _aware(second)
-                and datetime.fromisoformat(first) == datetime.fromisoformat(second))
+    return bool(
+        _aware(first)
+        and _aware(second)
+        and datetime.fromisoformat(first) == datetime.fromisoformat(second)
+    )
 
 
 class LocalRecountsController(QObject):
@@ -44,8 +57,11 @@ class LocalRecountsController(QObject):
     instructed = Signal()
 
     def __init__(
-        self, request: AuthorizedRequest, parent: QObject | None = None,
-        *, recovery: RecoveryController | None = None,
+        self,
+        request: AuthorizedRequest,
+        parent: QObject | None = None,
+        *,
+        recovery: RecoveryController | None = None,
     ) -> None:
         super().__init__(parent)
         self._request, self._recovery = request, recovery
@@ -68,12 +84,26 @@ class LocalRecountsController(QObject):
         self._restored_owns_draft = False
         self._read_allowed = False
         self._state = {
-            "context": {}, "station_id": 0, "election_id": 0, "actor_id": 0,
-            "role": "", "scope_id": 0, "scope": {}, "selection": {},
-            "instructions": [], "latest_instruction": None, "pending": False,
-            "forms": {"event_at": "", "reason": ""}, "dirty": False,
-            "busy": False, "refreshing": False, "newer_basis": False,
-            "uncertain_save": False, "pending_request_id": "", "error": "", "notice": "",
+            "context": {},
+            "station_id": 0,
+            "election_id": 0,
+            "actor_id": 0,
+            "role": "",
+            "scope_id": 0,
+            "scope": {},
+            "selection": {},
+            "instructions": [],
+            "latest_instruction": None,
+            "pending": False,
+            "forms": {"event_at": "", "reason": ""},
+            "dirty": False,
+            "busy": False,
+            "refreshing": False,
+            "newer_basis": False,
+            "uncertain_save": False,
+            "pending_request_id": "",
+            "error": "",
+            "notice": "",
         }
         self.stateChanged.emit()
 
@@ -82,8 +112,10 @@ class LocalRecountsController(QObject):
         election = context.get("election") or {}
         account = context.get("account") or {}
         identity = {
-            "station_id": station.get("id", 0), "election_id": election.get("id", 0),
-            "actor_id": account.get("id", 0), "role": account.get("role", ""),
+            "station_id": station.get("id", 0),
+            "election_id": election.get("id", 0),
+            "actor_id": account.get("id", 0),
+            "role": account.get("role", ""),
             "scope_id": scope_id,
         }
         changed = any(self._state[key] != value for key, value in identity.items())
@@ -116,12 +148,11 @@ class LocalRecountsController(QObject):
 
     def _editable(self) -> bool:
         return bool(
-            self._read_allowed and self._state["role"] == "supervisor"
+            self._read_allowed
+            and self._state["role"] == "supervisor"
             and not (self._recovery is not None and self._recovery.recount_context_locked())
             and self._state["context"].get("election", {}).get("status") == "active"
-            and not any(self._state[key] for key in (
-                "busy", "newer_basis", "uncertain_save"
-            ))
+            and not any(self._state[key] for key in ("busy", "newer_basis", "uncertain_save"))
         )
 
     def _error(self, code: str) -> None:
@@ -131,43 +162,59 @@ class LocalRecountsController(QObject):
     @staticmethod
     def _basis(scope: dict[str, Any], selection: dict[str, Any], pending: bool) -> tuple[Any, ...]:
         return (
-            scope.get("id"), scope.get("revision"), scope.get("revision_id"),
-            selection.get("id"), selection.get("revision"), selection.get("round_id"),
-            selection.get("round_revision"), selection.get("round_revision_id"),
-            selection.get("valid"), selection.get("is_current"), pending,
+            scope.get("id"),
+            scope.get("revision"),
+            scope.get("revision_id"),
+            selection.get("id"),
+            selection.get("revision"),
+            selection.get("round_id"),
+            selection.get("round_revision"),
+            selection.get("round_revision_id"),
+            selection.get("valid"),
+            selection.get("is_current"),
+            pending,
         )
 
     def _valid_read(self, body: dict[str, Any]) -> bool:
         context, scope = body.get("context"), body.get("scope")
         return bool(
-            isinstance(context, dict) and isinstance(scope, dict)
-            and all(isinstance(context.get(key), dict)
-                    for key in ("station", "election", "constituency"))
+            isinstance(context, dict)
+            and isinstance(scope, dict)
+            and all(
+                isinstance(context.get(key), dict)
+                for key in ("station", "election", "constituency")
+            )
             and context["station"].get("id") == self._state["station_id"]
             and context["election"].get("id") == self._state["election_id"]
             and context["constituency"].get("id")
             == self._state["context"].get("constituency", {}).get("id")
             and scope.get("id") == self._state["scope_id"]
-            and _positive(scope.get("revision")) and _positive(scope.get("revision_id"))
+            and _positive(scope.get("revision"))
+            and _positive(scope.get("revision_id"))
             and (body.get("selection") is None or isinstance(body.get("selection"), dict))
             and isinstance(body.get("instructions"), list)
             and all(isinstance(row, dict) for row in body["instructions"])
-            and (body.get("latest_instruction") is None
-                 or isinstance(body.get("latest_instruction"), dict))
-            and type(body.get("pending")) is bool and type(body.get("can_instruct")) is bool
+            and (
+                body.get("latest_instruction") is None
+                or isinstance(body.get("latest_instruction"), dict)
+            )
+            and type(body.get("pending")) is bool
+            and type(body.get("can_instruct")) is bool
         )
 
     def _adopt_read(self, body: dict[str, Any]) -> None:
         # The read DTO has no account; retain the trusted parent context and actor.
         self._read_allowed = body["can_instruct"]
         self._state.update(
-            scope=deepcopy(body["scope"]), selection=deepcopy(body.get("selection") or {}),
+            scope=deepcopy(body["scope"]),
+            selection=deepcopy(body.get("selection") or {}),
             instructions=deepcopy(body["instructions"]),
-            latest_instruction=deepcopy(body["latest_instruction"]), pending=body["pending"],
+            latest_instruction=deepcopy(body["latest_instruction"]),
+            pending=body["pending"],
         )
 
     def _load(self, *, background: bool, check: bool = False) -> None:
-        if (not self._state["scope_id"] or self._state["busy"] or self._state["refreshing"]):
+        if not self._state["scope_id"] or self._state["busy"] or self._state["refreshing"]:
             return
         self._generation += 1
         generation = self._generation
@@ -185,8 +232,11 @@ class LocalRecountsController(QObject):
                 self._error("local_recount_invalid_response")
                 return
             if check and self._pending is not None:
-                matches = [row for row in body["instructions"]
-                           if row.get("request_id") == self._pending["command"]["request_id"]]
+                matches = [
+                    row
+                    for row in body["instructions"]
+                    if row.get("request_id") == self._pending["command"]["request_id"]
+                ]
                 if len(matches) != 1 or not self._matches_instruction(matches[0]):
                     self._error("local_recount_outcome_unconfirmed")
                     return
@@ -245,8 +295,12 @@ class LocalRecountsController(QObject):
             return
         self._pending = None
         self._state.update(
-            forms={"event_at": "", "reason": ""}, dirty=False, newer_basis=False,
-            pending_request_id="", error="", notice="",
+            forms={"event_at": "", "reason": ""},
+            dirty=False,
+            newer_basis=False,
+            pending_request_id="",
+            error="",
+            notice="",
         )
         self.reload()
 
@@ -270,11 +324,21 @@ class LocalRecountsController(QObject):
             return False
         command = self._pending["command"]
         return bool(
-            all(_positive(instruction.get(key)) for key in (
-                "id", "new_round_id", "new_round_number", "actor_id", "scope_id",
-                "scope_revision", "scope_revision_id", "source_round_id",
-                "source_round_revision", "source_round_revision_id",
-            ))
+            all(
+                _positive(instruction.get(key))
+                for key in (
+                    "id",
+                    "new_round_id",
+                    "new_round_number",
+                    "actor_id",
+                    "scope_id",
+                    "scope_revision",
+                    "scope_revision_id",
+                    "source_round_id",
+                    "source_round_revision",
+                    "source_round_revision_id",
+                )
+            )
             and instruction["new_round_id"] != command["source_round_id"]
             and _positive(instruction.get("new_round_number"))
             and instruction["new_round_number"] > self._pending["source_round_number"]
@@ -282,9 +346,16 @@ class LocalRecountsController(QObject):
             and instruction.get("scope_id") == self._state["scope_id"]
             and instruction.get("scope_revision_id") == self._pending["scope_revision_id"]
             and instruction.get("source_round_revision_id") == self._pending["source_revision_id"]
-            and all(instruction.get(key) == command[key] for key in (
-                "request_id", "scope_revision", "source_round_id", "source_round_revision", "reason"
-            ))
+            and all(
+                instruction.get(key) == command[key]
+                for key in (
+                    "request_id",
+                    "scope_revision",
+                    "source_round_id",
+                    "source_round_revision",
+                    "reason",
+                )
+            )
             and _same_time(instruction.get("event_at"), command["event_at"])
             and _aware(instruction.get("entered_at"))
             and instruction.get("status") in ("pending", "completed")
@@ -298,44 +369,65 @@ class LocalRecountsController(QObject):
             return False
         scope_basis = round.get("scope_basis")
         return bool(
-            instruction.get("status") == "pending" and instruction.get("is_latest") is True
+            instruction.get("status") == "pending"
+            and instruction.get("is_latest") is True
             and instruction.get("current_satisfied") is False
             and round.get("id") == instruction["new_round_id"]
             and round.get("round_number") == instruction["new_round_number"]
             and round.get("scope_id") == instruction["scope_id"]
             and round.get("scope_revision") == instruction["scope_revision"]
-            and type(round.get("revision")) is int and round["revision"] == 1
+            and type(round.get("revision")) is int
+            and round["revision"] == 1
             and _positive(round.get("revision_id"))
-            and round.get("status") == "draft" and round.get("f1_complete") is False
-            and round.get("selected") is False and round.get("approval_valid") is False
+            and round.get("status") == "draft"
+            and round.get("f1_complete") is False
+            and round.get("selected") is False
+            and round.get("approval_valid") is False
             and isinstance(scope_basis, dict)
             and scope_basis.get("revision_id") == instruction["scope_revision_id"]
-            and round.get("event_at") is None and round.get("entered_at") is None
+            and round.get("event_at") is None
+            and round.get("entered_at") is None
             and round.get("actor_id") is None
             and round.get("revision_actor_id") == instruction["actor_id"]
             and _same_time(round.get("revision_event_at"), instruction["event_at"])
             and _same_time(round.get("revision_entered_at"), instruction["entered_at"])
-            and round.get("actual_counted_quantity") is None and round.get("f2") is None
+            and round.get("actual_counted_quantity") is None
+            and round.get("f2") is None
             and round.get("questionable_quantity") is None
             and round.get("physical_decisions") == []
             and isinstance(round.get("candidate_votes"), list)
-            and all(isinstance(row, dict) and row.get("quantity") is None
-                    for row in round["candidate_votes"])
+            and all(
+                isinstance(row, dict) and row.get("quantity") is None
+                for row in round["candidate_votes"]
+            )
             and isinstance(round.get("invalid_papers"), list)
-            and all(isinstance(row, dict) and row.get("quantity") is None
-                    for row in round["invalid_papers"])
+            and all(
+                isinstance(row, dict) and row.get("quantity") is None
+                for row in round["invalid_papers"]
+            )
         )
 
     def _restore_recovery(self, commands: list[dict[str, Any]]) -> None:
-        command = next((row for row in commands if (
-            row.get("actor_id") == self._state["actor_id"]
-            and row.get("station_id") == self._state["station_id"]
-            and row.get("workflow") == "count" and row.get("method") == "POST"
-            and row.get("path") == self._path()
-            and isinstance(row.get("payload"), dict)
-            and (row.get("request_id") == self._restored_request_id
-                 if self._restored_request_id else row.get("status") in {"pending", "uncertain"})
-        )), None)
+        command = next(
+            (
+                row
+                for row in commands
+                if (
+                    row.get("actor_id") == self._state["actor_id"]
+                    and row.get("station_id") == self._state["station_id"]
+                    and row.get("workflow") == "count"
+                    and row.get("method") == "POST"
+                    and row.get("path") == self._path()
+                    and isinstance(row.get("payload"), dict)
+                    and (
+                        row.get("request_id") == self._restored_request_id
+                        if self._restored_request_id
+                        else row.get("status") in {"pending", "uncertain"}
+                    )
+                )
+            ),
+            None,
+        )
         if command is None:
             return
         if command.get("status") in {"pending", "uncertain"}:
@@ -344,12 +436,15 @@ class LocalRecountsController(QObject):
                 self._restored_request_id = command["request_id"]
                 self._restored_owns_draft = not self._state["dirty"]
                 if self._restored_owns_draft:
-                    self._state.update(forms={
-                        "event_at": format_event_time(
-                            payload.get("event_at", "")
-                        ).removesuffix(" HKT"),
-                        "reason": payload.get("reason", ""),
-                    }, dirty=True)
+                    self._state.update(
+                        forms={
+                            "event_at": format_event_time(payload.get("event_at", "")).removesuffix(
+                                " HKT"
+                            ),
+                            "reason": payload.get("reason", ""),
+                        },
+                        dirty=True,
+                    )
             self._state.update(uncertain_save=True, pending_request_id=self._restored_request_id)
             self.stateChanged.emit()
             return
@@ -362,8 +457,11 @@ class LocalRecountsController(QObject):
         elif command.get("status") == "rejected":
             code = str(command.get("error") or "local_recount_not_ready")
             self._state.update(
-                uncertain_save=False, pending_request_id="", error=code,
-                newer_basis=code in STALE_ERRORS, notice="",
+                uncertain_save=False,
+                pending_request_id="",
+                error=code,
+                newer_basis=code in STALE_ERRORS,
+                notice="",
             )
         else:
             return
@@ -379,22 +477,32 @@ class LocalRecountsController(QObject):
         if not self._state["uncertain_save"]:
             return
         original = self._pending["command"]
-        command = next((row for row in commands if (
-            row.get("request_id") == original["request_id"]
-            and row.get("actor_id") == self._state["actor_id"]
-            and row.get("station_id") == self._state["station_id"]
-            and row.get("workflow") == "count" and row.get("method") == "POST"
-            and row.get("path") == self._path()
-            and isinstance(row.get("payload"), dict)
-            and all(row["payload"].get(key) == value for key, value in original.items())
-        )), None)
+        command = next(
+            (
+                row
+                for row in commands
+                if (
+                    row.get("request_id") == original["request_id"]
+                    and row.get("actor_id") == self._state["actor_id"]
+                    and row.get("station_id") == self._state["station_id"]
+                    and row.get("workflow") == "count"
+                    and row.get("method") == "POST"
+                    and row.get("path") == self._path()
+                    and isinstance(row.get("payload"), dict)
+                    and all(row["payload"].get(key) == value for key, value in original.items())
+                )
+            ),
+            None,
+        )
         if command is None:
             return
         if command.get("status") == "rejected":
             code = str(command.get("error") or "local_recount_not_ready")
             self._pending = None
             self._state.update(
-                uncertain_save=False, pending_request_id="", newer_basis=code in STALE_ERRORS,
+                uncertain_save=False,
+                pending_request_id="",
+                newer_basis=code in STALE_ERRORS,
             )
             self._error(code)
             return
@@ -414,9 +522,14 @@ class LocalRecountsController(QObject):
     def _settled(self, *, current_read_required: bool = False) -> None:
         self._pending = None
         self._state.update(
-            busy=False, refreshing=False, dirty=False, uncertain_save=False,
+            busy=False,
+            refreshing=False,
+            dirty=False,
+            uncertain_save=False,
             newer_basis=current_read_required,
-            pending_request_id="", forms={"event_at": "", "reason": ""}, error="",
+            pending_request_id="",
+            forms={"event_at": "", "reason": ""},
+            error="",
             notice="local_recount_instructed",
         )
         self.stateChanged.emit()
@@ -425,8 +538,11 @@ class LocalRecountsController(QObject):
     @Slot(str)
     def instruct(self, password: str) -> None:
         if not self._editable():
-            self._error("local_recount_outcome_unconfirmed" if self._state["uncertain_save"]
-                        else "local_recount_not_ready")
+            self._error(
+                "local_recount_outcome_unconfirmed"
+                if self._state["uncertain_save"]
+                else "local_recount_not_ready"
+            )
             return
         if not password:
             self._error("invalid_credentials")
@@ -441,11 +557,18 @@ class LocalRecountsController(QObject):
             self._error("local_recount_event_required")
             return
         scope, selection = self._state["scope"], self._state["selection"]
-        if not all(_positive(value) for value in (
-            scope.get("revision"), scope.get("revision_id"), selection.get("revision"),
-            selection.get("round_id"), selection.get("round_revision"),
-            selection.get("round_revision_id"), selection.get("round_number"),
-        )):
+        if not all(
+            _positive(value)
+            for value in (
+                scope.get("revision"),
+                scope.get("revision_id"),
+                selection.get("revision"),
+                selection.get("round_id"),
+                selection.get("round_revision"),
+                selection.get("round_revision_id"),
+                selection.get("round_number"),
+            )
+        ):
             self._error("local_recount_not_ready")
             return
         if self._pending is None:
@@ -454,19 +577,24 @@ class LocalRecountsController(QObject):
                 "source_revision_id": selection["round_revision_id"],
                 "source_round_number": selection["round_number"],
                 "command": {
-                    "request_id": str(uuid4()), "scope_revision": scope["revision"],
+                    "request_id": str(uuid4()),
+                    "scope_revision": scope["revision"],
                     "expected_selection_revision": selection["revision"],
                     "source_round_id": selection["round_id"],
                     "source_round_revision": selection["round_revision"],
-                    "event_at": event_at, "reason": form["reason"],
+                    "event_at": event_at,
+                    "reason": form["reason"],
                 },
             }
         command = deepcopy(self._pending["command"])
         self._generation += 1
         generation = self._generation
         self._state.update(
-            busy=True, refreshing=False, pending_request_id=command["request_id"],
-            error="", notice="",
+            busy=True,
+            refreshing=False,
+            pending_request_id=command["request_id"],
+            error="",
+            notice="",
         )
         self.stateChanged.emit()
 
@@ -482,7 +610,8 @@ class LocalRecountsController(QObject):
         def failed(code: str) -> None:
             if generation == self._generation:
                 self._state.update(
-                    busy=False, uncertain_save=code in NETWORK_ERRORS,
+                    busy=False,
+                    uncertain_save=code in NETWORK_ERRORS,
                     newer_basis=code in STALE_ERRORS,
                 )
                 self._error(code)

@@ -17,12 +17,16 @@ def upgrade() -> None:
         sa.Column("request_id", sa.String(36), nullable=False),
         sa.Column("scope_id", sa.Integer(), sa.ForeignKey("counting_scopes.id"), nullable=False),
         sa.Column(
-            "scope_revision_id", sa.Integer(),
-            sa.ForeignKey("counting_scope_revisions.id"), nullable=False,
+            "scope_revision_id",
+            sa.Integer(),
+            sa.ForeignKey("counting_scope_revisions.id"),
+            nullable=False,
         ),
         sa.Column(
-            "source_round_revision_id", sa.Integer(),
-            sa.ForeignKey("count_round_revisions.id"), nullable=False,
+            "source_round_revision_id",
+            sa.Integer(),
+            sa.ForeignKey("count_round_revisions.id"),
+            nullable=False,
         ),
         sa.Column("new_round_id", sa.Integer(), sa.ForeignKey("count_rounds.id"), nullable=False),
         sa.Column("actor_id", sa.Integer(), sa.ForeignKey("accounts.id"), nullable=False),
@@ -33,7 +37,8 @@ def upgrade() -> None:
         sa.UniqueConstraint("new_round_id", name="uq_local_recount_new_round"),
         sa.CheckConstraint("char_length(trim(reason)) > 0", name="ck_local_recount_reason"),
         sa.CheckConstraint("event_at <= entered_at", name="ck_local_recount_time"),
-        mysql_engine="InnoDB", mysql_charset="utf8mb4",
+        mysql_engine="InnoDB",
+        mysql_charset="utf8mb4",
     )
     op.create_index(
         "ix_local_recount_instructions_scope_id", "local_recount_instructions", ["scope_id"]

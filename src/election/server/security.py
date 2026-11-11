@@ -1,7 +1,7 @@
 from hashlib import sha256
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerificationError
+from argon2.exceptions import InvalidHashError, VerificationError
 
 password_hasher = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
 _dummy_hash = password_hasher.hash("unusable-dummy-account")
@@ -21,7 +21,7 @@ def verify_password(stored_hash: str | None, password: str) -> bool:
     try:
         result = password_hasher.verify(stored_hash or _dummy_hash, password)
         return result and stored_hash is not None
-    except VerificationError:
+    except InvalidHashError, VerificationError:
         return False
 
 

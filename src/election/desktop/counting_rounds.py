@@ -15,12 +15,17 @@ from election.desktop.paper_reentry import paper_options, paper_record_fields
 from election.desktop.recovery import RecoveryController
 from election.desktop.report_files import DownloadRequest, report_destination, save_report
 
-NETWORK_ERRORS = frozenset({
-    "request_failed", "disconnected", "database_unavailable",
-    "certificate_error",
-    "recovery_outcome_check_required", "recovery_pending_command",
-    "recovery_journal_outcome_unavailable",
-})
+NETWORK_ERRORS = frozenset(
+    {
+        "request_failed",
+        "disconnected",
+        "database_unavailable",
+        "certificate_error",
+        "recovery_outcome_check_required",
+        "recovery_pending_command",
+        "recovery_journal_outcome_unavailable",
+    }
+)
 
 
 def empty_forms() -> dict[str, str]:
@@ -56,7 +61,8 @@ class CountingRoundsController(QObject):
         self._recovery = parent.property("recovery") if parent is not None else None
         self._state: dict[str, Any] = {}
         self._recounts = LocalRecountsController(
-            request, self,
+            request,
+            self,
             recovery=self._recovery if isinstance(self._recovery, RecoveryController) else None,
         )
         self.reset()
@@ -84,14 +90,17 @@ class CountingRoundsController(QObject):
         self.refresh()
 
     def _durable_recount_unknown(self) -> bool:
-        return (isinstance(self._recovery, RecoveryController)
-                and self._recovery.recount_context_locked())
+        return (
+            isinstance(self._recovery, RecoveryController)
+            and self._recovery.recount_context_locked()
+        )
 
     def recount_changes_pending(self) -> bool:
         # An initial explicit scope choice remains available after sign-in. Once
         # chosen, the tally stays anchored until the original command is checked.
-        return (self._recounts.blocks_navigation()
-                or bool(self._state["selected_scope_id"] and self._durable_recount_unknown()))
+        return self._recounts.blocks_navigation() or bool(
+            self._state["selected_scope_id"] and self._durable_recount_unknown()
+        )
 
     def recount_outcome_unknown(self) -> bool:
         return self._recounts.outcome_unknown() or self._durable_recount_unknown()
@@ -102,8 +111,11 @@ class CountingRoundsController(QObject):
     def _block_recount_changes(self) -> bool:
         if not self.recount_changes_pending():
             return False
-        self._error("local_recount_outcome_unconfirmed" if self.recount_outcome_unknown()
-                    else "local_recount_changes_pending")
+        self._error(
+            "local_recount_outcome_unconfirmed"
+            if self.recount_outcome_unknown()
+            else "local_recount_changes_pending"
+        )
         return True
 
     def reset(self) -> None:
@@ -311,10 +323,8 @@ class CountingRoundsController(QObject):
                     target=target,
                     actions=("submit",),
                 )
-            except (TypeError, ValueError):
-                self._state.update(
-                    paper_records=[], error="invalid_response", error_origin="read"
-                )
+            except TypeError, ValueError:
+                self._state.update(paper_records=[], error="invalid_response", error_origin="read")
                 self.stateChanged.emit()
                 return
             selected = self._state["paper_record"]
@@ -338,9 +348,7 @@ class CountingRoundsController(QObject):
             )
             self.stateChanged.emit()
 
-        self._request(
-            f"/api/workspace/stations/{station_id}/outages", "GET", None, loaded, failed
-        )
+        self._request(f"/api/workspace/stations/{station_id}/outages", "GET", None, loaded, failed)
 
     @Slot(int, result=bool)
     def selectPaperRecord(self, paper_id: int) -> bool:
@@ -464,8 +472,11 @@ class CountingRoundsController(QObject):
         forms = empty_forms()
         if record:
             forms.update(
-                event_at=(format_event_time(record["event_at"]).removesuffix(" HKT")
-                          if record["event_at"] else ""),
+                event_at=(
+                    format_event_time(record["event_at"]).removesuffix(" HKT")
+                    if record["event_at"]
+                    else ""
+                ),
                 notes=record["notes"],
                 questionable_quantity=quantity_input(record["questionable_quantity"]),
                 actual_counted_quantity=quantity_input(record["actual_counted_quantity"]),
@@ -668,9 +679,7 @@ class CountingRoundsController(QObject):
             if row is None:
                 self._state.update(selected={}, history=[])
                 self._forms_for({})
-                self._recounts.set_context(
-                    self._state["context"], self._state["selected_scope_id"]
-                )
+                self._recounts.set_context(self._state["context"], self._state["selected_scope_id"])
                 return
             self._send(
                 self._path() + f"/{row['id']}",
@@ -1122,7 +1131,8 @@ class CountingRoundsController(QObject):
             self._error("count_scope_not_ready")
             return
         if (
-            self._state["selected"] and not self._state["selected"]["source_current"]
+            self._state["selected"]
+            and not self._state["selected"]["source_current"]
             and not self._state["refresh_basis"]
         ):
             self._error("count_round_basis_stale")
@@ -1184,9 +1194,13 @@ class CountingRoundsController(QObject):
             self._send(self._path() + f"/{row['id']}", "GET", None, reviewed)
 
         self._send(
-            self._path() + (
-                f"/{selected['id']}/amend-f1" if correction
-                else f"/{selected['id']}" if selected else ""
+            self._path()
+            + (
+                f"/{selected['id']}/amend-f1"
+                if correction
+                else f"/{selected['id']}"
+                if selected
+                else ""
             ),
             "POST" if correction or not selected else "PUT",
             payload,
@@ -1467,9 +1481,7 @@ class CountingRoundsController(QObject):
                 self._error("paper_reentry_load_failed")
                 return
             pending_paper_id = payload.get("paper_record_id")
-            if pending_paper_id is not None and (
-                not paper or paper.get("id") != pending_paper_id
-            ):
+            if pending_paper_id is not None and (not paper or paper.get("id") != pending_paper_id):
                 self._error("paper_reentry_uncertain")
                 return
             if paper:
@@ -1556,11 +1568,13 @@ class CountingRoundsController(QObject):
             return
         selected = self._state["selected"]
         revisions = [
-            row["revision"] for row in selected.get("physical_decisions", [])
+            row["revision"]
+            for row in selected.get("physical_decisions", [])
             if row["source"] == source
         ]
         self._workflow(
-            "physical-differences/" + source + "/accept", password,
+            "physical-differences/" + source + "/accept",
+            password,
             extra={"reason": reason, "expected_decision_revision": max(revisions, default=0)},
         )
 

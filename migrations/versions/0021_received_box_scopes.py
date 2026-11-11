@@ -17,7 +17,8 @@ def upgrade() -> None:
         sa.Column("station_id", sa.Integer(), sa.ForeignKey("polling_stations.id"), nullable=False),
         sa.Column("reference", sa.String(80, collation="utf8mb4_bin"), nullable=False),
         sa.UniqueConstraint("station_id", "reference", name="uq_scope_station_reference"),
-        mysql_engine="InnoDB", mysql_charset="utf8mb4",
+        mysql_engine="InnoDB",
+        mysql_charset="utf8mb4",
     )
     op.create_index("ix_counting_scopes_station_id", "counting_scopes", ["station_id"])
     op.create_table(
@@ -37,7 +38,8 @@ def upgrade() -> None:
         sa.UniqueConstraint("scope_id", "revision", name="uq_scope_revision"),
         sa.CheckConstraint("revision >= 1", name="ck_scope_revision"),
         sa.CheckConstraint("status IN ('draft', 'submitted')", name="ck_scope_status"),
-        mysql_engine="InnoDB", mysql_charset="utf8mb4",
+        mysql_engine="InnoDB",
+        mysql_charset="utf8mb4",
     )
     op.create_index(
         "ix_counting_scope_revisions_scope_id", "counting_scope_revisions", ["scope_id"]
@@ -46,7 +48,8 @@ def upgrade() -> None:
         "counting_scope_boxes",
         sa.Column("box_id", sa.Integer(), sa.ForeignKey("ballot_boxes.id"), primary_key=True),
         sa.Column("scope_id", sa.Integer(), sa.ForeignKey("counting_scopes.id"), nullable=False),
-        mysql_engine="InnoDB", mysql_charset="utf8mb4",
+        mysql_engine="InnoDB",
+        mysql_charset="utf8mb4",
     )
     op.create_index("ix_counting_scope_boxes_scope_id", "counting_scope_boxes", ["scope_id"])
     op.create_table(
@@ -56,7 +59,8 @@ def upgrade() -> None:
         sa.Column("actor_id", sa.Integer(), sa.ForeignKey("accounts.id"), nullable=False),
         sa.Column("digest", sa.String(64), nullable=False),
         sa.Column("response", sa.JSON(), nullable=False),
-        mysql_engine="InnoDB", mysql_charset="utf8mb4",
+        mysql_engine="InnoDB",
+        mysql_charset="utf8mb4",
     )
 
 

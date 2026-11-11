@@ -13,9 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from election.server.models import Account, AuditEvent
-from election.server.polling import as_utc, station_scope
 from election.server.queue_models import QueueEvent
+from election.server.station_access import station_scope
 from election.server.station_models import PollingStation
+from election.server.timestamps import as_utc
 
 QueueBand = Literal["under_30", "30_59", "60_90", "over_90"]
 

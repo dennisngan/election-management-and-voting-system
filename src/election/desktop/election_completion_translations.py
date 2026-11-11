@@ -3,9 +3,7 @@
 ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
         "election_completion": "選舉完成確認",
-        "election_completion_export_changed": (
-            "所選歷史記錄已變更。請重新開啟匯出。"
-        ),
+        "election_completion_export_changed": ("所選歷史記錄已變更。請重新開啟匯出。"),
         "election_completion_reopen": "重新開放選舉",
         "election_completion_reopen_reason": "重新開放原因",
         "election_completion_reopen_hint": "先重新載入歷史記錄，然後記錄重新開放的原因。",
@@ -23,9 +21,7 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         "election_completion_current": "目前選舉狀態",
         "election_completion_revision": "版本",
         "election_completion_preview": "預覽報表",
-        "election_completion_review_changed": (
-            "選舉資料已更新。請取消並重新檢視後再確認。"
-        ),
+        "election_completion_review_changed": ("選舉資料已更新。請取消並重新檢視後再確認。"),
         "election_completion_finalize": "確認選舉完成",
         "election_completion_finalized": "選舉已完成確認；已保留結果。",
         "election_completion_confirm_title": "確認選舉完成",
@@ -41,15 +37,11 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         "station_boxes_missing": "缺少所需票箱",
         "result_tie_resolution_required": "影響結果的平票需要授權決定",
         "polling_completion_approval_required": "投票服務完成記錄需要有效批准",
-        "full_election_access_required": (
-            "主管必須獲指派本次選舉的所有投票站，才能查看完成確認。"
-        ),
+        "full_election_access_required": ("主管必須獲指派本次選舉的所有投票站，才能查看完成確認。"),
     },
     "sc": {
         "election_completion": "选举完成确认",
-        "election_completion_export_changed": (
-            "所选历史记录已变更。请重新打开导出。"
-        ),
+        "election_completion_export_changed": ("所选历史记录已变更。请重新打开导出。"),
         "election_completion_reopen": "重新开放选举",
         "election_completion_reopen_reason": "重新开放原因",
         "election_completion_reopen_hint": "先重新载入历史记录，然后记录重新开放的原因。",
@@ -67,9 +59,7 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         "election_completion_current": "目前选举状态",
         "election_completion_revision": "版本",
         "election_completion_preview": "预览报表",
-        "election_completion_review_changed": (
-            "选举资料已更新。请取消并重新检视后再确认。"
-        ),
+        "election_completion_review_changed": ("选举资料已更新。请取消并重新检视后再确认。"),
         "election_completion_finalize": "确认选举完成",
         "election_completion_finalized": "选举已完成确认；已保留结果。",
         "election_completion_confirm_title": "确认选举完成",
@@ -85,9 +75,7 @@ ELECTION_COMPLETION_TRANSLATIONS: dict[str, dict[str, str]] = {
         "station_boxes_missing": "缺少所需票箱",
         "result_tie_resolution_required": "影响结果的平票需要授权决定",
         "polling_completion_approval_required": "投票服务完成记录需要有效批准",
-        "full_election_access_required": (
-            "主管必须获指派本次选举的所有投票站，才能查看完成确认。"
-        ),
+        "full_election_access_required": ("主管必须获指派本次选举的所有投票站，才能查看完成确认。"),
     },
     "en": {
         "election_completion": "Election completion",

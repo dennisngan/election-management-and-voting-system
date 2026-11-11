@@ -16,8 +16,8 @@ from election.server.counting_scope_models import CountingScope
 from election.server.models import Account, AuditEvent
 from election.server.outage_models import OutagePaperRecord, OutagePaperRevision
 from election.server.paper_reentry import RECEIPT_ADAPTER
-from election.server.polling import as_utc
 from election.server.request_outcomes import read_request_outcome
+from election.server.timestamps import as_utc
 from election.server.turnout_models import TurnoutRecord
 
 
@@ -118,9 +118,7 @@ def _allocation_receipt_preview(
     if action not in {"create", "amend"}:
         raise HTTPException(409, detail={"code": "paper_receipt_workflow_unsupported"})
 
-    outcome = read_request_outcome(
-        db, actor, station_id, original_request_id, "allocation"
-    )
+    outcome = read_request_outcome(db, actor, station_id, original_request_id, "allocation")
     if outcome.get("status") != "committed":
         raise HTTPException(404, detail={"code": "request_not_found"})
 
@@ -284,15 +282,11 @@ def preview_existing_receipt(
     """Return an immutable original supported-workflow receipt for paper linkage."""
     action = revision.data.get("action")
     if paper.workflow == "count" and action == "submit":
-        return _count_receipt_preview(
-            db, actor, station_id, paper, revision, original_request_id
-        )
+        return _count_receipt_preview(db, actor, station_id, paper, revision, original_request_id)
     if paper.workflow == "allocation" and action in {"create", "amend"}:
         return _allocation_receipt_preview(
             db, actor, station_id, paper, revision, original_request_id
         )
     if paper.workflow == "turnout" and action in {"save", "submit"}:
-        return _turnout_receipt_preview(
-            db, actor, station_id, paper, revision, original_request_id
-        )
+        return _turnout_receipt_preview(db, actor, station_id, paper, revision, original_request_id)
     raise HTTPException(409, detail={"code": "paper_receipt_workflow_unsupported"})

@@ -171,11 +171,9 @@ def availability(
     for series in sorted({line.series for line in lines}):
         received = [line for line in lines if line.series == series]
         owned = sorted(
-            (
-                (allocation.serial_from_value, allocation.serial_to_value)
-                for allocation in allocations
-                if allocation.series == series
-            )
+            (allocation.serial_from_value, allocation.serial_to_value)
+            for allocation in allocations
+            if allocation.series == series
         )
         ranges: list[dict[str, Any]] = []
         ordinary = sorted(
@@ -421,8 +419,7 @@ def validate_return_ownership(
         earlier = [
             row
             for row in allocations
-            if (row.event_at, row.allocation_id)
-            < (allocation.event_at, allocation.allocation_id)
+            if (row.event_at, row.allocation_id) < (allocation.event_at, allocation.allocation_id)
         ]
         applicable_returns = [row for row in returns if row.event_at <= allocation.event_at]
         for fragment in allocation_fragments(earlier, applicable_returns):
@@ -460,13 +457,16 @@ def preserve_issued_observations(
         )
         for counter in observation.data["counters"]:
             for issued in counter.get("issued_ranges", []):
-                if covering_fragments(
-                    fragments,
-                    counter["counter"]["id"],
-                    issued["series"],
-                    serial_number(issued["serial_from"]),
-                    serial_number(issued["serial_to"]),
-                ) is None:
+                if (
+                    covering_fragments(
+                        fragments,
+                        counter["counter"]["id"],
+                        issued["series"],
+                        serial_number(issued["serial_from"]),
+                        serial_number(issued["serial_to"]),
+                    )
+                    is None
+                ):
                     raise HTTPException(409, detail={"code": "stock_observations_conflict"})
 
 

@@ -3,7 +3,7 @@
 import hashlib
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -13,13 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from election.server.configuration_models import Constituency, Election
-from election.server.lifecycle_models import ActiveElection, ElectionSchedule
+from election.server.lifecycle_models import ElectionSchedule
 from election.server.models import Account, AuditEvent
 from election.server.polling_models import PollingRecord, PollingRequest
 from election.server.security import verify_password
-from election.server.staff_models import StationAssignment
-from election.server.station_models import PollingStation
+from election.server.station_access import station_scope
+from election.server.timestamps import as_utc, stored_time
 
 type PollingKind = Literal[
     "opening", "admission_closure", "queue_clear_estimate", "service_completion"
@@ -46,14 +45,6 @@ class PollingAmendment(PollingDraft):
 
 class PollingApproval(PollingCommand):
     password: str = Field(min_length=1, max_length=128, repr=False)
-
-
-def as_utc(value: datetime | None) -> str | None:
-    return value.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z") if value else None
-
-
-def stored_time(value: datetime | None) -> datetime | None:
-    return value.astimezone(UTC).replace(tzinfo=None) if value else None
 
 
 def record_view(row: PollingRecord) -> dict[str, Any]:
@@ -85,42 +76,6 @@ def record_view(row: PollingRecord) -> dict[str, Any]:
         "planned_at": as_utc(row.planned_at),
         "opening_status": opening_status,
     }
-
-
-def station_scope(
-    db: Session, actor: Account, station_id: int, *, write: bool = False
-) -> tuple[PollingStation, Constituency, Election]:
-    if actor.role not in ("polling_officer", "counting_officer", "supervisor"):
-        raise HTTPException(403, detail={"code": "operational_role_required"})
-    if db.get(StationAssignment, (actor.id, station_id)) is None:
-        raise HTTPException(403, detail={"code": "station_access_denied"})
-    station = db.get(PollingStation, station_id)
-    if station is None:
-        raise HTTPException(404, detail={"code": "configuration_not_found"})
-    constituency = db.get(Constituency, station.constituency_id)
-    assert constituency is not None
-    election = db.get(Election, constituency.election_id)
-    assert election is not None
-    if write:
-        # Current reads avoid the authentication dependency's older MySQL snapshot.
-        active = db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
-        election = db.scalar(
-            select(Election)
-            .where(Election.id == election.id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-        assert election is not None
-        if not active or active.election_id != election.id or election.status != "active":
-            raise HTTPException(409, detail={"code": "active_election_required"})
-        station = db.scalar(
-            select(PollingStation)
-            .where(PollingStation.id == station_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-        assert station is not None
-    return station, constituency, election
 
 
 def latest_records(db: Session, station_id: int, *, lock: bool = False) -> dict[str, PollingRecord]:

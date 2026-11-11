@@ -20,7 +20,7 @@ from election.private_paths import private_directory, private_file_descriptor
 from election.server.backup_models import ServerBackup
 from election.server.models import Account, AuditEvent
 from election.server.mysql_backup_tools import BackupToolError, dump_mysql
-from election.server.polling import as_utc
+from election.server.timestamps import as_utc
 
 
 class BackupSettings(BaseSettings):

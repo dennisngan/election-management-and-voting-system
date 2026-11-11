@@ -38,8 +38,7 @@ class WholeRowTable(Table):  # type: ignore[misc]
     def split(self, availWidth: float, availHeight: float) -> list[Any]:
         parts: list[Any] = super().split(availWidth, availHeight)
         # ReportLab 5.1's Frame.split attaches this context for the duration of
-        # splitting. Without it, preserve the ordinary whole-row policy. Public
-        # PDF regressions cover this adapter against the locked library version.
+        # splitting. Without it, preserve the ordinary whole-row policy.
         if parts or not getattr(getattr(self, "_frame", None), "_atTop", False):
             return parts
         self.splitInRow = 1

@@ -155,10 +155,13 @@ _PARENT_DETAILS = {
 for index, locale in enumerate(_LANGUAGES):
     parent_prefixes = (
         ("Current required instruction", "This round's instruction")
-        if locale == "en" else _PREFIXES[locale]
+        if locale == "en"
+        else _PREFIXES[locale]
     )
-    LABELS[locale].update({
-        f"constituency_recount_{kind}_{field}": f"{prefix} · {values[index]}"
-        for kind, prefix in zip(("required", "associated"), parent_prefixes, strict=True)
-        for field, values in _PARENT_DETAILS.items()
-    })
+    LABELS[locale].update(
+        {
+            f"constituency_recount_{kind}_{field}": f"{prefix} · {values[index]}"
+            for kind, prefix in zip(("required", "associated"), parent_prefixes, strict=True)
+            for field, values in _PARENT_DETAILS.items()
+        }
+    )

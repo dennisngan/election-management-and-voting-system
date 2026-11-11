@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 from election.server.config import Settings
 from election.server.db import make_engine
 from election.server.models import Account, AuditEvent
-from election.server.security import hash_password
+from election.server.security import hash_password, normalize_username
 
 
 def bootstrap_account(database_url: str, username: str, display_name: str, password: str) -> None:
+    username = normalize_username(username)
     if not 1 <= len(username) <= 64 or not 1 <= len(display_name) <= 120:
         raise ValueError(
             "Username and display name are required and must fit the configured limits"
@@ -53,21 +54,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("migrate")
-    subparsers.add_parser("mysql-dev")
-    subparsers.add_parser("tls-dev")
     bootstrap = subparsers.add_parser("bootstrap")
     bootstrap.add_argument("--username", required=True)
     bootstrap.add_argument("--display-name", required=True)
     args = parser.parse_args()
-    if args.command == "mysql-dev":
-        from election.dev import mysql_dev
-
-        mysql_dev()
-    elif args.command == "tls-dev":
-        from election.dev import tls_dev
-
-        tls_dev()
-    elif args.command == "migrate":
+    if args.command == "migrate":
         from alembic import command
         from alembic.config import Config
 

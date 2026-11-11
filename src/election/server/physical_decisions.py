@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from election.server.counting_discrepancy_models import CountPhysicalDecision
 from election.server.counting_totals import physical_comparisons
-from election.server.polling import as_utc
+from election.server.timestamps import as_utc
 
 
 def comparison_fingerprint(data: dict[str, Any], comparison: dict[str, Any]) -> str:

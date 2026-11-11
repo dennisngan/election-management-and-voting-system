@@ -33,7 +33,7 @@ class StockRangeInput(BaseModel):
 
 
 def pool_totals(ranges: list[StockRangeInput]) -> dict[StockPool, int]:
-    totals: dict[StockPool, int] = {pool: 0 for pool in POOLS}
+    totals: dict[StockPool, int] = dict.fromkeys(POOLS, 0)
     previous_end = -1
     for row in sorted(ranges, key=lambda row: serial_number(row.serial_from)):
         first, last = serial_number(row.serial_from), serial_number(row.serial_to)

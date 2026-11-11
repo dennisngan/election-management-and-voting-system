@@ -328,11 +328,7 @@ class CounterReturnsController(QObject):
         return_id = selected["id"]
 
         def loaded(data: dict[str, Any]) -> None:
-            if (
-                not self._record(data)
-                or data["id"] != return_id
-                or data["revision"] != revision
-            ):
+            if not self._record(data) or data["id"] != return_id or data["revision"] != revision:
                 self._error("request_failed")
                 return
             self._accept(data)

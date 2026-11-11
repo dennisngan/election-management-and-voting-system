@@ -123,15 +123,18 @@ class WorkspaceController(QObject):
         selected_id = self._state["selected"].get("station", {}).get("id")
         unresolved = (
             self._unresolved_target_guard(station_id, None)
-            if self._unresolved_target_guard else self.unresolvedRequest
+            if self._unresolved_target_guard
+            else self.unresolvedRequest
         )
         if station_id != selected_id and unresolved:
             self._state["error"] = "workspace_uncertain_request"
             self.stateChanged.emit()
             return
         if (
-            station_id != selected_id and not discard
-            and self._selection_guard and self._selection_guard()
+            station_id != selected_id
+            and not discard
+            and self._selection_guard
+            and self._selection_guard()
         ):
             self._state["error"] = "unsaved_station_changes"
             self.stateChanged.emit()

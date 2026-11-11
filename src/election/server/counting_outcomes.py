@@ -13,7 +13,6 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from election.server.boxes import utc_time
 from election.server.counting_round_models import CountRoundRequest, CountRoundRevision
 from election.server.counting_rounds import (
     CandidateVote,
@@ -27,7 +26,7 @@ from election.server.counting_rounds import (
 from election.server.counting_totals import f2_summary
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
-from election.server.polling import as_utc
+from election.server.timestamps import as_utc, utc_time
 from election.server.turnout_basis import turnout_scope
 
 
@@ -237,8 +236,14 @@ def counting_outcomes_router(
         frozen = deepcopy(current.data)
         if correction:
             for key in (
-                "submitted_at", "submitted_by", "completed_at", "completion_event",
-                "approved_at", "approved_by", "reviewed_revision", "reviewed_revision_id",
+                "submitted_at",
+                "submitted_by",
+                "completed_at",
+                "completion_event",
+                "approved_at",
+                "approved_by",
+                "reviewed_revision",
+                "reviewed_revision_id",
                 "approved_physical_decisions",
             ):
                 frozen.pop(key, None)
@@ -290,7 +295,9 @@ def counting_outcomes_router(
                         {
                             "reason": data.amendment_reason,
                             "previous_revision": data.expected_revision,
-                        } if correction else {}
+                        }
+                        if correction
+                        else {}
                     ),
                 },
             )

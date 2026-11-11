@@ -15,13 +15,13 @@ from sqlalchemy.orm import Session
 
 from election.server.accounting_models import AccountingRecord, AccountingRequest
 from election.server.models import Account, AuditEvent
-from election.server.polling import as_utc
 from election.server.security import verify_password
 from election.server.special_paper_inventory import current_special_papers
 from election.server.special_papers import special_paper_basis_current, special_paper_view
 from election.server.stock_inventory import current_allocations, current_returns, received_ranges
 from election.server.stock_snapshot_models import StockSnapshot, StockSnapshotRevision
 from election.server.stock_snapshots import snapshot_view
+from election.server.timestamps import as_utc
 from election.server.turnout import approved_prefix, current_records, turnout_record_view
 from election.server.turnout_basis import locked_schedule, turnout_scope
 

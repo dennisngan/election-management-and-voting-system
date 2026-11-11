@@ -20,25 +20,16 @@ server = [
 desktop = ["pyside6"]
 reports = ["reportlab"]
 dev = [
-    "pytest",
-    "pytest-cov",
-    "httpx",
     "ruff",
     "mypy",
     "types-PyMySQL",
     "types-PyYAML",
-    "pypdf>=6.21.2",
 ]
-gui-validation = ["pyinstaller; sys_platform == 'darwin' or sys_platform == 'win32'"]
+build = ["pyinstaller; sys_platform == 'win32'"]
 
 [tool.uv]
 package = false
 default-groups = "all"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
-addopts = "-ra"
 
 [tool.ruff]
 target-version = "py314"
@@ -46,7 +37,11 @@ line-length = 100
 src = ["src"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = ["E", "F", "I", "B", "UP", "C4"]
+
+[tool.ruff.lint.per-file-ignores]
+# These Windows-only attributes are resolved dynamically for portable type checking.
+"src/election/private_paths.py" = ["B009"]
 
 [tool.mypy]
 python_version = "3.14"

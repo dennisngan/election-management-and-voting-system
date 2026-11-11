@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
-from election.server.polling import as_utc, station_scope
+from election.server.station_access import station_scope
+from election.server.timestamps import as_utc
 from election.server.turnout import (
     approved_prefix,
     current_records,
@@ -461,8 +462,10 @@ def source_basis_tables(row: dict[str, Any], labels: dict[str, str]) -> list[His
         ("activation_approved_by", activation["approved_by"]),
         ("stock_snapshot_id", basis["stock_snapshot_id"]),
         ("stock_snapshot_revision", basis["stock_snapshot_revision"]),
-        ("ordinary_issued_since_activation_quantity",
-         basis["ordinary_issued_since_activation_quantity"]),
+        (
+            "ordinary_issued_since_activation_quantity",
+            basis["ordinary_issued_since_activation_quantity"],
+        ),
         ("stock_derived_cumulative_quantity", basis["stock_derived_cumulative_quantity"]),
     ]
     if "recovery_id" in basis:
@@ -478,24 +481,51 @@ def source_basis_tables(row: dict[str, Any], labels: dict[str, str]) -> list[His
             ("recovery_approved_at", recovery["approved_at"]),
             ("recovery_approved_by", recovery["approved_by"]),
         ]
-    identity = (labels["period_index"] + " " + str(row["period_index"]) + " · "
-                + labels["revision"] + " " + str(row["revision"]))
-    details = [[labels["field"] + "\n" + labels["source_basis"] + " · " + identity,
-                labels["value"]]]
+    identity = (
+        labels["period_index"]
+        + " "
+        + str(row["period_index"])
+        + " · "
+        + labels["revision"]
+        + " "
+        + str(row["revision"])
+    )
+    details = [
+        [labels["field"] + "\n" + labels["source_basis"] + " · " + identity, labels["value"]]
+    ]
     for key, value in values:
         display = hong_kong_time(value) if key.endswith("_at") and value else amount(value, labels)
         details.append([labels[key], display])
-    coverage = [[labels["mode"] + "\n" + labels["coverage"] + " · " + identity,
-                 *[labels[key] for key in ("coverage_start_at", "coverage_end_at",
-                   "cumulative_start_quantity", "cumulative_end_quantity", "hourly_quantity")]]]
+    coverage = [
+        [
+            labels["mode"] + "\n" + labels["coverage"] + " · " + identity,
+            *[
+                labels[key]
+                for key in (
+                    "coverage_start_at",
+                    "coverage_end_at",
+                    "cumulative_start_quantity",
+                    "cumulative_end_quantity",
+                    "hourly_quantity",
+                )
+            ],
+        ]
+    ]
     for segment in basis["coverage"]:
-        coverage.append([
-            labels[segment["mode"]], hong_kong_time(segment["start_at"]),
-            hong_kong_time(segment["end_at"]), str(segment["cumulative_start_quantity"]),
-            str(segment["cumulative_end_quantity"]), str(segment["hourly_quantity"]),
-        ])
-    return [HistoryTable("", details, (0.40, 0.60)),
-            HistoryTable("", coverage, (0.11, 0.22, 0.22, 0.15, 0.15, 0.15), split_in_row=False)]
+        coverage.append(
+            [
+                labels[segment["mode"]],
+                hong_kong_time(segment["start_at"]),
+                hong_kong_time(segment["end_at"]),
+                str(segment["cumulative_start_quantity"]),
+                str(segment["cumulative_end_quantity"]),
+                str(segment["hourly_quantity"]),
+            ]
+        )
+    return [
+        HistoryTable("", details, (0.40, 0.60)),
+        HistoryTable("", coverage, (0.11, 0.22, 0.22, 0.15, 0.15, 0.15), split_in_row=False),
+    ]
 
 
 def report_tables(report: dict[str, Any]) -> list[HistoryTable]:

@@ -2,9 +2,7 @@
 
 CONSTITUENCY_RESULT_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
-        "constituency_results_pending_recount_pending": (
-            "所需重新點票輪次尚未獲批核並選用"
-        ),
+        "constituency_results_pending_recount_pending": ("所需重新點票輪次尚未獲批核並選用"),
         "constituency_results_title": "選區選舉結果",
         "constituency_results_intro": "查看每個點票範圍選定的核准輪次、來源票箱及暫定結果。",
         "constituency_results_yes": "是",
@@ -113,9 +111,7 @@ CONSTITUENCY_RESULT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_blocker_count_scope_not_ready": "點票範圍未就緒。",
     },
     "sc": {
-        "constituency_results_pending_recount_pending": (
-            "所需重新点票轮次尚未获批核并选用"
-        ),
+        "constituency_results_pending_recount_pending": ("所需重新点票轮次尚未获批核并选用"),
         "constituency_results_title": "选区选举结果",
         "constituency_results_intro": "查看每个点票范围选定的核准轮次、来源选票箱及暂定结果。",
         "constituency_results_yes": "是",

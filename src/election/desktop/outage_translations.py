@@ -2,75 +2,31 @@
 
 OUTAGE_TRANSLATIONS = {
     "tc": {
-        "outage_existing_receipt_title": (
-            "連結已核實的電子記錄"
-        ),
+        "outage_existing_receipt_title": ("連結已核實的電子記錄"),
         "outage_existing_receipt_hint": (
             "將紙本參考連結至已儲存的原始電子記錄。此操作不會再次提交該項工作。"
         ),
-        "outage_existing_receipt_request": (
-            "原始請求編號"
-        ),
-        "outage_existing_receipt_check": (
-            "核查原始記錄"
-        ),
-        "outage_existing_receipt_checked": (
-            "已核實的原始電子記錄"
-        ),
-        "outage_existing_receipt_reason": (
-            "連結原因"
-        ),
-        "outage_existing_receipt_link": (
-            "連結已核實記錄"
-        ),
-        "outage_existing_receipt_clear": (
-            "清除連結草稿"
-        ),
-        "outage_existing_receipt_retry": (
-            "重試連結已核實記錄"
-        ),
-        "outage_existing_receipt_linked": (
-            "紙本參考已連結至原始電子記錄。"
-        ),
-        "outage_existing_receipt_server_time": (
-            "原始記錄的伺服器輸入時間"
-        ),
-        "outage_existing_link_metadata": (
-            "後加的連結記錄"
-        ),
-        "outage_existing_link_request": (
-            "連結請求編號"
-        ),
-        "outage_existing_request_invalid": (
-            "請輸入有效的原始請求編號。"
-        ),
-        "outage_existing_receipt_check_required": (
-            "請先核查原始電子記錄，再進行連結。"
-        ),
-        "outage_existing_link_reason_required": (
-            "請填寫連結此記錄的原因。"
-        ),
-        "outage_existing_link_clear_first": (
-            "請先清除連結草稿，再編輯中斷或紙本記錄。"
-        ),
-        "paper_receipt_mismatch": (
-            "原始電子記錄與此紙本參考、操作或原始時間不符。"
-        ),
-        "paper_receipt_workflow_unsupported": (
-            "無法將所選電子記錄連結至此紙本操作。"
-        ),
-        "outage_receipt_status_draft": (
-            "草稿"
-        ),
-        "outage_receipt_status_submitted": (
-            "已提交"
-        ),
-        "outage_receipt_status_approved": (
-            "已核准"
-        ),
-        "outage_receipt_status_recorded": (
-            "已記錄"
-        ),
+        "outage_existing_receipt_request": ("原始請求編號"),
+        "outage_existing_receipt_check": ("核查原始記錄"),
+        "outage_existing_receipt_checked": ("已核實的原始電子記錄"),
+        "outage_existing_receipt_reason": ("連結原因"),
+        "outage_existing_receipt_link": ("連結已核實記錄"),
+        "outage_existing_receipt_clear": ("清除連結草稿"),
+        "outage_existing_receipt_retry": ("重試連結已核實記錄"),
+        "outage_existing_receipt_linked": ("紙本參考已連結至原始電子記錄。"),
+        "outage_existing_receipt_server_time": ("原始記錄的伺服器輸入時間"),
+        "outage_existing_link_metadata": ("後加的連結記錄"),
+        "outage_existing_link_request": ("連結請求編號"),
+        "outage_existing_request_invalid": ("請輸入有效的原始請求編號。"),
+        "outage_existing_receipt_check_required": ("請先核查原始電子記錄，再進行連結。"),
+        "outage_existing_link_reason_required": ("請填寫連結此記錄的原因。"),
+        "outage_existing_link_clear_first": ("請先清除連結草稿，再編輯中斷或紙本記錄。"),
+        "paper_receipt_mismatch": ("原始電子記錄與此紙本參考、操作或原始時間不符。"),
+        "paper_receipt_workflow_unsupported": ("無法將所選電子記錄連結至此紙本操作。"),
+        "outage_receipt_status_draft": ("草稿"),
+        "outage_receipt_status_submitted": ("已提交"),
+        "outage_receipt_status_approved": ("已核准"),
+        "outage_receipt_status_recorded": ("已記錄"),
         "outage_title": "連線中斷及紙本紀錄",
         "outage_report": "中斷及紙本報表",
         "outage_report_preview": "預覽報表",
@@ -88,11 +44,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_load": "載入",
         "outage_refresh": "重新整理清單",
         "outage_reload": "捨棄變更並重新載入",
-        "outage_read_only": (
-            '此帳戶只可查看。獲指派的投票'
-            '站主任或點票主任可記錄中斷及'
-            '紙本參考。'
-        ),
+        "outage_read_only": ("此帳戶只可查看。獲指派的投票站主任或點票主任可記錄中斷及紙本參考。"),
         "outage_active_required": "只有選舉進行期間可新增或修正紀錄。",
         "outage_details": "中斷詳情",
         "outage_reference": "中斷參考",
@@ -110,9 +62,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_amend": "儲存修訂",
         "outage_revision": "中斷修訂",
         "outage_newer_revision": (
-            '伺服器已有較新中斷、紙本或核'
-            '對修訂；未儲存輸入仍保留。請'
-            '核對後明確重新載入。'
+            "伺服器已有較新中斷、紙本或核對修訂；未儲存輸入仍保留。請核對後明確重新載入。"
         ),
         "outage_server_entered": "伺服器記錄時間（香港時間）",
         "outage_actor": "記錄人員編號",
@@ -174,9 +124,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_reconciled_notice": "紙本核對決定已儲存至中央伺服器。",
         "outage_reconcile": "監督員核對",
         "outage_reconcile_hint": (
-            '核對所有紙本參考的不可變更收'
-            '據及目前修訂後，由監督員提交'
-            '理由並以本人密碼確認。'
+            "核對所有紙本參考的不可變更收據及目前修訂後，由監督員提交理由並以本人密碼確認。"
         ),
         "outage_reconcile_reason": "核對原因",
         "outage_supervisor_password": "監督員本人密碼",
@@ -192,9 +140,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_retry_paper": "比較後重試紙本儲存",
         "outage_retry_approval": "比較後重新確認核對",
         "outage_uncertain_hint": (
-            '請重新整理並比較伺服器修訂及'
-            '參考，再決定是否以相同請求重'
-            '試。程式不會自動重送。'
+            "請重新整理並比較伺服器修訂及參考，再決定是否以相同請求重試。程式不會自動重送。"
         ),
         "outage_dirty_hint": "表格有未儲存變更。載入其他紀錄前，請明確選擇捨棄並重新載入。",
         "outage_confirm_discard_title": "捨棄未儲存變更？",
@@ -205,9 +151,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_not_found": "找不到所選中斷紀錄。",
         "outage_not_selected": "請先選擇或新增中斷紀錄。",
         "outage_uncertain_save_pending": (
-            '仍有一項結果未核實的請求。請'
-            '保留原請求內容並先比較伺服器'
-            '清單。'
+            "仍有一項結果未核實的請求。請保留原請求內容並先比較伺服器清單。"
         ),
         "unsaved_outage_changes": "中斷表格有未儲存變更。",
         "unsaved_outage_paper_changes": "紙本表格有未儲存變更。",
@@ -243,75 +187,31 @@ OUTAGE_TRANSLATIONS = {
         "request_failed": "伺服器回覆無法核實。請檢查連線並比較伺服器紀錄。",
     },
     "sc": {
-        "outage_existing_receipt_title": (
-            "关联已核实的电子记录"
-        ),
+        "outage_existing_receipt_title": ("关联已核实的电子记录"),
         "outage_existing_receipt_hint": (
             "将纸本参考关联至已保存的原始电子记录。此操作不会再次提交该项工作。"
         ),
-        "outage_existing_receipt_request": (
-            "原始请求编号"
-        ),
-        "outage_existing_receipt_check": (
-            "核查原始记录"
-        ),
-        "outage_existing_receipt_checked": (
-            "已核实的原始电子记录"
-        ),
-        "outage_existing_receipt_reason": (
-            "关联原因"
-        ),
-        "outage_existing_receipt_link": (
-            "关联已核实记录"
-        ),
-        "outage_existing_receipt_clear": (
-            "清除关联草稿"
-        ),
-        "outage_existing_receipt_retry": (
-            "重试关联已核实记录"
-        ),
-        "outage_existing_receipt_linked": (
-            "纸本参考已关联至原始电子记录。"
-        ),
-        "outage_existing_receipt_server_time": (
-            "原始记录的服务器输入时间"
-        ),
-        "outage_existing_link_metadata": (
-            "后加的关联记录"
-        ),
-        "outage_existing_link_request": (
-            "关联请求编号"
-        ),
-        "outage_existing_request_invalid": (
-            "请输入有效的原始请求编号。"
-        ),
-        "outage_existing_receipt_check_required": (
-            "请先核查原始电子记录，再进行关联。"
-        ),
-        "outage_existing_link_reason_required": (
-            "请填写关联此记录的原因。"
-        ),
-        "outage_existing_link_clear_first": (
-            "请先清除关联草稿，再编辑中断或纸本记录。"
-        ),
-        "paper_receipt_mismatch": (
-            "原始电子记录与此纸本参考、操作或原始时间不符。"
-        ),
-        "paper_receipt_workflow_unsupported": (
-            "无法将所选电子记录关联至此纸本操作。"
-        ),
-        "outage_receipt_status_draft": (
-            "草稿"
-        ),
-        "outage_receipt_status_submitted": (
-            "已提交"
-        ),
-        "outage_receipt_status_approved": (
-            "已核准"
-        ),
-        "outage_receipt_status_recorded": (
-            "已记录"
-        ),
+        "outage_existing_receipt_request": ("原始请求编号"),
+        "outage_existing_receipt_check": ("核查原始记录"),
+        "outage_existing_receipt_checked": ("已核实的原始电子记录"),
+        "outage_existing_receipt_reason": ("关联原因"),
+        "outage_existing_receipt_link": ("关联已核实记录"),
+        "outage_existing_receipt_clear": ("清除关联草稿"),
+        "outage_existing_receipt_retry": ("重试关联已核实记录"),
+        "outage_existing_receipt_linked": ("纸本参考已关联至原始电子记录。"),
+        "outage_existing_receipt_server_time": ("原始记录的服务器输入时间"),
+        "outage_existing_link_metadata": ("后加的关联记录"),
+        "outage_existing_link_request": ("关联请求编号"),
+        "outage_existing_request_invalid": ("请输入有效的原始请求编号。"),
+        "outage_existing_receipt_check_required": ("请先核查原始电子记录，再进行关联。"),
+        "outage_existing_link_reason_required": ("请填写关联此记录的原因。"),
+        "outage_existing_link_clear_first": ("请先清除关联草稿，再编辑中断或纸本记录。"),
+        "paper_receipt_mismatch": ("原始电子记录与此纸本参考、操作或原始时间不符。"),
+        "paper_receipt_workflow_unsupported": ("无法将所选电子记录关联至此纸本操作。"),
+        "outage_receipt_status_draft": ("草稿"),
+        "outage_receipt_status_submitted": ("已提交"),
+        "outage_receipt_status_approved": ("已核准"),
+        "outage_receipt_status_recorded": ("已记录"),
         "outage_title": "连接中断及纸本记录",
         "outage_report": "中断及纸本报表",
         "outage_report_preview": "预览报表",
@@ -329,11 +229,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_load": "载入",
         "outage_refresh": "刷新清单",
         "outage_reload": "舍弃变更并重新载入",
-        "outage_read_only": (
-            '此账户仅可查看。获指派的投票'
-            '站主任或点票主任可记录中断及'
-            '纸本参考。'
-        ),
+        "outage_read_only": ("此账户仅可查看。获指派的投票站主任或点票主任可记录中断及纸本参考。"),
         "outage_active_required": "只有选举进行期间可新增或修正记录。",
         "outage_details": "中断详情",
         "outage_reference": "中断参考",
@@ -351,9 +247,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_amend": "保存修订",
         "outage_revision": "中断修订",
         "outage_newer_revision": (
-            '服务器已有较新中断、纸本或核'
-            '对修订；未保存输入仍保留。请'
-            '核对后明确重新载入。'
+            "服务器已有较新中断、纸本或核对修订；未保存输入仍保留。请核对后明确重新载入。"
         ),
         "outage_server_entered": "服务器记录时间（香港时间）",
         "outage_actor": "记录人员编号",
@@ -415,9 +309,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_reconciled_notice": "纸本核对决定已保存至中央服务器。",
         "outage_reconcile": "监督员核对",
         "outage_reconcile_hint": (
-            '核对所有纸本参考的不可变更收'
-            '据及当前修订后，由监督员提交'
-            '原因并以本人密码确认。'
+            "核对所有纸本参考的不可变更收据及当前修订后，由监督员提交原因并以本人密码确认。"
         ),
         "outage_reconcile_reason": "核对原因",
         "outage_supervisor_password": "监督员本人密码",
@@ -433,9 +325,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_retry_paper": "比较后重试纸本保存",
         "outage_retry_approval": "比较后重新确认核对",
         "outage_uncertain_hint": (
-            '请刷新并比较服务器修订及参考'
-            '，再决定是否以相同请求重试。'
-            '程序不会自动重发。'
+            "请刷新并比较服务器修订及参考，再决定是否以相同请求重试。程序不会自动重发。"
         ),
         "outage_dirty_hint": "表单有未保存变更。载入其他记录前，请明确选择舍弃并重新载入。",
         "outage_confirm_discard_title": "舍弃未保存变更？",
@@ -446,9 +336,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_not_found": "找不到所选中断记录。",
         "outage_not_selected": "请先选择或新增中断记录。",
         "outage_uncertain_save_pending": (
-            '仍有一项结果未核实的请求。请'
-            '保留原请求内容并先比较服务器'
-            '清单。'
+            "仍有一项结果未核实的请求。请保留原请求内容并先比较服务器清单。"
         ),
         "unsaved_outage_changes": "中断表单有未保存变更。",
         "unsaved_outage_paper_changes": "纸本表单有未保存变更。",
@@ -484,55 +372,27 @@ OUTAGE_TRANSLATIONS = {
         "request_failed": "服务器回复无法核实。请检查连接并比较服务器记录。",
     },
     "en": {
-        "outage_existing_receipt_title": (
-            "Link a checked server entry"
-        ),
+        "outage_existing_receipt_title": ("Link a checked server entry"),
         "outage_existing_receipt_hint": (
             "Match the paper reference to an entry already saved on the server. This does "
             "not submit the operation again."
         ),
-        "outage_existing_receipt_request": (
-            "Original request ID"
-        ),
-        "outage_existing_receipt_check": (
-            "Check existing entry"
-        ),
-        "outage_existing_receipt_checked": (
-            "Checked server entry"
-        ),
-        "outage_existing_receipt_reason": (
-            "Reason for linking"
-        ),
-        "outage_existing_receipt_link": (
-            "Link checked entry"
-        ),
-        "outage_existing_receipt_clear": (
-            "Clear matching draft"
-        ),
-        "outage_existing_receipt_retry": (
-            "Retry linking the checked entry"
-        ),
-        "outage_existing_receipt_linked": (
-            "Paper reference linked to the original server entry."
-        ),
-        "outage_existing_receipt_server_time": (
-            "Original server entry time"
-        ),
-        "outage_existing_link_metadata": (
-            "Later linkage provenance"
-        ),
-        "outage_existing_link_request": (
-            "Link request ID"
-        ),
-        "outage_existing_request_invalid": (
-            "Enter a valid original request ID."
-        ),
+        "outage_existing_receipt_request": ("Original request ID"),
+        "outage_existing_receipt_check": ("Check existing entry"),
+        "outage_existing_receipt_checked": ("Checked server entry"),
+        "outage_existing_receipt_reason": ("Reason for linking"),
+        "outage_existing_receipt_link": ("Link checked entry"),
+        "outage_existing_receipt_clear": ("Clear matching draft"),
+        "outage_existing_receipt_retry": ("Retry linking the checked entry"),
+        "outage_existing_receipt_linked": ("Paper reference linked to the original server entry."),
+        "outage_existing_receipt_server_time": ("Original server entry time"),
+        "outage_existing_link_metadata": ("Later linkage provenance"),
+        "outage_existing_link_request": ("Link request ID"),
+        "outage_existing_request_invalid": ("Enter a valid original request ID."),
         "outage_existing_receipt_check_required": (
             "Check the original server entry before linking."
         ),
-        "outage_existing_link_reason_required": (
-            "Enter the reason for linking this entry."
-        ),
+        "outage_existing_link_reason_required": ("Enter the reason for linking this entry."),
         "outage_existing_link_clear_first": (
             "Clear the matching draft before editing the outage or paper record."
         ),
@@ -542,18 +402,10 @@ OUTAGE_TRANSLATIONS = {
         "paper_receipt_workflow_unsupported": (
             "The selected server entry cannot be linked to this paper action."
         ),
-        "outage_receipt_status_draft": (
-            "Draft"
-        ),
-        "outage_receipt_status_submitted": (
-            "Submitted"
-        ),
-        "outage_receipt_status_approved": (
-            "Approved"
-        ),
-        "outage_receipt_status_recorded": (
-            "Recorded"
-        ),
+        "outage_receipt_status_draft": ("Draft"),
+        "outage_receipt_status_submitted": ("Submitted"),
+        "outage_receipt_status_approved": ("Approved"),
+        "outage_receipt_status_recorded": ("Recorded"),
         "outage_title": "Connectivity outages and paper records",
         "outage_report": "Outage and paper reconciliation report",
         "outage_report_preview": "Preview report",
@@ -565,8 +417,8 @@ OUTAGE_TRANSLATIONS = {
             "The outage and paper reconciliation report could not be exported."
         ),
         "outage_intro": (
-            'Record the actual interruption and paper reference. Original paper '
-            'time and server entry time are kept separately.'
+            "Record the actual interruption and paper reference. Original paper "
+            "time and server entry time are kept separately."
         ),
         "outage_station": "Polling station ID",
         "outage_list": "Recorded connectivity outages",
@@ -577,11 +429,11 @@ OUTAGE_TRANSLATIONS = {
         "outage_refresh": "Refresh list",
         "outage_reload": "Discard changes and reload",
         "outage_read_only": (
-            'This account can view records. Assigned Polling or Counting Officers '
-            'can record outages and paper references.'
+            "This account can view records. Assigned Polling or Counting Officers "
+            "can record outages and paper references."
         ),
         "outage_active_required": (
-            'Records can be created or amended only while the election is active.'
+            "Records can be created or amended only while the election is active."
         ),
         "outage_details": "Outage details",
         "outage_reference": "Outage reference",
@@ -593,8 +445,8 @@ OUTAGE_TRANSLATIONS = {
         "outage_started": "Actual start (Hong Kong time, YYYY-MM-DD HH:mm)",
         "outage_ended": "Actual end (Hong Kong time, YYYY-MM-DD HH:mm)",
         "outage_time_hint": (
-            'Seconds and up to six fractional digits are accepted. Unchanged '
-            'minutes retain their saved precision.'
+            "Seconds and up to six fractional digits are accepted. Unchanged "
+            "minutes retain their saved precision."
         ),
         "outage_notes": "Outage notes",
         "outage_reason": "Amendment reason",
@@ -602,8 +454,8 @@ OUTAGE_TRANSLATIONS = {
         "outage_amend": "Save amendment",
         "outage_revision": "Outage revision",
         "outage_newer_revision": (
-            'A newer outage, paper or reconciliation revision exists. Your unsaved '
-            'input is retained; compare before explicitly reloading.'
+            "A newer outage, paper or reconciliation revision exists. Your unsaved "
+            "input is retained; compare before explicitly reloading."
         ),
         "outage_server_entered": "Server entry time (Hong Kong time)",
         "outage_actor": "Entered by account ID",
@@ -622,8 +474,7 @@ OUTAGE_TRANSLATIONS = {
         "outage_amend_allocation": "Amend allocation",
         "outage_original_time": "Original paper time (Hong Kong time, YYYY-MM-DD HH:mm)",
         "outage_original_time_hint": (
-            'This preserves the time written on paper; the server records entry '
-            'time separately.'
+            "This preserves the time written on paper; the server records entry time separately."
         ),
         "outage_target_scope": "Counting scope ID",
         "outage_target_round": "Count round ID",
@@ -666,12 +517,12 @@ OUTAGE_TRANSLATIONS = {
         "outage_saved": "The outage record was saved to the central server.",
         "outage_paper_saved": "The paper reference was saved to the central server.",
         "outage_reconciled_notice": (
-            'The paper reconciliation decision was saved to the central server.'
+            "The paper reconciliation decision was saved to the central server."
         ),
         "outage_reconcile": "Supervisor reconciliation",
         "outage_reconcile_hint": (
-            'After reviewing each immutable paper receipt and current revision, the '
-            'Supervisor records a reason and confirms with their own password.'
+            "After reviewing each immutable paper receipt and current revision, the "
+            "Supervisor records a reason and confirms with their own password."
         ),
         "outage_reconcile_reason": "Reconciliation reason",
         "outage_supervisor_password": "Supervisor's own password",
@@ -687,18 +538,18 @@ OUTAGE_TRANSLATIONS = {
         "outage_retry_paper": "Compare and retry paper save",
         "outage_retry_approval": "Compare and confirm reconciliation",
         "outage_uncertain_hint": (
-            'Refresh and compare the server revision and references before deciding '
-            'whether to retry the same request. The client never resends '
-            'automatically.'
+            "Refresh and compare the server revision and references before deciding "
+            "whether to retry the same request. The client never resends "
+            "automatically."
         ),
         "outage_dirty_hint": (
-            'The form has unsaved changes. Explicitly discard and reload before '
-            'selecting another record.'
+            "The form has unsaved changes. Explicitly discard and reload before "
+            "selecting another record."
         ),
         "outage_confirm_discard_title": "Discard unsaved changes?",
         "outage_confirm_discard": (
-            'This input is not saved. Another record loads only after you '
-            'explicitly discard and continue.'
+            "This input is not saved. Another record loads only after you "
+            "explicitly discard and continue."
         ),
         "outage_keep_editing": "Keep editing",
         "outage_discard_continue": "Discard and continue",
@@ -706,86 +557,79 @@ OUTAGE_TRANSLATIONS = {
         "outage_not_found": "The selected outage record was not found.",
         "outage_not_selected": "Select or create an outage record first.",
         "outage_uncertain_save_pending": (
-            'A request outcome remains unconfirmed. Keep the original request and '
-            'compare the server list first.'
+            "A request outcome remains unconfirmed. Keep the original request and "
+            "compare the server list first."
         ),
         "unsaved_outage_changes": "The outage form has unsaved changes.",
         "unsaved_outage_paper_changes": "The paper form has unsaved changes.",
         "outage_validation": (
-            'Enter a reference, type, valid Hong Kong times and notes of at most '
-            '2,000 characters.'
+            "Enter a reference, type, valid Hong Kong times and notes of at most 2,000 characters."
         ),
         "outage_response_invalid": (
-            'The server response could not be confirmed. Keep the original request '
-            'and compare server records.'
+            "The server response could not be confirmed. Keep the original request "
+            "and compare server records."
         ),
         "outage_interval_invalid": "The outage start must not be after its end.",
         "outage_time_in_future": "The time must not be after the current server time.",
         "outage_amendment_reason_required": "An outage amendment requires a reason.",
         "outage_paper_validation": (
-            'Enter a paper reference and notes of at most 2,000 characters.'
+            "Enter a paper reference and notes of at most 2,000 characters."
         ),
         "outage_paper_time_invalid": "Enter a valid Hong Kong date and time.",
-        "outage_paper_target_required": (
-            'Enter the target ID required by the selected workflow.'
-        ),
-        "outage_paper_action_invalid": (
-            'This action is not supported for the selected workflow.'
-        ),
+        "outage_paper_target_required": ("Enter the target ID required by the selected workflow."),
+        "outage_paper_action_invalid": ("This action is not supported for the selected workflow."),
         "outage_paper_role_required": (
-            'This account cannot register a paper reference for the selected '
-            'workflow.'
+            "This account cannot register a paper reference for the selected workflow."
         ),
         "outage_paper_not_found": "The selected paper reference was not found.",
         "outage_paper_not_editable": (
-            'This paper reference cannot be amended; entered references are '
-            'immutable.'
+            "This paper reference cannot be amended; entered references are immutable."
         ),
         "outage_paper_amendment_reason_required": (
-            'Correcting a pending paper reference requires a reason.'
+            "Correcting a pending paper reference requires a reason."
         ),
         "paper_already_entered": "This paper reference has been entered and is immutable.",
         "paper_time_in_future": (
-            'The original paper time must not be after the current server time.'
+            "The original paper time must not be after the current server time."
         ),
         "paper_reference_conflict": "This paper reference is already used in this workflow.",
         "paper_target_not_found": (
-            'The selected target was not found or does not belong to this station.'
+            "The selected target was not found or does not belong to this station."
         ),
         "paper_target_invalid": (
-            'The workflow, action or target does not match this paper reference.'
+            "The workflow, action or target does not match this paper reference."
         ),
         "outage_review_required": (
-            'Load and review the current outage and every paper revision first.'
+            "Load and review the current outage and every paper revision first."
         ),
         "outage_papers_pending": (
-            'Every paper reference must be re-entered before reconciliation.'
+            "Every paper reference must be re-entered before reconciliation."
         ),
         "outage_paper_records_missing": (
-            'The server paper-reference list changed. Review it again.'
+            "The server paper-reference list changed. Review it again."
         ),
         "outage_reconciliation_validation": (
             "Enter the Supervisor's own password and a reconciliation reason."
         ),
         "outage_reconciliation_reason_required": "A reconciliation decision requires a reason.",
         "outage_reconciliation_revision_conflict": (
-            'A newer reconciliation exists. Refresh and compare it.'
+            "A newer reconciliation exists. Refresh and compare it."
         ),
         "outage_paper_revision_conflict": (
-            'A newer paper revision exists. Refresh and compare it.'
+            "A newer paper revision exists. Refresh and compare it."
         ),
         "paper_revision_conflict": "A newer paper revision exists. Refresh and compare it.",
         "outage_revision_conflict": "A newer outage revision exists. Refresh and compare it.",
         "invalid_credentials": (
-            'The password is incorrect. No result changed; check it and retry with '
-            'your own password.'
+            "The password is incorrect. No result changed; check it and retry with "
+            "your own password."
         ),
         "supervisor_required": (
-            'Only an assigned Supervisor can approve the paper reconciliation.'
+            "Only an assigned Supervisor can approve the paper reconciliation."
         ),
         "request_failed": (
-            'The server response could not be confirmed. Check the connection and '
-            'compare server records.'
+            "The server response could not be confirmed. Check the connection and "
+            "compare server records."
         ),
     },
 }

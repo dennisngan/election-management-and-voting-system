@@ -14,7 +14,6 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from election.server.boxes import utc_time
 from election.server.counting_round_models import CountRound, CountRoundRequest, CountRoundRevision
 from election.server.counting_rounds import (
     F1Draft,
@@ -28,6 +27,7 @@ from election.server.models import Account, AuditEvent
 from election.server.recount_authority import lock_recount_supervisor
 from election.server.recount_state import scope_recount_state
 from election.server.security import verify_password
+from election.server.timestamps import utc_time
 from election.server.turnout_basis import turnout_scope
 
 
@@ -63,22 +63,33 @@ class CreatedRecount:
 
 
 def local_recount_digest(
-    actor_id: int, station_id: int, scope_id: int, data: LocalRecountInput,
+    actor_id: int,
+    station_id: int,
+    scope_id: int,
+    data: LocalRecountInput,
 ) -> str:
     return hashlib.sha256(
         json.dumps(
             {
-                "action": "local-recount", "station_id": station_id,
-                "scope_id": scope_id, "actor_id": actor_id,
+                "action": "local-recount",
+                "station_id": station_id,
+                "scope_id": scope_id,
+                "actor_id": actor_id,
                 "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
-            }, sort_keys=True, ensure_ascii=False,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
         ).encode()
     ).hexdigest()
 
 
 def create_local_recount_round(
-    db: Session, actor_id: int, options: dict[str, Any], source: CountRoundRevision,
-    data: LocalRecountInput, now: datetime,
+    db: Session,
+    actor_id: int,
+    options: dict[str, Any],
+    source: CountRoundRevision,
+    data: LocalRecountInput,
+    now: datetime,
 ) -> CreatedRecount:
     """Append one blank replacement inside the caller's authorized transaction."""
     scope_id = options["scope"]["id"]
@@ -91,24 +102,37 @@ def create_local_recount_round(
     blank = f1_basis(
         options,
         F1Draft(
-            request_id=data.request_id, expected_revision=0,
-            scope_revision=data.scope_revision, event_at=data.event_at,
+            request_id=data.request_id,
+            expected_revision=0,
+            scope_revision=data.scope_revision,
+            event_at=data.event_at,
         ),
     )
     blank["scope_basis"] = deepcopy(source.data["scope_basis"])
     blank["instruction_only"] = True
     event_at = data.event_at.replace(tzinfo=None)
     revision = CountRoundRevision(
-        round_id=replacement.id, revision=1, status="draft",
-        event_at=event_at, entered_at=now, actor_id=actor_id,
-        notes="", amendment_reason="", data=blank,
+        round_id=replacement.id,
+        revision=1,
+        status="draft",
+        event_at=event_at,
+        entered_at=now,
+        actor_id=actor_id,
+        notes="",
+        amendment_reason="",
+        data=blank,
     )
     db.add(revision)
     instruction = LocalRecountInstruction(
-        request_id=str(data.request_id), scope_id=scope_id,
+        request_id=str(data.request_id),
+        scope_id=scope_id,
         scope_revision_id=options["scope"]["revision_id"],
-        source_round_revision_id=source.id, new_round_id=replacement.id,
-        actor_id=actor_id, reason=data.reason, event_at=event_at, entered_at=now,
+        source_round_revision_id=source.id,
+        new_round_id=replacement.id,
+        actor_id=actor_id,
+        reason=data.reason,
+        event_at=event_at,
+        entered_at=now,
     )
     db.add(instruction)
     db.flush()
@@ -116,8 +140,11 @@ def create_local_recount_round(
 
 
 def preserve_local_recount_receipt(
-    db: Session, actor_id: int, created: CreatedRecount,
-    options: dict[str, Any], data: LocalRecountInput,
+    db: Session,
+    actor_id: int,
+    created: CreatedRecount,
+    options: dict[str, Any],
+    data: LocalRecountInput,
 ) -> dict[str, Any]:
     """Keep the original acknowledgement and audit without committing the transaction."""
     station_id, scope_id = options["context"]["station"]["id"], options["scope"]["id"]
@@ -128,21 +155,27 @@ def preserve_local_recount_receipt(
     }
     db.add(
         CountRoundRequest(
-            request_id=str(data.request_id), station_id=station_id, actor_id=actor_id,
+            request_id=str(data.request_id),
+            station_id=station_id,
+            actor_id=actor_id,
             digest=local_recount_digest(actor_id, station_id, scope_id, data),
             response=deepcopy(result),
         )
     )
     db.add(
         AuditEvent(
-            actor_id=actor_id, action="local_recount_instructed",
+            actor_id=actor_id,
+            action="local_recount_instructed",
             occurred_at=created.instruction.entered_at,
             details={
-                "station_id": station_id, "scope_id": scope_id,
-                "instruction_id": created.instruction.id, "request_id": str(data.request_id),
+                "station_id": station_id,
+                "scope_id": scope_id,
+                "instruction_id": created.instruction.id,
+                "request_id": str(data.request_id),
                 "source_round_id": data.source_round_id,
                 "source_round_revision": data.source_round_revision,
-                "new_round_id": created.round.id, "reason": data.reason,
+                "new_round_id": created.round.id,
+                "reason": data.reason,
             },
         )
     )
@@ -175,15 +208,20 @@ def local_recounts_router(
                 actor.role == "supervisor"
                 and options["context"]["election"]["status"] == "active"
                 and options["scope"]["count_ready"]
-                and selection and selection.get("valid")
+                and selection
+                and selection.get("valid")
                 and not state["pending"]
             ),
         }
 
     @router.post("", status_code=201)
     def instruct(
-        station_id: int, scope_id: int, data: LocalRecountInput,
-        response: Response, db: Database, actor: Actor,
+        station_id: int,
+        scope_id: int,
+        data: LocalRecountInput,
+        response: Response,
+        db: Database,
+        actor: Actor,
     ) -> dict[str, Any]:
         actor = lock_recount_supervisor(db, actor)
         turnout_scope(db, actor, station_id, writable=True)
@@ -197,7 +235,8 @@ def local_recounts_router(
         receipt = db.scalar(
             select(CountRoundRequest)
             .where(CountRoundRequest.request_id == str(data.request_id))
-            .with_for_update().execution_options(populate_existing=True)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if receipt:
             if receipt.digest != digest:

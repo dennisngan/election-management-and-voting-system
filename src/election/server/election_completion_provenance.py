@@ -499,7 +499,8 @@ def completion_source_tables(sources: dict[str, Any], locale: ReportLocale) -> l
 
 
 def completion_tie_tables(
-    results: list[dict[str, Any]], locale: ReportLocale,
+    results: list[dict[str, Any]],
+    locale: ReportLocale,
 ) -> list[HistoryTable]:
     """Explain saved winners using the tie authorization retained with that outcome."""
     labels = {**RESULT_LABELS[locale], **COUNT_LABELS[locale], **_EXTRA[locale]}
@@ -509,19 +510,30 @@ def completion_tie_tables(
         if not isinstance(decision, dict):
             continue
         pairs = [[labels["constituency_id"], str(result["constituency"]["id"])]]
-        pairs.extend(_pairs(decision, (
-            ("decision_id", "id"), ("tie_revision", "revision"),
-            ("tie_winner", "candidate_id"), ("tie_actor", "actor_id"),
-            ("tie_accepted_at", "accepted_at"), ("tie_reason", "reason"),
-            ("tie_basis", "basis_digest"), ("tie_valid", "valid"),
-            ("tie_current", "is_current"),
-        ), labels))
+        pairs.extend(
+            _pairs(
+                decision,
+                (
+                    ("decision_id", "id"),
+                    ("tie_revision", "revision"),
+                    ("tie_winner", "candidate_id"),
+                    ("tie_actor", "actor_id"),
+                    ("tie_accepted_at", "accepted_at"),
+                    ("tie_reason", "reason"),
+                    ("tie_basis", "basis_digest"),
+                    ("tie_valid", "valid"),
+                    ("tie_current", "is_current"),
+                ),
+                labels,
+            )
+        )
         tables.append(_table(labels["kind_tie"], pairs, labels))
     return tables
 
 
 def completion_recount_tables(
-    sources: dict[str, Any], locale: ReportLocale,
+    sources: dict[str, Any],
+    locale: ReportLocale,
 ) -> list[HistoryTable]:
     """Render original membership and selection obligations as captured at finalization."""
     labels = {**RESULT_LABELS[locale], **COUNT_LABELS[locale], **_EXTRA[locale]}
@@ -541,26 +553,40 @@ def completion_recount_tables(
             [labels["round_instruction_id"], _value("id", associated.get("id"), labels)],
             [labels["required_parent_id"], _value("id", parent.get("id"), labels)],
         ]
-        pairs.extend(_pairs(required, (
-            ("instruction_scope_revision", "scope_revision"),
-            ("instruction_scope_revision_id", "scope_revision_id"),
-            ("source_round_id", "source_round_id"),
-            ("source_round_revision", "source_round_revision"),
-            ("source_round_revision_id", "source_round_revision_id"),
-            ("replacement_round_id", "new_round_id"),
-            ("replacement_round_number", "new_round_number"),
-            ("instruction_actor", "actor_id"), ("instruction_reason", "reason"),
-            ("instruction_event_at", "event_at"), ("instruction_entered_at", "entered_at"),
-            ("first_completed_at", "completed_at"),
-            ("first_selection_id", "completion_selection_id"),
-            ("first_selection_revision", "completion_selection_revision"),
-            ("first_round_revision_id", "completion_round_revision_id"),
-            ("satisfied_at_finalization", "current_satisfied"),
-        ), labels))
-        pairs.extend(_pairs(record, (
-            ("pending_at_finalization", "recount_pending"),
-            ("contributes_to_final", "contributes_to_result"),
-        ), labels))
+        pairs.extend(
+            _pairs(
+                required,
+                (
+                    ("instruction_scope_revision", "scope_revision"),
+                    ("instruction_scope_revision_id", "scope_revision_id"),
+                    ("source_round_id", "source_round_id"),
+                    ("source_round_revision", "source_round_revision"),
+                    ("source_round_revision_id", "source_round_revision_id"),
+                    ("replacement_round_id", "new_round_id"),
+                    ("replacement_round_number", "new_round_number"),
+                    ("instruction_actor", "actor_id"),
+                    ("instruction_reason", "reason"),
+                    ("instruction_event_at", "event_at"),
+                    ("instruction_entered_at", "entered_at"),
+                    ("first_completed_at", "completed_at"),
+                    ("first_selection_id", "completion_selection_id"),
+                    ("first_selection_revision", "completion_selection_revision"),
+                    ("first_round_revision_id", "completion_round_revision_id"),
+                    ("satisfied_at_finalization", "current_satisfied"),
+                ),
+                labels,
+            )
+        )
+        pairs.extend(
+            _pairs(
+                record,
+                (
+                    ("pending_at_finalization", "recount_pending"),
+                    ("contributes_to_final", "contributes_to_result"),
+                ),
+                labels,
+            )
+        )
         tables.append(_table(labels["kind_recount"], pairs, labels))
     return tables
 
@@ -571,42 +597,69 @@ def _wide_recount_tables(sources: dict[str, Any], labels: dict[str, str]) -> lis
         constituency_id = result["context"]["constituency"]["id"]
         for parent in result.get("constituency_recounts", []):
             pairs = [[labels["constituency_id"], str(constituency_id)]]
-            pairs.extend(_pairs(parent, (
-                ("instruction_id", "id"), ("instruction_actor", "actor_id"),
-                ("tie_reason", "reason"), ("instruction_event_at", "event_at"),
-                ("instruction_entered_at", "entered_at"), ("instruction_basis", "basis_digest"),
-                ("original_member_count", "member_count"),
-                ("completed_member_count", "completed_member_count"),
-                ("historical_complete", "historical_complete"),
-                ("first_completed_at", "completed_at"), ("latest_at_finalization", "is_latest"),
-            ), labels))
+            pairs.extend(
+                _pairs(
+                    parent,
+                    (
+                        ("instruction_id", "id"),
+                        ("instruction_actor", "actor_id"),
+                        ("tie_reason", "reason"),
+                        ("instruction_event_at", "event_at"),
+                        ("instruction_entered_at", "entered_at"),
+                        ("instruction_basis", "basis_digest"),
+                        ("original_member_count", "member_count"),
+                        ("completed_member_count", "completed_member_count"),
+                        ("historical_complete", "historical_complete"),
+                        ("first_completed_at", "completed_at"),
+                        ("latest_at_finalization", "is_latest"),
+                    ),
+                    labels,
+                )
+            )
             tables.append(_table(labels["kind_wide"], pairs, labels))
             for member in parent["members"]:
                 pairs = [
                     [labels["constituency_id"], str(constituency_id)],
                     [labels["parent_instruction_id"], str(parent["id"])],
                 ]
-                pairs.extend(_pairs(member, (
-                    ("station_id", "station_id"), ("scope_id", "scope_id"),
-                    ("local_instruction_id", "local_instruction_id"),
-                    ("replacement_round_id", "new_round_id"),
-                    ("replacement_round_number", "new_round_number"),
-                    ("first_completed_at", "completed_at"),
-                    ("first_selection_id", "completion_selection_id"),
-                    ("first_selection_revision", "completion_selection_revision"),
-                    ("first_round_revision_id", "completion_round_revision_id"),
-                    ("required_round_id", "current_required_round_id"),
-                ), labels))
-                pairs.extend(_pairs(member["scope_source"], (
-                    ("source_scope_revision", "scope_revision"),
-                    ("source_round_id", "source_round_id"),
-                    ("source_round_revision", "source_round_revision"),
-                    ("source_selection_revision", "expected_selection_revision"),
-                ), labels))
+                pairs.extend(
+                    _pairs(
+                        member,
+                        (
+                            ("station_id", "station_id"),
+                            ("scope_id", "scope_id"),
+                            ("local_instruction_id", "local_instruction_id"),
+                            ("replacement_round_id", "new_round_id"),
+                            ("replacement_round_number", "new_round_number"),
+                            ("first_completed_at", "completed_at"),
+                            ("first_selection_id", "completion_selection_id"),
+                            ("first_selection_revision", "completion_selection_revision"),
+                            ("first_round_revision_id", "completion_round_revision_id"),
+                            ("required_round_id", "current_required_round_id"),
+                        ),
+                        labels,
+                    )
+                )
+                pairs.extend(
+                    _pairs(
+                        member["scope_source"],
+                        (
+                            ("source_scope_revision", "scope_revision"),
+                            ("source_round_id", "source_round_id"),
+                            ("source_round_revision", "source_round_revision"),
+                            ("source_selection_revision", "expected_selection_revision"),
+                        ),
+                        labels,
+                    )
+                )
                 progress = member.get("progress")
-                pairs.append([
-                    labels["member_progress"],
-                    labels.get("progress_" + str(progress), _value("progress", progress, labels)),
-                ])
+                pairs.append(
+                    [
+                        labels["member_progress"],
+                        labels.get(
+                            "progress_" + str(progress), _value("progress", progress, labels)
+                        ),
+                    ]
+                )
                 tables.append(_table(labels["kind_member"], pairs, labels))
     return tables

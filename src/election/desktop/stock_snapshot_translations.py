@@ -6,51 +6,30 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
             "請核對原始香港時間、已申報櫃台及剩餘範圍。系列須完全相符，編"
             "號使用一至十八位半形數字，起始不可大於結束；修訂須填原因。"
         ),
-        "event_time_in_future": (
-            "原始事件時間不可晚於伺服器現在時間，請核對香港日期及時間。"
-        ),
+        "event_time_in_future": ("原始事件時間不可晚於伺服器現在時間，請核對香港日期及時間。"),
         "remaining_outside_owned_stock": (
-            "此剩餘範圍超出該櫃台於觀察時間持有的普通選票。請核對派發、未"
-            "發出選票退回、系列及編號。"
+            "此剩餘範圍超出該櫃台於觀察時間持有的普通選票。請核對派發、未發出選票退回、系列及編號。"
         ),
         "snapshot_report": "P(12) 所選結餘版本報表",
         "snapshot_report_hint": (
             "預覽及匯出保留所選已儲存版本的範圍、數量與基礎，包括歷史版本"
             "。未儲存的內容不會納入；報表使用目前所選語言。"
         ),
-        "snapshot_records": (
-            "已儲存的結餘觀察"
-        ),
-        "snapshot_empty": (
-            "本站尚未儲存結餘觀察。"
-        ),
-        "snapshot_select": (
-            "選擇已儲存的結餘觀察"
-        ),
-        "snapshot_record": (
-            "結餘觀察"
-        ),
-        "snapshot_edit": (
-            "建立有原因的修訂"
-        ),
-        "snapshot_history": (
-            "結餘觀察修訂歷史"
-        ),
-        "snapshot_historical": (
-            "此為歷史版本，只供查看。請重新載入目前版本後才修訂。"
-        ),
-        "stock_snapshot_newer_revision": (
-            "伺服器已有較新版本；您審閱的版本及未儲存內容仍保留。"
-        ),
+        "snapshot_records": ("已儲存的結餘觀察"),
+        "snapshot_empty": ("本站尚未儲存結餘觀察。"),
+        "snapshot_select": ("選擇已儲存的結餘觀察"),
+        "snapshot_record": ("結餘觀察"),
+        "snapshot_edit": ("建立有原因的修訂"),
+        "snapshot_history": ("結餘觀察修訂歷史"),
+        "snapshot_historical": ("此為歷史版本，只供查看。請重新載入目前版本後才修訂。"),
+        "stock_snapshot_newer_revision": ("伺服器已有較新版本；您審閱的版本及未儲存內容仍保留。"),
         "snapshot_new": "新增結餘觀察",
         "unsaved_stock_snapshot_changes": (
-            "結餘表格有未儲存內容。儲存或明確捨棄後，才會切換所審閱的觀察"
-            "或版本。"
+            "結餘表格有未儲存內容。儲存或明確捨棄後，才會切換所審閱的觀察或版本。"
         ),
         "snapshot_title": "P(12) 櫃台結餘與發票",
         "snapshot_intro": (
-            "按同一原始時間記錄每個櫃台的普通選票結餘，保留該次接收、派發"
-            "及退回基礎。"
+            "按同一原始時間記錄每個櫃台的普通選票結餘，保留該次接收、派發及退回基礎。"
         ),
         "snapshot_missing": "尚未記錄結餘",
         "snapshot_incomplete": "結餘尚未全部申報",
@@ -58,8 +37,7 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_current_issued": "最新有效結餘推算的普通選票發出數量",
         "snapshot_provenance": "此為庫存推算數量，並非已核實的選民身份或正常模式投票人數。",
         "snapshot_basis_stale": (
-            "相關接收、派發或退回基礎已有修訂。歷史數字保留；請核對並記錄"
-            "新的有效結餘。"
+            "相關接收、派發或退回基礎已有修訂。歷史數字保留；請核對並記錄新的有效結餘。"
         ),
         "snapshot_observation": "櫃台結餘觀察",
         "snapshot_event_time": "原始結餘時間（香港時間 YYYY-MM-DD HH:mm）",
@@ -84,51 +62,30 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
             "请核对原始香港时间、已申报柜台及剩余范围。系列须完全匹配，编"
             "号使用一至十八位半角数字，起始不可大于结束；修订须填原因。"
         ),
-        "event_time_in_future": (
-            "原始事件时间不可晚于服务器现在时间，请核对香港日期及时间。"
-        ),
+        "event_time_in_future": ("原始事件时间不可晚于服务器现在时间，请核对香港日期及时间。"),
         "remaining_outside_owned_stock": (
-            "此剩余范围超出该柜台于观察时间持有的普通选票。请核对派发、未"
-            "发出选票退回、系列及编号。"
+            "此剩余范围超出该柜台于观察时间持有的普通选票。请核对派发、未发出选票退回、系列及编号。"
         ),
         "snapshot_report": "P(12) 所选结余版本报表",
         "snapshot_report_hint": (
             "预览及导出保留所选已保存版本的范围、数量与依据，包括历史版本"
             "。未保存的内容不会纳入；报表使用当前所选语言。"
         ),
-        "snapshot_records": (
-            "已保存的结余观察"
-        ),
-        "snapshot_empty": (
-            "本站尚未保存结余观察。"
-        ),
-        "snapshot_select": (
-            "选择已保存的结余观察"
-        ),
-        "snapshot_record": (
-            "结余观察"
-        ),
-        "snapshot_edit": (
-            "建立有原因的修订"
-        ),
-        "snapshot_history": (
-            "结余观察修订历史"
-        ),
-        "snapshot_historical": (
-            "此为历史版本，仅供查看。请重新载入当前版本后才修订。"
-        ),
-        "stock_snapshot_newer_revision": (
-            "服务器已有较新版本；您审阅的版本及未保存内容仍保留。"
-        ),
+        "snapshot_records": ("已保存的结余观察"),
+        "snapshot_empty": ("本站尚未保存结余观察。"),
+        "snapshot_select": ("选择已保存的结余观察"),
+        "snapshot_record": ("结余观察"),
+        "snapshot_edit": ("建立有原因的修订"),
+        "snapshot_history": ("结余观察修订历史"),
+        "snapshot_historical": ("此为历史版本，仅供查看。请重新载入当前版本后才修订。"),
+        "stock_snapshot_newer_revision": ("服务器已有较新版本；您审阅的版本及未保存内容仍保留。"),
         "snapshot_new": "新增结余观察",
         "unsaved_stock_snapshot_changes": (
-            "结余表格有未保存内容。保存或明确舍弃后，才会切换所审阅的观察"
-            "或版本。"
+            "结余表格有未保存内容。保存或明确舍弃后，才会切换所审阅的观察或版本。"
         ),
         "snapshot_title": "P(12) 柜台结余与发票",
         "snapshot_intro": (
-            "按同一原始时间记录每个柜台的普通选票结余，保留该次接收、派发"
-            "及退回依据。"
+            "按同一原始时间记录每个柜台的普通选票结余，保留该次接收、派发及退回依据。"
         ),
         "snapshot_missing": "尚未记录结余",
         "snapshot_incomplete": "结余尚未全部申报",
@@ -136,8 +93,7 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "snapshot_current_issued": "最新有效结余推算的普通选票发出数量",
         "snapshot_provenance": "此为库存推算数量，并非已核实的选民身份或正常模式投票人数。",
         "snapshot_basis_stale": (
-            "相关接收、派发或退回依据已有修订。历史数字保留；请核对并记录"
-            "新的有效结余。"
+            "相关接收、派发或退回依据已有修订。历史数字保留；请核对并记录新的有效结余。"
         ),
         "snapshot_observation": "柜台结余观察",
         "snapshot_event_time": "原始结余时间（香港时间 YYYY-MM-DD HH:mm）",
@@ -188,31 +144,14 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
             " excluded. Reports use the sel"
             "ected interface language."
         ),
-        "snapshot_records": (
-            "Saved balance observations"
-        ),
-        "snapshot_empty": (
-            "No balance observations have b"
-            "een saved at this station."
-        ),
-        "snapshot_select": (
-            "Choose a saved balance observa"
-            "tion"
-        ),
-        "snapshot_record": (
-            "Balance observation"
-        ),
-        "snapshot_edit": (
-            "Prepare a reasoned amendment"
-        ),
-        "snapshot_history": (
-            "Balance observation revision h"
-            "istory"
-        ),
+        "snapshot_records": ("Saved balance observations"),
+        "snapshot_empty": ("No balance observations have been saved at this station."),
+        "snapshot_select": ("Choose a saved balance observation"),
+        "snapshot_record": ("Balance observation"),
+        "snapshot_edit": ("Prepare a reasoned amendment"),
+        "snapshot_history": ("Balance observation revision history"),
         "snapshot_historical": (
-            "This historical revision is re"
-            "ad-only. Reload the current re"
-            "vision before amending."
+            "This historical revision is read-only. Reload the current revision before amending."
         ),
         "stock_snapshot_newer_revision": (
             "A newer server revision is ava"

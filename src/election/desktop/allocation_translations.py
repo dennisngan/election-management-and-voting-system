@@ -3,8 +3,7 @@
 ALLOCATION_TRANSLATIONS = {
     "tc": {
         "allocation_before_return": (
-            "此編號範圍是在擬記錄的派發時間之後才退回。請將派發時間設為該"
-            "次退回時間或之後。"
+            "此編號範圍是在擬記錄的派發時間之後才退回。請將派發時間設為該次退回時間或之後。"
         ),
         "allocation_title": "P(14) 櫃台選票派發",
         "allocation_record": "櫃台派發記錄",
@@ -72,8 +71,7 @@ ALLOCATION_TRANSLATIONS = {
     },
     "sc": {
         "allocation_before_return": (
-            "此编号范围是在拟记录的派发时间之后才退回。请将派发时间设为该"
-            "次退回时间或之后。"
+            "此编号范围是在拟记录的派发时间之后才退回。请将派发时间设为该次退回时间或之后。"
         ),
         "allocation_title": "P(14) 柜台选票派发",
         "allocation_record": "柜台派发记录",

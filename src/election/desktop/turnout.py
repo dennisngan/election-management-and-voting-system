@@ -25,18 +25,20 @@ QUANTITIES = (
     "derived_cumulative_end",
 )
 STATUSES = ("draft", "submitted", "approved")
-UNCERTAIN_PAPER_ERRORS = frozenset({
-    "request_failed",
-    "request_timeout",
-    "disconnected",
-    "database_unavailable",
-    "certificate_error",
-    "invalid_response",
-    "session_expired",
-    "access_changed",
-    "recovery_outcome_check_required",
-    "recovery_journal_outcome_unavailable",
-})
+UNCERTAIN_PAPER_ERRORS = frozenset(
+    {
+        "request_failed",
+        "request_timeout",
+        "disconnected",
+        "database_unavailable",
+        "certificate_error",
+        "invalid_response",
+        "session_expired",
+        "access_changed",
+        "recovery_outcome_check_required",
+        "recovery_journal_outcome_unavailable",
+    }
+)
 
 
 def empty_forms() -> dict[str, str]:
@@ -47,9 +49,12 @@ def empty_forms() -> dict[str, str]:
         "source_context": "",
         "amendment_reason": "",
         "mode": "normal",
-        "fallback_activation_id": "", "fallback_activation_revision": "",
-        "stock_snapshot_id": "", "stock_snapshot_revision": "",
-        "fallback_recovery_id": "", "fallback_recovery_revision": "",
+        "fallback_activation_id": "",
+        "fallback_activation_revision": "",
+        "stock_snapshot_id": "",
+        "stock_snapshot_revision": "",
+        "fallback_recovery_id": "",
+        "fallback_recovery_revision": "",
     }
 
 
@@ -204,9 +209,13 @@ class TurnoutController(QObject):
     def _clear_paper_binding(self, *, settled: bool = False) -> None:
         changed = bool(self._state["paper_record"])
         if settled:
-            changed = changed or self._state["uncertain_save"] or bool(
-                self._paper_pending_request_id
-            ) or self._state["paper_refreshing"] or bool(self._state["paper_records"])
+            changed = (
+                changed
+                or self._state["uncertain_save"]
+                or bool(self._paper_pending_request_id)
+                or self._state["paper_refreshing"]
+                or bool(self._state["paper_records"])
+            )
             self._paper_pending_request_id = ""
             self._paper_pending_identity = {}
             self._invalidate_paper_read()
@@ -251,7 +260,8 @@ class TurnoutController(QObject):
         commands = recovery_state.get("commands", []) if isinstance(recovery_state, dict) else []
         command = next(
             (
-                row for row in commands
+                row
+                for row in commands
                 if isinstance(row, dict)
                 and row.get("request_id") == request_id
                 and row.get("workflow") == "turnout"
@@ -323,11 +333,7 @@ class TurnoutController(QObject):
 
     @Slot(result=bool)
     def refreshPaperRecords(self) -> bool:
-        if (
-            not self._state["station_id"]
-            or self._state["paper_refreshing"]
-            or self._state["busy"]
-        ):
+        if not self._state["station_id"] or self._state["paper_refreshing"] or self._state["busy"]:
             return False
         self._paper_generation += 1
         generation = self._paper_generation
@@ -340,15 +346,16 @@ class TurnoutController(QObject):
         def loaded(snapshot: dict[str, Any]) -> None:
             if generation != self._paper_generation:
                 return
-            if station_id != self._state["station_id"] or period_index != self._state[
-                "selected_period"
-            ]:
+            if (
+                station_id != self._state["station_id"]
+                or period_index != self._state["selected_period"]
+            ):
                 self._invalidate_paper_read()
                 self.stateChanged.emit()
                 return
             try:
                 rows = self._paper_record_options(snapshot)
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 self._state.update(
                     paper_refreshing=False,
                     paper_error="paper_reentry_load_failed",
@@ -368,9 +375,10 @@ class TurnoutController(QObject):
         def failed(code: str) -> None:
             if generation != self._paper_generation:
                 return
-            if station_id != self._state["station_id"] or period_index != self._state[
-                "selected_period"
-            ]:
+            if (
+                station_id != self._state["station_id"]
+                or period_index != self._state["selected_period"]
+            ):
                 self._invalidate_paper_read()
                 self.stateChanged.emit()
                 return
@@ -417,9 +425,7 @@ class TurnoutController(QObject):
             return False
         self._state["paper_record"] = deepcopy(paper)
         if paper.get("action") == "save":
-            event_time = format_event_time(
-                paper["original_event_at"]
-            ).removesuffix(" HKT")
+            event_time = format_event_time(paper["original_event_at"]).removesuffix(" HKT")
             if self._state["forms"]["event_time"] != event_time:
                 self._state["forms"]["event_time"] = event_time
                 self._state["dirty"] = True
@@ -811,8 +817,12 @@ class TurnoutController(QObject):
                     raise ValueError("Fallback turnout is calculated from ordinary stock")
                 values["mode"] = mode
                 source_fields = (
-                    ("fallback_activation_id", "fallback_activation_revision",
-                     "stock_snapshot_id", "stock_snapshot_revision")
+                    (
+                        "fallback_activation_id",
+                        "fallback_activation_revision",
+                        "stock_snapshot_id",
+                        "stock_snapshot_revision",
+                    )
                     if mode == "fallback"
                     else ("fallback_recovery_id", "fallback_recovery_revision")
                 )

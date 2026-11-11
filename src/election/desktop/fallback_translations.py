@@ -251,8 +251,7 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_correction": "Reasoned correction",
         "fallback_amend_save": "Save correction revision",
         "fallback_amended": (
-            "The correction revision was saved. Submit it for renewed Supervisor "
-            "confirmation."
+            "The correction revision was saved. Submit it for renewed Supervisor confirmation."
         ),
     },
 }

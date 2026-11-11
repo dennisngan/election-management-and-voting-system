@@ -71,11 +71,20 @@ def recount_metadata(record: dict[str, Any], labels: dict[str, str]) -> list[lis
         parent = instruction.get("constituency_recount")
         if isinstance(parent, dict):
             rows.extend(
-                [labels[f"constituency_recount_{prefix}_{field}"],
-                 _value(field, parent[field], labels)]
+                [
+                    labels[f"constituency_recount_{prefix}_{field}"],
+                    _value(field, parent[field], labels),
+                ]
                 for field in (
-                    "id", "request_id", "constituency_id", "actor_id", "reason",
-                    "event_at", "entered_at", "member_count", "scope_ids",
+                    "id",
+                    "request_id",
+                    "constituency_id",
+                    "actor_id",
+                    "reason",
+                    "event_at",
+                    "entered_at",
+                    "member_count",
+                    "scope_ids",
                 )
             )
     return rows

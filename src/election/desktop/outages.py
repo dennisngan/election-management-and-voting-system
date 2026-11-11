@@ -323,7 +323,7 @@ class OutagesController(QObject):
         receipt = self._state["existing_receipt"]
         try:
             original_request_id = str(UUID(receipt["request_id"].strip()))
-        except (ValueError, TypeError, AttributeError):
+        except ValueError, TypeError, AttributeError:
             return None
         selected = self._state["selected"]
         paper = self._selected_existing_paper()
@@ -1126,10 +1126,7 @@ class OutagesController(QObject):
             "expected_receipt_digest": checked["receipt_digest"],
             "reason": reason,
         }
-        path = (
-            f"{self._path()}/{basis['outage_id']}/paper-records/{basis['paper_id']}"
-            "/link-receipt"
-        )
+        path = f"{self._path()}/{basis['outage_id']}/paper-records/{basis['paper_id']}/link-receipt"
         pending = self._pending_command("existing_receipt_link", "POST", path, payload)
         if pending is None:
             return False

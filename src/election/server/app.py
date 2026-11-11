@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -52,7 +52,12 @@ from election.server.queue import queue_router
 from election.server.queue_reports import queue_reports_router
 from election.server.readiness import require_schema
 from election.server.request_outcomes import request_outcomes_router
-from election.server.security import hash_password, token_digest, verify_password
+from election.server.security import (
+    hash_password,
+    normalize_username,
+    token_digest,
+    verify_password,
+)
 from election.server.special_paper_reports import special_paper_reports_router
 from election.server.special_papers import special_paper_router
 from election.server.staff import staff_router, station_access_router
@@ -83,6 +88,11 @@ def account_view(account: Account) -> dict[str, Any]:
 class LoginInput(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128, repr=False)
+
+    @field_validator("username")
+    @classmethod
+    def normalized_username(cls, value: str) -> str:
+        return normalize_username(value)
 
 
 class PasswordInput(BaseModel):

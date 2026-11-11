@@ -26,15 +26,11 @@ from election.server.invalid_ballot_reasons import seed_invalid_ballot_reasons
 from election.server.models import Account, AuditEvent
 
 
-class ElectionInput(NamedInput):
-    pass
-
-
-class ElectionCreate(ElectionInput):
+class ElectionCreate(NamedInput):
     request_id: UUID
 
 
-class ElectionEdit(ElectionInput):
+class ElectionEdit(NamedInput):
     revision: int = Field(strict=True, ge=1)
 
 

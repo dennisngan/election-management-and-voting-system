@@ -13,7 +13,6 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from election.server.boxes import utc_time
 from election.server.configuration_models import Candidate
 from election.server.counting_round_models import (
     CountRound,
@@ -27,8 +26,8 @@ from election.server.invalid_ballot_reasons import invalid_reason_rows
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
 from election.server.physical_decisions import physical_review
-from election.server.polling import as_utc
 from election.server.recount_state import scope_recount_state
+from election.server.timestamps import as_utc, utc_time
 from election.server.turnout_basis import turnout_scope
 
 Quantity = Annotated[int, Field(strict=True, ge=0)]
@@ -211,7 +210,8 @@ def _round_view_core(
         **review,
         "approved_physical_decisions": (
             row.data.get("approved_physical_decisions", row.data.get("physical_decisions", []))
-            if row.status == "approved" else []
+            if row.status == "approved"
+            else []
         ),
         "reviewed_physical_comparisons": (
             row.data.get("physical_comparisons", []) if row.status == "approved" else []
@@ -613,7 +613,9 @@ def counting_rounds_router(
                             "reason": data.amendment_reason,
                             "previous_revision": data.expected_revision,
                             "refresh_basis": data.refresh_basis,
-                        } if correction else {}
+                        }
+                        if correction
+                        else {}
                     ),
                 },
             )

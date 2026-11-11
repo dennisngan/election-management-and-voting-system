@@ -15,10 +15,11 @@ from sqlalchemy.orm import Session
 from election.server.lifecycle_models import ElectionSchedule
 from election.server.models import Account, AuditEvent
 from election.server.paper_reentry import finish_paper_entry, guard_paper_entry
-from election.server.polling import as_utc, station_scope
 from election.server.reporting_periods import period_bounds as configured_period_bounds
 from election.server.reporting_periods import period_count as period_count
 from election.server.security import verify_password
+from election.server.station_access import station_scope
+from election.server.timestamps import as_utc
 from election.server.turnout_basis import (
     FallbackSelection,
     fallback_period_basis,
@@ -61,12 +62,17 @@ class TurnoutDraft(TurnoutCommand):
 
     @model_validator(mode="after")
     def consistent_source_selection(self) -> TurnoutDraft:
-        sources = (self.fallback_activation_id, self.fallback_activation_revision,
-                   self.stock_snapshot_id, self.stock_snapshot_revision)
+        sources = (
+            self.fallback_activation_id,
+            self.fallback_activation_revision,
+            self.stock_snapshot_id,
+            self.stock_snapshot_revision,
+        )
         recovery = (self.fallback_recovery_id, self.fallback_recovery_revision)
         if self.mode == "recovery":
-            if (any(value is None for value in recovery)
-                    or any(value is not None for value in sources)):
+            if any(value is None for value in recovery) or any(
+                value is not None for value in sources
+            ):
                 raise ValueError("Select the confirmed recovery revision")
         elif any(value is not None for value in recovery):
             raise ValueError("Recovery identifiers require recovery mode")
@@ -262,8 +268,11 @@ def validate_content(row: TurnoutRecord, now: datetime, *, complete: bool) -> No
     if row.event_at is not None and row.event_at > now:
         invalid()
     if complete and (
-        (row.source_basis is None and row.supplied_hourly is None
-         and row.supplied_cumulative is None)
+        (
+            row.source_basis is None
+            and row.supplied_hourly is None
+            and row.supplied_cumulative is None
+        )
         or not row.source_context.strip()
         or row.event_at is None
         or row.event_at < row.end_at
@@ -346,9 +355,15 @@ def turnout_router(
         )
         if isinstance(data, TurnoutDraft) and data.mode == "normal":
             # Preserve identities issued by the normal-only version across this migration.
-            for key in ("mode", "fallback_activation_id", "fallback_activation_revision",
-                        "stock_snapshot_id", "stock_snapshot_revision",
-                        "fallback_recovery_id", "fallback_recovery_revision"):
+            for key in (
+                "mode",
+                "fallback_activation_id",
+                "fallback_activation_revision",
+                "stock_snapshot_id",
+                "stock_snapshot_revision",
+                "fallback_recovery_id",
+                "fallback_recovery_revision",
+            ):
                 command_data.pop(key, None)
         if isinstance(data, TurnoutDraft) and data.mode == "fallback":
             for key in ("fallback_recovery_id", "fallback_recovery_revision"):
@@ -411,9 +426,7 @@ def turnout_router(
             {"period_index": index},
             data.request_id,
             event_at=(
-                data.event_at
-                if action == "save" and isinstance(data, TurnoutDraft)
-                else None
+                data.event_at if action == "save" and isinstance(data, TurnoutDraft) else None
             ),
         )
         schedule = locked_schedule(db, election.id)
@@ -445,9 +458,15 @@ def turnout_router(
                     assert data.fallback_recovery_id is not None
                     assert data.fallback_recovery_revision is not None
                     provenance, source_basis = recovery_period_basis(
-                        db, station_id, schedule, index, data.fallback_recovery_id,
-                        data.fallback_recovery_revision, predecessor,
-                        data.supplied_hourly, data.supplied_cumulative,
+                        db,
+                        station_id,
+                        schedule,
+                        index,
+                        data.fallback_recovery_id,
+                        data.fallback_recovery_revision,
+                        predecessor,
+                        data.supplied_hourly,
+                        data.supplied_cumulative,
                     )
                 else:
                     assert data.fallback_activation_id is not None
@@ -455,10 +474,15 @@ def turnout_router(
                     assert data.stock_snapshot_id is not None
                     assert data.stock_snapshot_revision is not None
                     provenance, source_basis = fallback_period_basis(
-                        db, station_id, schedule, index,
+                        db,
+                        station_id,
+                        schedule,
+                        index,
                         FallbackSelection(
-                            data.fallback_activation_id, data.fallback_activation_revision,
-                            data.stock_snapshot_id, data.stock_snapshot_revision,
+                            data.fallback_activation_id,
+                            data.fallback_activation_revision,
+                            data.stock_snapshot_id,
+                            data.stock_snapshot_revision,
                         ),
                         predecessor,
                     )
@@ -471,7 +495,8 @@ def turnout_router(
                 schedule_revision=schedule.revision,
                 start_at=start,
                 end_at=end,
-                provenance=provenance, source_basis=source_basis,
+                provenance=provenance,
+                source_basis=source_basis,
                 supplied_hourly=data.supplied_hourly,
                 supplied_cumulative=data.supplied_cumulative,
                 source_context=data.source_context,
@@ -533,8 +558,10 @@ def turnout_router(
                     row.source_basis.get(
                         "selected_cumulative_quantity",
                         row.source_basis["stock_derived_cumulative_quantity"],
-                    ) - baseline
-                    if row.source_basis is not None else row.supplied_hourly
+                    )
+                    - baseline
+                    if row.source_basis is not None
+                    else row.supplied_hourly
                 )
                 if hourly is None:
                     assert row.supplied_cumulative is not None
@@ -576,10 +603,14 @@ def turnout_router(
                     "election_id": election.id,
                     "constituency_id": constituency.id,
                     "station_id": station_id,
-                    "record": {key: value for key, value in result.items()
-                               if key != "source_basis"},
-                    **({"source_basis_record_id": row.id, "source_basis_revision": row.revision}
-                       if row.source_basis is not None else {}),
+                    "record": {
+                        key: value for key, value in result.items() if key != "source_basis"
+                    },
+                    **(
+                        {"source_basis_record_id": row.id, "source_basis_revision": row.revision}
+                        if row.source_basis is not None
+                        else {}
+                    ),
                 },
             )
         )

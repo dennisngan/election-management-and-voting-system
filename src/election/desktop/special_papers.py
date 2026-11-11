@@ -344,7 +344,7 @@ class SpecialPapersController(QObject):
         )
         previous = {row["series"]: row for row in self._state["series_reports"]}
         self._state["series_reports"] = [
-            previous.get(name, {"series": name, **{key: "" for key in INPUTS}}) for name in names
+            previous.get(name, {"series": name, **dict.fromkeys(INPUTS, "")}) for name in names
         ]
 
     @Slot()
@@ -571,7 +571,7 @@ class SpecialPapersController(QObject):
     def zeroAll(self) -> None:
         if self._editable():
             for row in self._state["series_reports"]:
-                row.update({key: "0" for key in INPUTS})
+                row.update(dict.fromkeys(INPUTS, "0"))
             self._changed()
 
     def _payload(self) -> dict[str, Any] | None:

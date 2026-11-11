@@ -15,13 +15,17 @@ def lock_recount_supervisor(db: Session, actor: Account) -> Account:
     authenticated_revision = actor.revision
     db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
     current = db.scalar(
-        select(Account).where(Account.id == actor.id).with_for_update()
+        select(Account)
+        .where(Account.id == actor.id)
+        .with_for_update()
         .execution_options(populate_existing=True)
     )
     # Staff edits/reset revoke every session and increment this revision while
     # holding the same Account row. Keep that lock through the authorized read/write.
     if (
-        current is None or not current.enabled or current.must_change_password
+        current is None
+        or not current.enabled
+        or current.must_change_password
         or current.revision != authenticated_revision
     ):
         raise HTTPException(401, detail={"code": "session_expired"})

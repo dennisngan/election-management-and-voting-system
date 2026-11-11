@@ -22,9 +22,10 @@ from election.server.complaint_period_models import ComplaintPeriodCase, Complai
 from election.server.complaints import complaint_read_scope, complaint_schedule
 from election.server.lifecycle_models import ElectionSchedule
 from election.server.models import Account
-from election.server.polling import as_utc, station_scope
 from election.server.reporting_periods import period_bounds, period_count
 from election.server.security import verify_password
+from election.server.station_access import station_scope
+from election.server.timestamps import as_utc
 
 
 class ComplaintPeriodCommand(ComplaintCommand):

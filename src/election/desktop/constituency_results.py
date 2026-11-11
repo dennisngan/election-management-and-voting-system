@@ -36,7 +36,9 @@ class ConstituencyResultsController(QObject):
         self._state: dict[str, Any] = {}
         recovery = parent.property("recovery") if parent is not None else None
         self._recounts = ConstituencyRecountsController(
-            request, self, recovery if isinstance(recovery, RecoveryController) else None,
+            request,
+            self,
+            recovery if isinstance(recovery, RecoveryController) else None,
         )
         self.reset()
         self._recounts.stateChanged.connect(self.stateChanged.emit)
@@ -199,8 +201,7 @@ class ConstituencyResultsController(QObject):
                 self.stateChanged.emit()
                 return
             old = self._state["result"]
-            if (self._state["dirty"] or self._state["uncertain_save"]
-                    or self._state["newer_basis"]):
+            if self._state["dirty"] or self._state["uncertain_save"] or self._state["newer_basis"]:
                 changed = bool(
                     old
                     and (
@@ -505,7 +506,9 @@ class ConstituencyResultsController(QObject):
                 return
             if report_result != self._state["result"]:
                 self._state.update(
-                    busy=False, newer_basis=True, error="",
+                    busy=False,
+                    newer_basis=True,
+                    error="",
                     notice="constituency_result_newer_basis",
                 )
                 self.stateChanged.emit()

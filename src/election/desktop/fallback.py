@@ -18,9 +18,15 @@ MAX_QUANTITY = 9223372036854775807
 
 def empty_forms() -> dict[str, str]:
     return {
-        "kind": "activation", "event_time": "", "cumulative_quantity": "",
-        "stock_snapshot_id": "", "stock_snapshot_revision": "", "source_context": "",
-        "activation_id": "", "activation_revision": "", "reason": "",
+        "kind": "activation",
+        "event_time": "",
+        "cumulative_quantity": "",
+        "stock_snapshot_id": "",
+        "stock_snapshot_revision": "",
+        "source_context": "",
+        "activation_id": "",
+        "activation_revision": "",
+        "reason": "",
     }
 
 
@@ -74,12 +80,25 @@ class FallbackController(QObject):
         self._reviewed_schedule_revision = 0
         self._pending = None
         self._state = {
-            "context": {}, "role": "", "station_id": 0, "schedule_revision": 0,
-            "items": [], "current": {}, "selected": {}, "history": [],
-            "forms": empty_forms(), "dirty": False, "busy": False, "refreshing": False,
-            "newer_revision": False, "historical": False, "editing": False,
-            "error": "", "notice": "",
-            "mode": "normal", "active_activation_id": None,
+            "context": {},
+            "role": "",
+            "station_id": 0,
+            "schedule_revision": 0,
+            "items": [],
+            "current": {},
+            "selected": {},
+            "history": [],
+            "forms": empty_forms(),
+            "dirty": False,
+            "busy": False,
+            "refreshing": False,
+            "newer_revision": False,
+            "historical": False,
+            "editing": False,
+            "error": "",
+            "notice": "",
+            "mode": "normal",
+            "active_activation_id": None,
         }
         self.erasePassword.emit()
         self.stateChanged.emit()
@@ -92,7 +111,8 @@ class FallbackController(QObject):
             self.reset()
             self._opened = opened
         self._state.update(
-            context=deepcopy(context), station_id=station_id,
+            context=deepcopy(context),
+            station_id=station_id,
             role=context.get("account", {}).get("role", ""),
         )
         self.stateChanged.emit()
@@ -104,13 +124,20 @@ class FallbackController(QObject):
 
     def _error(self, code: str) -> None:
         self._state.update(
-            error="fallback_validation" if code == "validation_error" else code, notice="",
+            error="fallback_validation" if code == "validation_error" else code,
+            notice="",
         )
         self.stateChanged.emit()
 
     def _send(
-        self, path: str, method: str, payload: dict[str, Any] | None, success: ResultHandler,
-        *, background: bool = False, erase_password: bool = False,
+        self,
+        path: str,
+        method: str,
+        payload: dict[str, Any] | None,
+        success: ResultHandler,
+        *,
+        background: bool = False,
+        erase_password: bool = False,
     ) -> None:
         generation = self._generation
         activity = "refreshing" if background else "busy"
@@ -140,8 +167,10 @@ class FallbackController(QObject):
         return bool(
             isinstance(row, dict)
             and row.get("station_id") == self._state["station_id"]
-            and type(row.get("id")) is int and row["id"] > 0
-            and type(row.get("revision")) is int and row["revision"] > 0
+            and type(row.get("id")) is int
+            and row["id"] > 0
+            and type(row.get("revision")) is int
+            and row["revision"] > 0
             and row.get("kind") in ("activation", "recovery")
             and row.get("status") in ("draft", "submitted", "approved")
             and type(row.get("cumulative_quantity")) is int
@@ -157,11 +186,13 @@ class FallbackController(QObject):
         forms = empty_forms()
         if row:
             forms.update(
-                kind=row["kind"], event_time=event_text(row["event_at"]),
+                kind=row["kind"],
+                event_time=event_text(row["event_at"]),
                 cumulative_quantity=str(row["cumulative_quantity"]),
                 stock_snapshot_id=str(row["stock_snapshot_id"]),
                 stock_snapshot_revision=str(row["stock_snapshot_revision"]),
-                source_context=row["source_context"], reason=row.get("reason", ""),
+                source_context=row["source_context"],
+                reason=row.get("reason", ""),
                 activation_id=str(row["activation_id"]) if row.get("activation_id") else "",
                 activation_revision=(
                     str(row["activation_revision"]) if row.get("activation_revision") else ""
@@ -171,8 +202,12 @@ class FallbackController(QObject):
         self._reviewed_current = deepcopy(self._current_raw)
         self._reviewed_schedule_revision = self._state["schedule_revision"]
         self._state.update(
-            selected=record_display(row) if row else {}, forms=forms,
-            dirty=False, newer_revision=False, historical=historical, editing=False,
+            selected=record_display(row) if row else {},
+            forms=forms,
+            dirty=False,
+            newer_revision=False,
+            historical=historical,
+            editing=False,
         )
         self.erasePassword.emit()
 
@@ -181,10 +216,13 @@ class FallbackController(QObject):
         if not (
             isinstance(scope, dict)
             and scope.get("station", {}).get("id") == self._state["station_id"]
-            and isinstance(items, list) and all(self._record(row) for row in items)
+            and isinstance(items, list)
+            and all(self._record(row) for row in items)
             and data.get("mode") in ("normal", "fallback")
-            and (data.get("active_activation_id") is None
-                 or type(data.get("active_activation_id")) is int)
+            and (
+                data.get("active_activation_id") is None
+                or type(data.get("active_activation_id")) is int
+            )
         ):
             self._error("request_failed")
             return False
@@ -194,7 +232,8 @@ class FallbackController(QObject):
         self._state.update(
             items=[record_display(row) for row in items],
             current=record_display(self._current_raw) if self._current_raw else {},
-            mode=data["mode"], active_activation_id=data["active_activation_id"],
+            mode=data["mode"],
+            active_activation_id=data["active_activation_id"],
         )
         if accept:
             self._accept(self._current_raw)
@@ -236,7 +275,8 @@ class FallbackController(QObject):
             configured = data.get("schedule")
             context = data.get("context")
             if not (
-                isinstance(configured, dict) and type(configured.get("revision")) is int
+                isinstance(configured, dict)
+                and type(configured.get("revision")) is int
                 and isinstance(context, dict)
                 and context.get("station", {}).get("id") == self._state["station_id"]
             ):
@@ -247,8 +287,11 @@ class FallbackController(QObject):
             self._send(self._path(), "GET", None, collection, background=background)
 
         self._send(
-            f"/api/workspace/stations/{self._state['station_id']}/turnout", "GET", None,
-            schedule, background=background,
+            f"/api/workspace/stations/{self._state['station_id']}/turnout",
+            "GET",
+            None,
+            schedule,
+            background=background,
         )
 
     def _can_load(self, discard: bool) -> bool:
@@ -282,8 +325,12 @@ class FallbackController(QObject):
 
     @Slot()
     def refresh(self) -> None:
-        if (not self._opened or not self._state["station_id"]
-                or self._state["busy"] or self._state["refreshing"]):
+        if (
+            not self._opened
+            or not self._state["station_id"]
+            or self._state["busy"]
+            or self._state["refreshing"]
+        ):
             return
         self._load(accept=False, background=True)
 
@@ -303,11 +350,16 @@ class FallbackController(QObject):
         if not self._reviewed:
             self._error("request_failed")
             return False
-        activation = next((
-            row for row in self._state["items"]
-            if row["id"] == self._state["active_activation_id"]
-            and row["kind"] == "activation" and row["status"] == "approved"
-        ), None)
+        activation = next(
+            (
+                row
+                for row in self._state["items"]
+                if row["id"] == self._state["active_activation_id"]
+                and row["kind"] == "activation"
+                and row["status"] == "approved"
+            ),
+            None,
+        )
         if kind == "recovery" and activation is None:
             self._error("fallback_source_conflict")
             return False
@@ -324,8 +376,14 @@ class FallbackController(QObject):
         self._reviewed_current = {}
         self._reviewed_schedule_revision = self._state["schedule_revision"]
         self._state.update(
-            current={}, selected={}, history=[], forms=forms,
-            dirty=False, historical=False, newer_revision=False, editing=False,
+            current={},
+            selected={},
+            history=[],
+            forms=forms,
+            dirty=False,
+            historical=False,
+            newer_revision=False,
+            editing=False,
         )
         self.erasePassword.emit()
         self.stateChanged.emit()
@@ -372,8 +430,10 @@ class FallbackController(QObject):
         if self._state["role"] != "polling_officer":
             self._error("polling_officer_required")
             return False
-        if (self._state["historical"]
-                or self._state["context"].get("election", {}).get("status") != "active"):
+        if (
+            self._state["historical"]
+            or self._state["context"].get("election", {}).get("status") != "active"
+        ):
             self._error("election_read_only")
             return False
         if not self._reviewed:
@@ -383,9 +443,11 @@ class FallbackController(QObject):
             self._error("fallback_review_required")
             return False
         selected = self._state["selected"]
-        if (selected.get("status") not in ("submitted", "approved")
-                or selected.get("id") != self._current_raw.get("id")
-                or selected.get("revision") != self._current_raw.get("revision")):
+        if (
+            selected.get("status") not in ("submitted", "approved")
+            or selected.get("id") != self._current_raw.get("id")
+            or selected.get("revision") != self._current_raw.get("revision")
+        ):
             self._error("fallback_state_conflict")
             return False
         if not self._state["editing"]:
@@ -397,11 +459,16 @@ class FallbackController(QObject):
 
     @Slot(str, str)
     def setField(self, name: str, text: str) -> None:
-        if (name not in self._state["forms"] or name == "kind"
-                or self._state["role"] != "polling_officer"
-                or self._state["busy"] or self._state["historical"] or not self._reviewed
-                or (self._state["selected"] and not self._state["editing"])
-                or self._state["context"].get("election", {}).get("status") != "active"):
+        if (
+            name not in self._state["forms"]
+            or name == "kind"
+            or self._state["role"] != "polling_officer"
+            or self._state["busy"]
+            or self._state["historical"]
+            or not self._reviewed
+            or (self._state["selected"] and not self._state["editing"])
+            or self._state["context"].get("election", {}).get("status") != "active"
+        ):
             return
         self._state["forms"][name] = text
         self._state.update(dirty=True, notice="", error="")
@@ -415,7 +482,9 @@ class FallbackController(QObject):
                 raise ValueError("Select an activation or recovery")
             values: dict[str, Any] = {"kind": kind}
             quantities: tuple[str, ...] = (
-                "cumulative_quantity", "stock_snapshot_id", "stock_snapshot_revision",
+                "cumulative_quantity",
+                "stock_snapshot_id",
+                "stock_snapshot_revision",
             )
             if kind == "recovery":
                 quantities += ("activation_id", "activation_revision")
@@ -439,7 +508,7 @@ class FallbackController(QObject):
                     raise ValueError("Explain the recovery or reasoned correction")
                 values["reason"] = form["reason"]
             return values
-        except (ValueError, OverflowError):
+        except ValueError, OverflowError:
             self._error("fallback_validation")
             return None
 
@@ -453,8 +522,10 @@ class FallbackController(QObject):
         if self._state["role"] != role:
             self._error(role + "_required")
             return
-        if (self._state["historical"]
-                or self._state["context"].get("election", {}).get("status") != "active"):
+        if (
+            self._state["historical"]
+            or self._state["context"].get("election", {}).get("status") != "active"
+        ):
             self._error("election_read_only")
             return
         if not self._reviewed:
@@ -469,7 +540,9 @@ class FallbackController(QObject):
         selected = self._state["selected"]
         status = selected.get("status", "missing")
         expected = {
-            "save": ("missing",), "submit": ("draft",), "approve": ("submitted",),
+            "save": ("missing",),
+            "submit": ("draft",),
+            "approve": ("submitted",),
             "amend": ("submitted", "approved"),
         }
         if status not in expected[action] or (action == "amend" and not self._state["editing"]):
@@ -481,10 +554,15 @@ class FallbackController(QObject):
         payload = {"expected_schedule_revision": self._state["schedule_revision"], **values}
         if action != "save":
             payload["expected_revision"] = selected["revision"]
-        signature = json.dumps({
-            "station_id": self._state["station_id"], "record_id": selected.get("id"),
-            "action": action, "data": payload,
-        }, sort_keys=True)
+        signature = json.dumps(
+            {
+                "station_id": self._state["station_id"],
+                "record_id": selected.get("id"),
+                "action": action,
+                "data": payload,
+            },
+            sort_keys=True,
+        )
         if self._pending is None or self._pending[0] != signature:
             self._pending = signature, str(uuid4())
         payload["request_id"] = self._pending[1]
@@ -498,10 +576,15 @@ class FallbackController(QObject):
                 self._error("request_failed")
                 return
             self._selection_id = data["id"]
-            self._load(accept=True, notice={
-                "save": "fallback_saved", "submit": "fallback_submitted",
-                "approve": "fallback_approved", "amend": "fallback_amended",
-            }[action])
+            self._load(
+                accept=True,
+                notice={
+                    "save": "fallback_saved",
+                    "submit": "fallback_submitted",
+                    "approve": "fallback_approved",
+                    "amend": "fallback_amended",
+                }[action],
+            )
 
         path = self._path() + (f"/{selected['id']}/{action}" if action != "save" else "")
         self._send(path, "POST", payload, saved, erase_password=approval)

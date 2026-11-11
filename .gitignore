@@ -1,6 +1,8 @@
 # Local environments and private runtime state, including symlinks.
 /.venv
 /.venv-*
+/venv
+/.vscode
 /.idea
 /.runtime
 .env
@@ -8,6 +10,29 @@
 !.env.example
 /config.yml
 /data/
+/backups/
+/exports/
+/logs/
+
+# Generated certificates, private keys and local database backups.
+*.pem
+*.key
+*.crt
+*.cer
+*.csr
+*.p12
+*.pfx
+*.sql
+*.sql.gz
+*.sql.xz
+*.dump
+*.log
+ACCOUNTS.md
+demo-results.csv
+demo-results.pdf
+
+# Keep demo/scenario.json, example configuration, source and project documents in Git.
+# Do not ignore all JSON, CSV or PDF files, or the .scratch specifications.
 
 # Python, test and analysis caches.
 __pycache__/

@@ -19,11 +19,11 @@ from election.server.counting_round_models import CountRoundRevision
 from election.server.counting_rounds import round_at, round_context, round_view
 from election.server.counting_scopes import scope_options
 from election.server.models import Account
-from election.server.polling import as_utc
 from election.server.recount_authority import lock_recount_supervisor
 from election.server.recount_state import scope_recount_state
 from election.server.station_models import PollingStation
 from election.server.stock import stock_scope
+from election.server.timestamps import as_utc
 
 
 def _digest(inputs: dict[str, Any]) -> str:
@@ -212,8 +212,11 @@ def constituency_result(db: Session, actor: Account, constituency_id: int) -> di
                 instruction = recount["latest_instruction"]
                 pending.append(
                     _pending(
-                        "recount_pending", station_id=station.id, scope_id=scope_id,
-                        box_ids=box_ids, instruction_id=instruction["id"],
+                        "recount_pending",
+                        station_id=station.id,
+                        scope_id=scope_id,
+                        box_ids=box_ids,
+                        instruction_id=instruction["id"],
                         new_round_id=instruction["new_round_id"],
                         source_round_id=instruction["source_round_id"],
                     )
@@ -443,7 +446,8 @@ def constituency_result(db: Session, actor: Account, constituency_id: int) -> di
     current_resolution = resolution_history[0] if resolution_history else None
     resolved = (
         current_resolution["candidate_id"]
-        if current_resolution and current_resolution["valid"] else None
+        if current_resolution and current_resolution["valid"]
+        else None
     )
     provisional = bool(
         election.status != "finalized" or not complete or (ties and resolved is None)

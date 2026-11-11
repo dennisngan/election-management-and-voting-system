@@ -106,8 +106,7 @@ LOCAL_RECOUNT_TRANSLATIONS: dict[str, dict[str, str]] = {
             "This displayed revision currently makes no contribution to totals."
         ),
         "local_recount_changes_pending": (
-            "Finish or discard the recount instruction draft before changing the counting "
-            "view."
+            "Finish or discard the recount instruction draft before changing the counting view."
         ),
         "local_recount_required_round": (
             "Select the new round required by the current recount instruction."

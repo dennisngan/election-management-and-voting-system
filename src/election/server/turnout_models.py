@@ -50,7 +50,9 @@ class TurnoutRecord(Base):
     supplied_hourly: Mapped[int | None] = mapped_column(BigInteger)
     supplied_cumulative: Mapped[int | None] = mapped_column(BigInteger)
     provenance: Mapped[str] = mapped_column(
-        String(32), default="external_manual", server_default="external_manual",
+        String(32),
+        default="external_manual",
+        server_default="external_manual",
     )
     source_basis: Mapped[dict[str, Any] | None] = mapped_column(SnapshotQuantityJSON)
     source_context: Mapped[str] = mapped_column(String(2000))

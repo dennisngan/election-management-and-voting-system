@@ -4,10 +4,15 @@ from copy import deepcopy
 from typing import Any
 
 # These canonical turnout quantities have no _quantity suffix.
-TURNOUT_QUANTITIES = frozenset({
-    "supplied_hourly", "supplied_cumulative", "derived_hourly",
-    "derived_cumulative_start", "derived_cumulative_end",
-})
+TURNOUT_QUANTITIES = frozenset(
+    {
+        "supplied_hourly",
+        "supplied_cumulative",
+        "derived_hourly",
+        "derived_cumulative_start",
+        "derived_cumulative_end",
+    }
+)
 
 
 def quantity_display(value: Any) -> Any:
@@ -16,7 +21,8 @@ def quantity_display(value: Any) -> Any:
         result = {key: quantity_display(item) for key, item in value.items()}
         for key, item in value.items():
             if type(item) is int and (
-                key == "quantity" or key.endswith("_quantity")
+                key == "quantity"
+                or key.endswith("_quantity")
                 or key in ("difference", "reconciliation_difference")
                 or key in TURNOUT_QUANTITIES
             ):
@@ -29,6 +35,7 @@ def quantity_display(value: Any) -> Any:
 
 def qt_state(state: dict[str, Any]) -> dict[str, Any]:
     """Copy a Qt view without overflowing QVariant's signed 64-bit integers."""
+
     def copied(value: Any) -> Any:
         if type(value) is int and not -(2**63) <= value < 2**63:
             return str(value)

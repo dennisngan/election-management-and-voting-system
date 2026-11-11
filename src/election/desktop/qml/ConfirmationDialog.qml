@@ -11,6 +11,13 @@ Dialog {
     modal: true
     anchors.centerIn: Overlay.overlay
     width: Math.min(460, Overlay.overlay.width - 40)
+    // Closed dialogs in inactive pages loop through Material sizing and wrapped text height.
+    implicitHeight: visible ? Math.max(
+        implicitBackgroundHeight + topInset + bottomInset,
+        contentItem.implicitHeight + topPadding + bottomPadding
+        + (implicitHeaderHeight > 0 ? implicitHeaderHeight + spacing : 0)
+        + (implicitFooterHeight > 0 ? implicitFooterHeight + spacing : 0)
+    ) : 0
     onAccepted: confirmationPending = true
     onRejected: confirmationPending = false
     onClosed: {

@@ -20,7 +20,8 @@ from election.server.complaint_models import (
 from election.server.configuration_models import Election
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
-from election.server.polling import as_utc, station_scope
+from election.server.station_access import station_scope
+from election.server.timestamps import as_utc
 
 DEFAULT_CATEGORIES = (
     ("9", "Polling arrangements", "投票安排", "投票安排", 61, False),
@@ -105,7 +106,7 @@ def complaint_digest(
                 "election_id": election_id,
                 "station_id": station_id,
                 "target_id": target_id,
-            "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
+                "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
             },
             ensure_ascii=False,
             sort_keys=True,

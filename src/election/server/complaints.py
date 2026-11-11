@@ -27,8 +27,9 @@ from election.server.complaint_period_models import ComplaintPeriodRecord
 from election.server.configuration_models import Constituency, Election
 from election.server.lifecycle_models import ElectionSchedule
 from election.server.models import Account
-from election.server.polling import as_utc, station_scope
+from election.server.station_access import station_scope
 from election.server.station_models import PollingStation
+from election.server.timestamps import as_utc
 
 
 class ComplaintInput(ComplaintCommand):

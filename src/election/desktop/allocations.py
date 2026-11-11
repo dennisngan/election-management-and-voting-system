@@ -104,9 +104,7 @@ class AllocationController(QObject):
     def set_context(self, context: dict[str, Any]) -> None:
         station_id = context.get("station", {}).get("id", 0)
         account_id = context.get("account", {}).get("id", 0)
-        changed = (
-            station_id != self._state["station_id"] or account_id != self._account_id
-        )
+        changed = station_id != self._state["station_id"] or account_id != self._account_id
         if changed:
             opened = self._opened
             self.reset()
@@ -177,8 +175,10 @@ class AllocationController(QObject):
 
         def loaded(snapshot: dict[str, Any]) -> None:
             if generation != self._paper_generation:
-                if self._opened and self._state["station_id"] and not (
-                    self._state["busy"] or self._state["refreshing"]
+                if (
+                    self._opened
+                    and self._state["station_id"]
+                    and not (self._state["busy"] or self._state["refreshing"])
                 ):
                     self.refreshPaperRecords()
                 return
@@ -199,7 +199,7 @@ class AllocationController(QObject):
                     target=target,
                     actions=(action,),
                 )
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 self._error("paper_reentry_load_failed")
                 return
             selected_id = self._state["paper_record"].get("id")
@@ -324,9 +324,7 @@ class AllocationController(QObject):
         state = self._recovery.property("state")
         commands = state.get("commands", []) if isinstance(state, dict) else []
         request_id = self._pending[1]
-        command = next(
-            (row for row in commands if row.get("request_id") == request_id), None
-        )
+        command = next((row for row in commands if row.get("request_id") == request_id), None)
         if (
             not isinstance(command, dict)
             or command.get("workflow") != "allocation"
@@ -342,9 +340,8 @@ class AllocationController(QObject):
                 paper_id
                 and isinstance(record, dict)
                 and self._allocation(record)
-                and record["counter"]["id"] == positive_integer(
-                    self._state["forms"].get("counter_id", "")
-                )
+                and record["counter"]["id"]
+                == positive_integer(self._state["forms"].get("counter_id", ""))
             ):
                 self._settle_paper_receipt(record, paper_id)
         elif command.get("status") == "rejected":

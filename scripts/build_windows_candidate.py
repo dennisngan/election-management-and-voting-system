@@ -3,6 +3,7 @@
 import argparse
 import platform
 import re
+import stat
 import struct
 import subprocess
 import sys
@@ -30,10 +31,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-name", required=True)
     parser.add_argument(
-        "--release-version", help="Versioned ZIP label; defaults to project version",
+        "--release-version",
+        help="Versioned ZIP label; defaults to project version",
     )
     parser.add_argument(
-        "--backend-release", help="Intended backend pair label; Windows smoke stays INCOMPLETE",
+        "--backend-release",
+        help="Intended backend pair label; Windows smoke stays INCOMPLETE",
     )
     args = parser.parse_args()
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", args.run_name) is None:
@@ -43,26 +46,10 @@ def main() -> None:
         project = tomllib.load(source)
     with (root / "uv.lock").open("rb") as source:
         locked = tomllib.load(source)
-    try:
-        # packaging is already a locked PyInstaller dependency; do not add/install it here.
-        from packaging.requirements import Requirement
-    except ImportError as error:
-        raise SystemExit(
-            "The reviewed locked Windows build environment is not provisioned"
-        ) from error
-    requirements = [
-        Requirement(value)
-        for value in project["dependency-groups"].get("gui-validation", [])
-        if isinstance(value, str)
-    ]
-    if not any(
-        requirement.name.lower() == "pyinstaller"
-        and (requirement.marker is None or requirement.marker.evaluate())
-        for requirement in requirements
-    ):
-        raise SystemExit("Select Windows PyInstaller dependencies in the reviewed lock first")
     packages = {package["name"]: package for package in locked["package"]}
-    if not any("win_amd64" in wheel["url"] for wheel in packages["pyinstaller"].get("wheels", [])):
+    if not any(
+        "win_amd64" in wheel["url"] for wheel in packages.get("pyinstaller", {}).get("wheels", [])
+    ):
         raise SystemExit("The lock does not yet pin a Windowsx64 PyInstaller wheel")
     tool_versions = {}
     for name in ("pyinstaller", "pyinstaller-hooks-contrib", "pyside6", "shiboken6"):
@@ -83,7 +70,16 @@ def main() -> None:
     source = source_identity(root)
     release_version = args.release_version or project["project"]["version"]
     backend_release = args.backend_release or "source-" + source["inputs_sha256"]
-    build_root = root / ".runtime" / ("windows-package-" + args.run_name)
+    runtime_root = root / ".runtime"
+    runtime_root.mkdir(mode=0o700, exist_ok=True)
+    details = runtime_root.lstat()
+    if (
+        runtime_root.is_symlink()
+        or getattr(details, "st_file_attributes", 0) & 0x400
+        or not stat.S_ISDIR(details.st_mode)
+    ):
+        raise SystemExit("Refuse a redirected or non-directory .runtime build root")
+    build_root = runtime_root / ("windows-package-" + args.run_name)
     build_root.mkdir(parents=True, exist_ok=False)
     entry = build_root / "desktop-entry.py"
     with entry.open("x", encoding="utf-8") as output:
@@ -107,13 +103,9 @@ def main() -> None:
         str(root / "src"),
     ]
     for path in qml_files:
-        # PyInstaller6.22.3 SourceDestAction recognizes the Windows drive separately.
         destination = (Path("election/desktop/qml") / path.relative_to(qml).parent).as_posix()
         command.extend(["--add-data", f"{path}:{destination}"])
     command.append(str(entry))
-    # No project-root data collection, server entry, private TLS, .env or journals.
-    # Installed locked PySide6 hooks collect Qt runtime/QML/network dependencies;
-    # their actual Windows result still requires artifact and native smoke inspection.
     subprocess.run(command, cwd=root, check=True)
     executable = build_root / "dist/Election Desk/Election Desk.exe"
     if not executable.is_file():
@@ -123,10 +115,15 @@ def main() -> None:
     build.update(run_name=args.run_name, windows_build=sys.getwindowsversion().build)
     try:
         archive = package_release(
-            executable.parent, build_root / "release", release_version=release_version,
-            backend_release=backend_release, source_root=root, source=source, build=build,
+            executable.parent,
+            build_root / "release",
+            release_version=release_version,
+            backend_release=backend_release,
+            source_root=root,
+            source=source,
+            build=build,
         )
-    except (OSError, ReleaseError):
+    except OSError, ReleaseError:
         raise SystemExit(
             "Release packaging failed; retain this build for review and use a fresh run name"
         ) from None

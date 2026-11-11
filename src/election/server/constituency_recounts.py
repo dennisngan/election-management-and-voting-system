@@ -13,7 +13,6 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from election.server.boxes import utc_time
 from election.server.constituency_recount_models import (
     ConstituencyRecountInstruction,
     ConstituencyRecountMember,
@@ -34,6 +33,7 @@ from election.server.local_recounts import (
 from election.server.models import Account, AuditEvent
 from election.server.recount_state import scope_recount_state
 from election.server.security import verify_password
+from election.server.timestamps import utc_time
 
 
 class RecountScopeSource(BaseModel):
@@ -71,20 +71,27 @@ class ConstituencyRecountInput(BaseModel):
 def _scope_sources(result: dict[str, Any]) -> list[dict[str, int]]:
     return [
         {
-            "station_id": row["station_id"], "scope_id": row["scope_id"],
+            "station_id": row["station_id"],
+            "scope_id": row["scope_id"],
             "scope_revision": row["scope_revision"],
             "source_round_id": row["round_id"],
             "source_round_revision": row["round_revision"],
             "expected_selection_revision": row["selection_revision"],
         }
-        for row in sorted(result["contributions"], key=lambda row: (
-            row["station_id"], row["scope_id"],
-        ))
+        for row in sorted(
+            result["contributions"],
+            key=lambda row: (
+                row["station_id"],
+                row["scope_id"],
+            ),
+        )
     ]
 
 
 def _source_contexts(
-    db: Session, actor: Account, sources: list[dict[str, int]],
+    db: Session,
+    actor: Account,
+    sources: list[dict[str, int]],
 ) -> list[tuple[dict[str, Any], CountRoundRevision]]:
     contexts = []
     for row in sources:
@@ -94,11 +101,13 @@ def _source_contexts(
         if not (
             options["scope"]["count_ready"]
             and options["scope"]["revision"] == row["scope_revision"]
-            and selection and selection["valid"]
+            and selection
+            and selection["valid"]
             and selection["revision"] == row["expected_selection_revision"]
             and selection["round_id"] == row["source_round_id"]
             and selection["round_revision"] == row["source_round_revision"]
-            and source is not None and source.id == selection["round_revision_id"]
+            and source is not None
+            and source.id == selection["round_revision_id"]
             and not scope_recount_state(db, row["scope_id"], selection)["pending"]
         ):
             raise HTTPException(409, detail={"code": "constituency_recount_sources_stale"})
@@ -108,7 +117,8 @@ def _source_contexts(
 
 
 def constituency_recounts_router(
-    database: Callable[..., Any], ready_account: Callable[..., Any],
+    database: Callable[..., Any],
+    ready_account: Callable[..., Any],
     timestamp: Callable[[], datetime],
 ) -> APIRouter:
     router = APIRouter(
@@ -120,8 +130,11 @@ def constituency_recounts_router(
 
     @router.get("/request-outcomes/{request_id}")
     def outcome(
-        constituency_id: int, request_id: UUID,
-        workflow: Literal["constituency_recount"], db: Database, actor: Actor,
+        constituency_id: int,
+        request_id: UUID,
+        workflow: Literal["constituency_recount"],
+        db: Database,
+        actor: Actor,
     ) -> dict[str, Any]:
         constituency_result(db, actor, constituency_id)
         cached = db.scalar(
@@ -131,7 +144,8 @@ def constituency_recounts_router(
                 ConstituencyResultRequest.constituency_id == constituency_id,
                 ConstituencyResultRequest.actor_id == actor.id,
             )
-            .with_for_update().execution_options(populate_existing=True)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         receipt = cached.response if cached is not None else None
         # Tie decisions share the request store, but are not recount acknowledgements.
@@ -144,15 +158,18 @@ def constituency_recounts_router(
         ):
             return {"request_id": str(request_id), "workflow": workflow, "status": "not_found"}
         return {
-            "request_id": str(request_id), "workflow": workflow,
-            "status": "committed", "record": receipt,
+            "request_id": str(request_id),
+            "workflow": workflow,
+            "status": "committed",
+            "record": receipt,
         }
 
     @router.get("/recounts")
     def read(constituency_id: int, db: Database, actor: Actor) -> dict[str, Any]:
         result = constituency_result(db, actor, constituency_id)
         return {
-            "context": result["context"], "basis_digest": result["basis_digest"],
+            "context": result["context"],
+            "basis_digest": result["basis_digest"],
             "scope_sources": _scope_sources(result) if result["complete"] else [],
             "can_instruct": result["context"]["election"]["status"] == "active"
             and result["complete"],
@@ -162,15 +179,20 @@ def constituency_recounts_router(
 
     @router.post("/recounts", status_code=201)
     def instruct(
-        constituency_id: int, data: ConstituencyRecountInput,
-        response: Response, db: Database, actor: Actor,
+        constituency_id: int,
+        data: ConstituencyRecountInput,
+        response: Response,
+        db: Database,
+        actor: Actor,
     ) -> dict[str, Any]:
         if actor.role != "supervisor":
             raise HTTPException(403, detail={"code": "supervisor_required"})
         active = db.scalar(select(ActiveElection).where(ActiveElection.id == 1).with_for_update())
         result = constituency_result(db, actor, constituency_id)
         current_actor = db.scalar(
-            select(Account).where(Account.id == actor.id).with_for_update()
+            select(Account)
+            .where(Account.id == actor.id)
+            .with_for_update()
             .execution_options(populate_existing=True)
         )
         if current_actor is None or current_actor.role != "supervisor":
@@ -180,15 +202,23 @@ def constituency_recounts_router(
         election = result["context"]["election"]
         if election["status"] != "active" or active is None or active.election_id != election["id"]:
             raise HTTPException(409, detail={"code": "active_election_required"})
-        digest = hashlib.sha256(json.dumps({
-            "action": "constituency-recount", "constituency_id": constituency_id,
-            "actor_id": actor.id,
-            "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
-        }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        digest = hashlib.sha256(
+            json.dumps(
+                {
+                    "action": "constituency-recount",
+                    "constituency_id": constituency_id,
+                    "actor_id": actor.id,
+                    "data": data.model_dump(mode="json", exclude={"request_id", "password"}),
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
         cached = db.scalar(
             select(ConstituencyResultRequest)
             .where(ConstituencyResultRequest.request_id == str(data.request_id))
-            .with_for_update().execution_options(populate_existing=True)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if cached is not None:
             if cached.digest != digest:
@@ -208,14 +238,21 @@ def constituency_recounts_router(
         if event_at > now:
             raise HTTPException(422, detail={"code": "event_time_in_future"})
         parent = ConstituencyRecountInstruction(
-            request_id=str(data.request_id), constituency_id=constituency_id,
-            actor_id=actor.id, reason=data.reason, basis_digest=data.basis_digest,
-            event_at=event_at, entered_at=now,
+            request_id=str(data.request_id),
+            constituency_id=constituency_id,
+            actor_id=actor.id,
+            reason=data.reason,
+            basis_digest=data.basis_digest,
+            event_at=event_at,
+            entered_at=now,
             data={
-                "context": deepcopy(result["context"]), "scope_sources": deepcopy(sources),
+                "context": deepcopy(result["context"]),
+                "scope_sources": deepcopy(sources),
                 "source_contexts": [
-                    {"context": deepcopy(options["context"]),
-                     "scope_reference": options["scope"]["reference"]}
+                    {
+                        "context": deepcopy(options["context"]),
+                        "scope_reference": options["scope"]["reference"],
+                    }
                     for options, _ in contexts
                 ],
             },
@@ -225,38 +262,60 @@ def constituency_recounts_router(
         created_members = []
         for position, (options, source) in enumerate(contexts):
             local_data = LocalRecountInput(
-                **{key: value for key, value in sources[position].items()
-                   if key not in {"station_id", "scope_id"}},
+                **{
+                    key: value
+                    for key, value in sources[position].items()
+                    if key not in {"station_id", "scope_id"}
+                },
                 request_id=uuid5(data.request_id, f"scope:{options['scope']['id']}"),
-                event_at=data.event_at, reason=data.reason, password=data.password,
+                event_at=data.event_at,
+                reason=data.reason,
+                password=data.password,
             )
             created = create_local_recount_round(db, actor.id, options, source, local_data, now)
-            db.add(ConstituencyRecountMember(
-                instruction_id=parent.id, scope_id=options["scope"]["id"],
-                station_id=sources[position]["station_id"],
-                local_instruction_id=created.instruction.id, position=position,
-            ))
+            db.add(
+                ConstituencyRecountMember(
+                    instruction_id=parent.id,
+                    scope_id=options["scope"]["id"],
+                    station_id=sources[position]["station_id"],
+                    local_instruction_id=created.instruction.id,
+                    position=position,
+                )
+            )
             created_members.append((created, options, local_data))
         db.flush()
-        members = [preserve_local_recount_receipt(db, actor.id, created, options, local_data)
-                   for created, options, local_data in created_members]
+        members = [
+            preserve_local_recount_receipt(db, actor.id, created, options, local_data)
+            for created, options, local_data in created_members
+        ]
         receipt = {
             "instruction": constituency_recount_instruction(db, parent, is_latest=True),
             "members": members,
         }
-        db.add(ConstituencyResultRequest(
-            request_id=str(data.request_id), constituency_id=constituency_id,
-            actor_id=actor.id, digest=digest, response=deepcopy(receipt),
-        ))
-        db.add(AuditEvent(
-            actor_id=actor.id, action="constituency_recount_instructed", occurred_at=now,
-            details={
-                "constituency_id": constituency_id, "instruction_id": parent.id,
-                "request_id": str(data.request_id), "scope_sources": deepcopy(sources),
-                "local_instruction_ids": [row.instruction.id for row, _, _ in created_members],
-                "reason": data.reason,
-            },
-        ))
+        db.add(
+            ConstituencyResultRequest(
+                request_id=str(data.request_id),
+                constituency_id=constituency_id,
+                actor_id=actor.id,
+                digest=digest,
+                response=deepcopy(receipt),
+            )
+        )
+        db.add(
+            AuditEvent(
+                actor_id=actor.id,
+                action="constituency_recount_instructed",
+                occurred_at=now,
+                details={
+                    "constituency_id": constituency_id,
+                    "instruction_id": parent.id,
+                    "request_id": str(data.request_id),
+                    "scope_sources": deepcopy(sources),
+                    "local_instruction_ids": [row.instruction.id for row, _, _ in created_members],
+                    "reason": data.reason,
+                },
+            )
+        )
         db.commit()
         return receipt
 

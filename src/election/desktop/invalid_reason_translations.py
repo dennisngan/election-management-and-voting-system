@@ -18,7 +18,6 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
         "invalid_reason_explanation_rule": "正數選票必須補充說明",
         "invalid_reason_revision": "原因版本",
         "invalid_reason_history": "原因歷史版本",
-        "invalid_reason_current": "目前版本",
         "invalid_reason_historical": "正在查看保留版本，只供閱讀。",
         "invalid_reason_source": "來源資料及翻譯",
         "invalid_reason_source_verified": "已核對英文來源文字",
@@ -34,10 +33,7 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
             "「其他」是項目選項，不代表官方代號。"
         ),
         "invalid_reason_other_note": "「其他」不可停用，並必須要求說明。",
-        "invalid_reason_other_label": "其他（請註明原因）",
         "invalid_reason_disabled": "已停用",
-        "invalid_reason_verified": "來源英文已核對",
-        "invalid_reason_project": "項目設定",
         "invalid_reason_saved": "無效選票原因已儲存。",
         "invalid_reason_validation": "請輸入項目代號及三種語言的顯示文字，且不可只輸入空白。",
         "invalid_reason_code_exists": "此選舉已使用該項目代號。",
@@ -66,7 +62,6 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
         "invalid_reason_explanation_rule": "正数选票必须补充说明",
         "invalid_reason_revision": "原因版本",
         "invalid_reason_history": "原因历史版本",
-        "invalid_reason_current": "当前版本",
         "invalid_reason_historical": "正在查看保留版本，只供阅读。",
         "invalid_reason_source": "来源资料及翻译",
         "invalid_reason_source_verified": "已核对英文来源文字",
@@ -82,10 +77,7 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
             "“其他”是项目选项，不代表官方代号。"
         ),
         "invalid_reason_other_note": "“其他”不可停用，并必须要求说明。",
-        "invalid_reason_other_label": "其他（请注明原因）",
         "invalid_reason_disabled": "已停用",
-        "invalid_reason_verified": "来源英文已核对",
-        "invalid_reason_project": "项目设置",
         "invalid_reason_saved": "无效选票原因已保存。",
         "invalid_reason_validation": "请输入项目代号及三种语言的显示文字，且不可只输入空白。",
         "invalid_reason_code_exists": "此选举已使用该项目代号。",
@@ -117,7 +109,6 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
         "invalid_reason_explanation_rule": "Require an explanation for positive quantities",
         "invalid_reason_revision": "Reason revision",
         "invalid_reason_history": "Reason history",
-        "invalid_reason_current": "Current revision",
         "invalid_reason_historical": "Viewing a retained revision. This view is read-only.",
         "invalid_reason_source": "Source details and translation",
         "invalid_reason_source_verified": "English source wording verified",
@@ -137,10 +128,7 @@ INVALID_REASON_TRANSLATIONS: dict[str, dict[str, str]] = {
             "Other is a project option and does not claim an official code."
         ),
         "invalid_reason_other_note": "Other must remain enabled and require an explanation.",
-        "invalid_reason_other_label": "Other (specify reason)",
         "invalid_reason_disabled": "Disabled",
-        "invalid_reason_verified": "Verified English source",
-        "invalid_reason_project": "Project configured",
         "invalid_reason_saved": "Invalid ballot reason saved.",
         "invalid_reason_validation": (
             "Enter a project code and nonblank display labels in all three languages."

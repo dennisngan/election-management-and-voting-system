@@ -15,10 +15,13 @@ class ElectionCompletionEvent(Base):
     __tablename__ = "election_completion_events"
     __table_args__ = (
         UniqueConstraint(
-            "election_id", "election_revision", name="uq_election_completion_event_revision",
+            "election_id",
+            "election_revision",
+            name="uq_election_completion_event_revision",
         ),
         CheckConstraint(
-            "kind IN ('finalization', 'reopening')", name="ck_election_completion_event_kind",
+            "kind IN ('finalization', 'reopening')",
+            name="ck_election_completion_event_kind",
         ),
         CheckConstraint("election_revision >= 1", name="ck_election_completion_event_revision"),
         CheckConstraint(
@@ -31,7 +34,8 @@ class ElectionCompletionEvent(Base):
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     election_id: Mapped[int] = mapped_column(
-        ForeignKey("elections.id", ondelete="RESTRICT"), index=True,
+        ForeignKey("elections.id", ondelete="RESTRICT"),
+        index=True,
     )
     kind: Mapped[str] = mapped_column(String(16))
     election_revision: Mapped[int] = mapped_column(Integer)
@@ -39,7 +43,8 @@ class ElectionCompletionEvent(Base):
     accepted_at: Mapped[datetime] = mapped_column(DATETIME(fsp=6))
     reason: Mapped[str] = mapped_column(String(2000))
     previous_finalization_id: Mapped[int | None] = mapped_column(
-        ForeignKey("election_completion_events.id", ondelete="RESTRICT"), nullable=True,
+        ForeignKey("election_completion_events.id", ondelete="RESTRICT"),
+        nullable=True,
     )
     basis_digest: Mapped[str] = mapped_column(String(64))
     data: Mapped[dict[str, Any]] = mapped_column(SnapshotQuantityJSON)
@@ -49,13 +54,15 @@ class ElectionCompletionRequest(Base):
     __tablename__ = "election_completion_requests"
     __table_args__ = (
         CheckConstraint(
-            "action IN ('finalization', 'reopening')", name="ck_election_completion_request_action",
+            "action IN ('finalization', 'reopening')",
+            name="ck_election_completion_request_action",
         ),
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )
     request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     election_id: Mapped[int] = mapped_column(
-        ForeignKey("elections.id", ondelete="RESTRICT"), index=True,
+        ForeignKey("elections.id", ondelete="RESTRICT"),
+        index=True,
     )
     actor_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="RESTRICT"))
     event_id: Mapped[int] = mapped_column(

@@ -3,9 +3,7 @@
 COUNT_DISCREPANCY_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
         "count_correction_reason_label": "修訂原因（必填）",
-        "count_cancel_correction_hint": (
-            "捨棄尚未儲存的修訂，並還原已儲存的點票紀錄？"
-        ),
+        "count_cancel_correction_hint": ("捨棄尚未儲存的修訂，並還原已儲存的點票紀錄？"),
         "count_correction_title": "點票紀錄修訂",
         "count_correction_hint": (
             "修訂同一點票輪次的輸入，並保留原有紀錄。儲存後須重新提交、批准及選取結果。"
@@ -44,9 +42,7 @@ COUNT_DISCREPANCY_TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "sc": {
         "count_correction_reason_label": "修订原因（必填）",
-        "count_cancel_correction_hint": (
-            "舍弃尚未保存的修订，并还原已保存的点票记录？"
-        ),
+        "count_cancel_correction_hint": ("舍弃尚未保存的修订，并还原已保存的点票记录？"),
         "count_correction_title": "点票记录修订",
         "count_correction_hint": (
             "修订同一点票轮次的输入，并保留原有记录。储存后须重新提交、批准及选取结果。"

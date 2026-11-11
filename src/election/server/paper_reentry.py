@@ -60,7 +60,7 @@ def guard_paper_entry(
     ):
         raise HTTPException(409, detail={"code": "paper_record_target_conflict"})
     if event_at is not None:
-        from election.server.polling import as_utc
+        from election.server.timestamps import as_utc
 
         normalized = event_at.astimezone(UTC) if event_at.tzinfo else event_at.replace(tzinfo=UTC)
         if revision.data.get("original_event_at") != as_utc(normalized):

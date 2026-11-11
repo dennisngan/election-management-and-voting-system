@@ -27,8 +27,7 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "provenance": "數字來源",
         "stock_derived": "庫存推算",
         "provenance_note": (
-            "普通發票數量按庫存推算，並非已核實選民人數；"
-            "重複選票不計入普通發票合計。"
+            "普通發票數量按庫存推算，並非已核實選民人數；重複選票不計入普通發票合計。"
         ),
         "scope_note": (
             "保留所選已儲存特殊選票觀察版本的原有數字及凍結來源基礎，"
@@ -100,8 +99,7 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "provenance": "数字来源",
         "stock_derived": "库存推算",
         "provenance_note": (
-            "普通发票数量按库存推算，并非已核实选民人数；"
-            "重复选票不计入普通发票合计。"
+            "普通发票数量按库存推算，并非已核实选民人数；重复选票不计入普通发票合计。"
         ),
         "scope_note": (
             "保留所选已保存特殊选票观察版本的原有数字及冻结来源依据，"
@@ -214,8 +212,7 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "ordinary_issued_quantity": "Stock-derived ordinary issuance",
         "replacement_issued_quantity": "Replacement papers issued",
         "spoilt_original_quantity": (
-            "Surrendered/cancelled spoilt originals "
-            "(paired with replacements; not deducted twice)"
+            "Surrendered/cancelled spoilt originals (paired with replacements; not deducted twice)"
         ),
         "tendered_issued_quantity": "Tendered papers issued",
         "retrieved_refused_quantity": "Retrieved unused papers refused by electors",

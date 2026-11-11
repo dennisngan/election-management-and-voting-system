@@ -96,11 +96,7 @@ def physical_comparisons(data: dict[str, Any]) -> list[dict[str, Any]]:
                 "difference_quantity": difference,
                 "available": available,
                 "status": (
-                    "unavailable"
-                    if not available
-                    else "matching"
-                    if difference == 0
-                    else "pending"
+                    "unavailable" if not available else "matching" if difference == 0 else "pending"
                 ),
             }
         )

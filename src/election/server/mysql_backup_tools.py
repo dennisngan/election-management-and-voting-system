@@ -92,9 +92,7 @@ def _client_options(url: URL, *, container: str | None) -> tuple[str, int, bytes
         verify_identity = query.pop("ssl_verify_identity", None)
         if verify_cert is not None or verify_identity is not None:
             cert = _bool_option(str(verify_cert)) if verify_cert is not None else False
-            identity = (
-                _bool_option(str(verify_identity)) if verify_identity is not None else False
-            )
+            identity = _bool_option(str(verify_identity)) if verify_identity is not None else False
             if identity:
                 options["ssl-mode"] = "VERIFY_IDENTITY"
             elif cert:
@@ -106,7 +104,11 @@ def _client_options(url: URL, *, container: str | None) -> tuple[str, int, bytes
     if query:
         _fail("unsupported_database_option")
     if "ssl-mode" in options and options["ssl-mode"] not in {
-        "DISABLED", "PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY"
+        "DISABLED",
+        "PREFERRED",
+        "REQUIRED",
+        "VERIFY_CA",
+        "VERIFY_IDENTITY",
     }:
         _fail("unsupported_database_option")
 
@@ -158,8 +160,7 @@ def _client_version(
         result = subprocess.run(
             [*command, "--version"],
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             check=False,
             shell=False,
             env=environment,
@@ -227,9 +228,7 @@ def _private_restore_source(source: Path) -> BinaryIO:
         path = parent / source.name
         if not private_file(path):
             _fail("restore_source_not_private")
-        descriptor = os.open(
-            path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        )
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         opened = os.fstat(descriptor)
         if not private_file_descriptor(descriptor):
             os.close(descriptor)
@@ -385,7 +384,7 @@ def _container_restore_options(
             env=environment,
             timeout=30,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         _fail("restore_credentials_directory_failed")
     if result.returncode != 0:
         raise BackupToolError("restore_credentials_directory_failed", exit_status=result.returncode)
@@ -420,7 +419,7 @@ def _container_restore_options(
                 env=environment,
                 timeout=30,
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError, subprocess.TimeoutExpired:
             _fail("restore_credentials_file_failed")
         if upload.returncode != 0:
             raise BackupToolError("restore_credentials_file_failed", exit_status=upload.returncode)
@@ -447,7 +446,7 @@ def _container_restore_options(
                     timeout=30,
                 )
                 cleanup_failed = cleanup_failed or cleanup.returncode != 0
-            except (OSError, subprocess.TimeoutExpired):
+            except OSError, subprocess.TimeoutExpired:
                 cleanup_failed = True
         if cleanup_failed:
             _fail("restore_credentials_cleanup_failed")
@@ -487,7 +486,7 @@ def dump_mysql(
     """Write one consistent schema dump; return its verified mysqldump 8.4 version."""
     try:
         url = make_url(database_url)
-    except (ArgumentError, ValueError):
+    except ArgumentError, ValueError:
         _fail("invalid_database_url")
     if url.drivername != "mysql+pymysql":
         _fail("unsupported_database_url")
@@ -552,8 +551,11 @@ def dump_mysql(
             if container is None:
                 with _private_options_file(parent, options) as defaults_file:
                     argv = [
-                        binary, f"--defaults-file={defaults_file}", "--no-login-paths",
-                        *flags, schema,
+                        binary,
+                        f"--defaults-file={defaults_file}",
+                        "--no-login-paths",
+                        *flags,
+                        schema,
                     ]
                     try:
                         process = subprocess.Popen(
@@ -640,7 +642,7 @@ def restore_mysql(
     """Import a private single-schema dump into an explicit existing *_test schema."""
     try:
         url = make_url(database_url)
-    except (ArgumentError, ValueError):
+    except ArgumentError, ValueError:
         _fail("invalid_database_url")
     if url.drivername != "mysql+pymysql":
         _fail("unsupported_database_url")

@@ -279,8 +279,6 @@ _LABELS: dict[str, tuple[str, str, str]] = {
         "将处理此确切版本",
         "Action applies to this exact revision",
     ),
-    "f2_confirm": ("確認", "确认", "Confirm"),
-    "f2_cancel": ("取消", "取消", "Cancel"),
     "f1_discard_f2_title": (
         "以新 F1 草稿取代目前 F2？",
         "以新 F1 草稿替代当前 F2？",

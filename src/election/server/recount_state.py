@@ -16,7 +16,7 @@ from election.server.counting_round_models import (
 )
 from election.server.counting_scope_models import CountingScopeRevision
 from election.server.local_recount_models import LocalRecountInstruction
-from election.server.polling import as_utc
+from election.server.timestamps import as_utc
 
 
 def scope_recount_state(
@@ -25,7 +25,10 @@ def scope_recount_state(
     rows = list(
         db.execute(
             select(
-                LocalRecountInstruction, CountingScopeRevision, CountRoundRevision, CountRound,
+                LocalRecountInstruction,
+                CountingScopeRevision,
+                CountRoundRevision,
+                CountRound,
                 ConstituencyRecountInstruction,
             )
             .select_from(LocalRecountInstruction)
@@ -108,10 +111,14 @@ def scope_recount_state(
         if parent is not None:
             sources = parent.data["scope_sources"]
             instructions[-1]["constituency_recount"] = {
-                "id": parent.id, "request_id": parent.request_id,
-                "constituency_id": parent.constituency_id, "actor_id": parent.actor_id,
-                "reason": parent.reason, "event_at": as_utc(parent.event_at),
-                "entered_at": as_utc(parent.entered_at), "member_count": len(sources),
+                "id": parent.id,
+                "request_id": parent.request_id,
+                "constituency_id": parent.constituency_id,
+                "actor_id": parent.actor_id,
+                "reason": parent.reason,
+                "event_at": as_utc(parent.event_at),
+                "entered_at": as_utc(parent.entered_at),
+                "member_count": len(sources),
                 "scope_ids": [source["scope_id"] for source in sources],
             }
     return {

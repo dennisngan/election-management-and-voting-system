@@ -9,12 +9,8 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
-from election.server.boxes import (
-    MILESTONE_KINDS,
-    box_event_view,
-    box_events,
-    box_timeline_snapshot,
-)
+from election.server.box_state import MILESTONE_KINDS, box_event_view, box_events
+from election.server.boxes import box_timeline_snapshot
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
 

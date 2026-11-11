@@ -14,19 +14,31 @@ from election.desktop.exact_numbers import qt_state, quantity_display
 from election.desktop.operational_receipts import valid_operational_receipt
 
 ROLES = frozenset({"polling_officer", "counting_officer", "supervisor"})
-NETWORK_ERRORS = frozenset({
-    "request_failed", "disconnected", "database_unavailable", "certificate_error",
-    "invalid_response", "invalid_credentials", "session_expired", "access_changed",
-    "recovery_outcome_check_required", "recovery_journal_unavailable",
-    "recovery_journal_outcome_unavailable",
-})
+NETWORK_ERRORS = frozenset(
+    {
+        "request_failed",
+        "disconnected",
+        "database_unavailable",
+        "certificate_error",
+        "invalid_response",
+        "invalid_credentials",
+        "session_expired",
+        "access_changed",
+        "recovery_outcome_check_required",
+        "recovery_journal_unavailable",
+        "recovery_journal_outcome_unavailable",
+    }
+)
 
 
 class CommandJournal(Protocol):
     def commands(self, server_url: str, actor_id: int, station_id: int) -> list[dict[str, Any]]: ...
 
     def election_commands(
-        self, server_url: str, actor_id: int, election_id: int | None = None,
+        self,
+        server_url: str,
+        actor_id: int,
+        election_id: int | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def record_outcome(
@@ -62,13 +74,22 @@ class RecoveryController(QObject):
     @Property(dict, notify=stateChanged)
     def state(self) -> dict[str, Any]:
         # Keep original command payloads intact while adding receipt display text.
-        view = {**self._state, "commands": [
-            {**row, "receipt": (
-                quantity_display(row["receipt"])
-                if isinstance(row.get("receipt"), dict) else row.get("receipt")
-            ) if self._receipt_visible(row) else None}
-            for row in self._state["commands"]
-        ]}
+        view = {
+            **self._state,
+            "commands": [
+                {
+                    **row,
+                    "receipt": (
+                        quantity_display(row["receipt"])
+                        if isinstance(row.get("receipt"), dict)
+                        else row.get("receipt")
+                    )
+                    if self._receipt_visible(row)
+                    else None,
+                }
+                for row in self._state["commands"]
+            ],
+        }
         return qt_state(view)
 
     def election_receipt_disclosed(self, request_id: str) -> bool:
@@ -132,8 +153,13 @@ class RecoveryController(QObject):
         return normalized.rstrip("/")
 
     def set_context(
-        self, station_id: int, role: str, server_url: str, account_id: int,
-        constituency_id: int = 0, election_id: int = 0,
+        self,
+        station_id: int,
+        role: str,
+        server_url: str,
+        account_id: int,
+        constituency_id: int = 0,
+        election_id: int = 0,
     ) -> None:
         origin = self._origin(server_url)
         values = {
@@ -150,19 +176,24 @@ class RecoveryController(QObject):
         )
         opened = self._opened
         same_authority = (
-            self._server_url == origin and self._account_id == normalized_account_id
+            self._server_url == origin
+            and self._account_id == normalized_account_id
             and self._state["role"] == values["role"]
         )
         grants = (
-            set(self._inspected_election_requests), set(self._checked_election_requests),
+            set(self._inspected_election_requests),
+            set(self._checked_election_requests),
             set(self._verified_election_receipts),
         )
         if changed:
             self._reset_state()
             self._opened = opened
             if same_authority:
-                (self._inspected_election_requests, self._checked_election_requests,
-                 self._verified_election_receipts) = grants
+                (
+                    self._inspected_election_requests,
+                    self._checked_election_requests,
+                    self._verified_election_receipts,
+                ) = grants
         self._state.update(values)
         self._server_url = origin
         self._account_id = normalized_account_id
@@ -192,7 +223,8 @@ class RecoveryController(QObject):
         station_id, election_id = self._state["station_id"], self._state["election_id"]
         rows = (
             self._journal.commands(self._server_url, self._account_id, station_id)
-            if station_id else []
+            if station_id
+            else []
         )
         if self._state["role"] == "supervisor":
             rows.extend(self._journal.election_commands(self._server_url, self._account_id))
@@ -203,17 +235,21 @@ class RecoveryController(QObject):
             if row.get("server_url") == self._server_url
             and row.get("actor_id") == self._account_id
             and (
-                row.get("namespace") == "election" and "station_id" not in row
+                row.get("namespace") == "election"
+                and "station_id" not in row
                 and (
                     row.get("election_id") == election_id
                     or row.get("status") in {"pending", "uncertain"}
                     or row.get("request_id") in self._inspected_election_requests
                 )
-                or row.get("namespace") != "election" and row.get("station_id") == station_id
+                or row.get("namespace") != "election"
+                and row.get("station_id") == station_id
             )
             and self._workflow_allowed(row.get("workflow"))
-            and (row.get("workflow") != "constituency_recount" or row.get("path")
-                 == f"/api/workspace/constituencies/{constituency_id}/recounts")
+            and (
+                row.get("workflow") != "constituency_recount"
+                or row.get("path") == f"/api/workspace/constituencies/{constituency_id}/recounts"
+            )
             and row.get("status") in ("pending", "uncertain", "committed", "rejected")
         ]
 
@@ -222,11 +258,15 @@ class RecoveryController(QObject):
         station_id = self._state["station_id"]
         return any(
             row.get("status") in {"pending", "uncertain"}
-            and (row.get("workflow") == "constituency_recount"
-                 or row.get("workflow") == "count" and re.fullmatch(
-                rf"/api/workspace/stations/{station_id}/counting-scopes/[1-9][0-9]*/recounts",
-                row.get("path", ""),
-            ) is not None)
+            and (
+                row.get("workflow") == "constituency_recount"
+                or row.get("workflow") == "count"
+                and re.fullmatch(
+                    rf"/api/workspace/stations/{station_id}/counting-scopes/[1-9][0-9]*/recounts",
+                    row.get("path", ""),
+                )
+                is not None
+            )
             for row in self._state["commands"]
         )
 
@@ -343,16 +383,21 @@ class RecoveryController(QObject):
         if command["workflow"] == "election_completion":
             election_id = command.get("election_id")
             valid_path = (
-                type(election_id) is int and election_id > 0
-                and path in {
+                type(election_id) is int
+                and election_id > 0
+                and path
+                in {
                     f"/api/workspace/elections/{election_id}/finalizations",
                     f"/api/workspace/elections/{election_id}/reopenings",
                 }
-                and (election_id == self._state["election_id"]
-                     or request_id in self._checked_election_requests)
+                and (
+                    election_id == self._state["election_id"]
+                    or request_id in self._checked_election_requests
+                )
             )
         if (
-            not isinstance(path, str) or not valid_path
+            not isinstance(path, str)
+            or not valid_path
             or method not in ("POST", "PUT")
             or not isinstance(payload, dict)
         ):

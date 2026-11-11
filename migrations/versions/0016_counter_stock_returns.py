@@ -25,9 +25,7 @@ def upgrade() -> None:
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
     )
-    op.create_index(
-        "ix_counter_stock_returns_station_id", "counter_stock_returns", ["station_id"]
-    )
+    op.create_index("ix_counter_stock_returns_station_id", "counter_stock_returns", ["station_id"])
     op.create_table(
         "counter_stock_return_revisions",
         sa.Column("id", sa.Integer(), primary_key=True),

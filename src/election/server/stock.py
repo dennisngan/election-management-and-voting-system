@@ -430,7 +430,11 @@ def stock_router(
                 raise HTTPException(409, detail={"code": "revision_conflict"})
             no_overlap(db, scope, data, head.id)
             preserve_special_reserves(
-                db, station_id, head.id, data.series, data.ranges,
+                db,
+                station_id,
+                head.id,
+                data.series,
+                data.ranges,
                 data.event_at.astimezone(UTC).replace(tzinfo=None),
             )
             preserve_allocations(db, station_id, head.id, data.series, data.ranges)

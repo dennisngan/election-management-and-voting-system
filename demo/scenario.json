@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "election_name": "Demo Election — Harbour District",
+  "constituency": {"code": "DEMO-C01", "name": "Harbour Constituency / 海港選區"},
+  "station": {"code": "DEMO-S01", "name": "Harbour Community Hall / 海港社區會堂"},
+  "candidates": [
+    {"ballot_number": 1, "name": "Alex Chan / 陳明"},
+    {"ballot_number": 2, "name": "Jamie Wong / 黃欣"}
+  ],
+  "counters": [
+    {"code": "D01", "name": "Counter 1 / 發票櫃台一"},
+    {"code": "D02", "name": "Counter 2 / 發票櫃台二"}
+  ],
+  "stock": {
+    "series": "DEMO",
+    "ordinary_from": "000001", "ordinary_to": "000500",
+    "replacement_from": "000501", "replacement_to": "000510",
+    "tendered_from": "000511", "tendered_to": "000520"
+  },
+  "turnout": 300,
+  "votes": [170, 125],
+  "invalid": 5
+}

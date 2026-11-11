@@ -21,8 +21,8 @@ from election.server.complaint_periods import (
 from election.server.complaints import complaint_read_scope, complaint_schedule
 from election.server.history_pdf import HistoryTable, history_pdf
 from election.server.models import Account
-from election.server.polling import as_utc
 from election.server.reporting_periods import period_count
+from election.server.timestamps import as_utc
 
 type ReportLocale = Literal["tc", "sc", "en"]
 HKT = timezone(timedelta(hours=8), "HKT")

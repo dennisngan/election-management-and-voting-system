@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from election.server.accounting import accounting_record, record_view
 from election.server.box_models import BallotBox
-from election.server.boxes import box_snapshot, utc_time
+from election.server.box_state import box_snapshot
 from election.server.counting_scope_models import (
     CountingScope,
     CountingScopeBox,
@@ -24,7 +24,7 @@ from election.server.counting_scope_models import (
     CountingScopeRevision,
 )
 from election.server.models import Account, AuditEvent
-from election.server.polling import as_utc
+from election.server.timestamps import as_utc, utc_time
 from election.server.turnout_basis import turnout_scope
 
 
@@ -89,17 +89,22 @@ def latest_revision(db: Session, scope_id: int) -> CountingScopeRevision | None:
 
 
 def source_box_ids(db: Session, origin_id: int) -> list[int]:
-    return list(db.scalars(
-        select(BallotBox.id).where(BallotBox.origin_station_id == origin_id)
-        .order_by(BallotBox.id).with_for_update()
-    ))
+    return list(
+        db.scalars(
+            select(BallotBox.id)
+            .where(BallotBox.origin_station_id == origin_id)
+            .order_by(BallotBox.id)
+            .with_for_update()
+        )
+    )
 
 
 def scope_at(db: Session, station_id: int, scope_id: int) -> CountingScope:
     scope = db.scalar(
-        select(CountingScope).where(
-            CountingScope.id == scope_id, CountingScope.station_id == station_id
-        ).with_for_update().execution_options(populate_existing=True)
+        select(CountingScope)
+        .where(CountingScope.id == scope_id, CountingScope.station_id == station_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if scope is None:
         raise HTTPException(404, detail={"code": "counting_scope_not_found"})
@@ -107,7 +112,9 @@ def scope_at(db: Session, station_id: int, scope_id: int) -> CountingScope:
 
 
 def scope_view(
-    db: Session, scope: CountingScope, row: CountingScopeRevision,
+    db: Session,
+    scope: CountingScope,
+    row: CountingScopeRevision,
     boxes: list[dict[str, Any]],
 ) -> dict[str, Any]:
     current = latest_revision(db, scope.id)
@@ -124,9 +131,7 @@ def scope_view(
             source_current = False
             continue
         view = record_view(db, latest)
-        if not view["source_current"] or (
-            frozen["approval_valid"] and not view["approval_valid"]
-        ):
+        if not view["source_current"] or (frozen["approval_valid"] and not view["approval_valid"]):
             source_current = False
     for coverage in row.data["coverage"]:
         if source_box_ids(db, coverage["station"]["id"]) != coverage["source_box_ids"]:
@@ -163,9 +168,13 @@ def scope_options(db: Session, actor: Account, station_id: int) -> dict[str, Any
     turnout_scope(db, actor, station_id)
     snapshot = box_snapshot(db, actor, station_id)
     visible_ids = [box["id"] for box in snapshot["items"]]
-    members = dict(db.execute(select(CountingScopeBox.box_id, CountingScopeBox.scope_id)
-                             .where(CountingScopeBox.box_id.in_(visible_ids))
-                             .with_for_update()).all())
+    members = dict(
+        db.execute(
+            select(CountingScopeBox.box_id, CountingScopeBox.scope_id)
+            .where(CountingScopeBox.box_id.in_(visible_ids))
+            .with_for_update()
+        ).all()
+    )
     boxes = [
         {**box, "scope_id": members.get(box["id"])}
         for box in snapshot["items"]
@@ -178,14 +187,20 @@ def scope_options(db: Session, actor: Account, station_id: int) -> dict[str, Any
     for origin_id in sorted(origins):
         box = next(item for item in boxes if item["origin_station_id"] == origin_id)
         source_row = accounting_record(db, origin_id)
-        sources.append({
-            "station": box["origin"],
-            "record": record_view(db, source_row) if source_row else None,
-        })
-    scopes = list(db.scalars(
-        select(CountingScope).where(CountingScope.station_id == station_id)
-        .order_by(CountingScope.id).with_for_update()
-    ))
+        sources.append(
+            {
+                "station": box["origin"],
+                "record": record_view(db, source_row) if source_row else None,
+            }
+        )
+    scopes = list(
+        db.scalars(
+            select(CountingScope)
+            .where(CountingScope.station_id == station_id)
+            .order_by(CountingScope.id)
+            .with_for_update()
+        )
+    )
     views = []
     for scope in scopes:
         row = latest_revision(db, scope.id)
@@ -201,7 +216,10 @@ def scope_options(db: Session, actor: Account, station_id: int) -> dict[str, Any
 
 
 def draft_basis(
-    db: Session, options: dict[str, Any], data: ScopeDraft, scope_id: int,
+    db: Session,
+    options: dict[str, Any],
+    data: ScopeDraft,
+    scope_id: int,
 ) -> dict[str, Any]:
     available = {box["id"]: box for box in options["boxes"]}
     selected = []
@@ -223,20 +241,21 @@ def draft_basis(
     selections = {row.station_id: row.revision for row in data.accounting_revisions}
     if selections.keys() - origins:
         raise HTTPException(422, detail={"code": "scope_accounting_origin_mismatch"})
-    sources = {source["station"]["id"]: source["record"]
-               for source in options["source_accounting"]}
+    sources = {source["station"]["id"]: source["record"] for source in options["source_accounting"]}
     accounting = []
     coverage = []
     for origin_id in sorted(origins):
         origin_boxes = [box for box in selected if box["origin_station_id"] == origin_id]
         box_ids = [box["id"] for box in origin_boxes]
         all_box_ids = source_box_ids(db, origin_id)
-        coverage.append({
-            "station": origin_boxes[0]["origin"],
-            "scope_box_ids": box_ids,
-            "source_box_ids": all_box_ids,
-            "all_source_boxes_in_scope": box_ids == all_box_ids,
-        })
+        coverage.append(
+            {
+                "station": origin_boxes[0]["origin"],
+                "scope_box_ids": box_ids,
+                "source_box_ids": all_box_ids,
+                "all_source_boxes_in_scope": box_ids == all_box_ids,
+            }
+        )
         if origin_id not in selections:
             blockers.append({"code": "source_accounting_missing", "station_id": origin_id})
             continue
@@ -250,23 +269,29 @@ def draft_basis(
         if not source["approval_valid"]:
             blockers.append({"code": "source_accounting_unapproved", "station_id": origin_id})
         accounting.append(source)
-    complete_coverage = bool(coverage) and all(
-        row["all_source_boxes_in_scope"] for row in coverage
-    ) and len(accounting) == len(origins)
+    complete_coverage = (
+        bool(coverage)
+        and all(row["all_source_boxes_in_scope"] for row in coverage)
+        and len(accounting) == len(origins)
+    )
     estimates = {}
     for name in ("estimated_box_from_stock_quantity", "estimated_box_from_turnout_quantity"):
         values = [row["summary"][name] for row in accounting]
-        estimates[name] = sum(values) if complete_coverage and all(
-            value is not None for value in values
-        ) else None
-    result: dict[str, Any] = jsonable_encoder({
-        "context": options["context"],
-        "box_basis": selected,
-        "accounting_basis": accounting,
-        "blockers": blockers,
-        "coverage": coverage,
-        **estimates,
-    })
+        estimates[name] = (
+            sum(values)
+            if complete_coverage and all(value is not None for value in values)
+            else None
+        )
+    result: dict[str, Any] = jsonable_encoder(
+        {
+            "context": options["context"],
+            "box_basis": selected,
+            "accounting_basis": accounting,
+            "blockers": blockers,
+            "coverage": coverage,
+            **estimates,
+        }
+    )
     return result
 
 
@@ -287,32 +312,54 @@ def counting_scopes_router(
 
     @router.get("/{scope_id}")
     def history(
-        station_id: int, scope_id: int, db: Database, actor: Actor,
+        station_id: int,
+        scope_id: int,
+        db: Database,
+        actor: Actor,
     ) -> dict[str, Any]:
         options = scope_options(db, actor, station_id)
         scope = scope_at(db, station_id, scope_id)
-        rows = list(db.scalars(select(CountingScopeRevision).where(
-            CountingScopeRevision.scope_id == scope_id
-        ).order_by(CountingScopeRevision.revision.desc()).with_for_update()))
+        rows = list(
+            db.scalars(
+                select(CountingScopeRevision)
+                .where(CountingScopeRevision.scope_id == scope_id)
+                .order_by(CountingScopeRevision.revision.desc())
+                .with_for_update()
+            )
+        )
         views = [scope_view(db, scope, row, options["boxes"]) for row in rows]
         return {"record": views[0], "history": views}
 
     @router.get("/{scope_id}/revisions/{revision}")
     def revision(
-        station_id: int, scope_id: int, revision: int, db: Database, actor: Actor,
+        station_id: int,
+        scope_id: int,
+        revision: int,
+        db: Database,
+        actor: Actor,
     ) -> dict[str, Any]:
         options = scope_options(db, actor, station_id)
         scope = scope_at(db, station_id, scope_id)
-        row = db.scalar(select(CountingScopeRevision).where(
-            CountingScopeRevision.scope_id == scope_id, CountingScopeRevision.revision == revision
-        ).with_for_update())
+        row = db.scalar(
+            select(CountingScopeRevision)
+            .where(
+                CountingScopeRevision.scope_id == scope_id,
+                CountingScopeRevision.revision == revision,
+            )
+            .with_for_update()
+        )
         if row is None:
             raise HTTPException(404, detail={"code": "counting_scope_not_found"})
         return scope_view(db, scope, row, options["boxes"])
 
     def execute(
-        station_id: int, scope_id: int | None, action: str, data: ScopeCommand,
-        db: Session, actor: Account, response: Response,
+        station_id: int,
+        scope_id: int | None,
+        action: str,
+        data: ScopeCommand,
+        db: Session,
+        actor: Account,
+        response: Response,
     ) -> dict[str, Any]:
         if actor.role != "counting_officer":
             raise HTTPException(403, detail={"code": "counting_officer_required"})
@@ -320,13 +367,25 @@ def counting_scopes_router(
         options = scope_options(db, actor, station_id)
         if not options["counting_applicable"]:
             raise HTTPException(409, detail={"code": "counting_station_required"})
-        digest = hashlib.sha256(json.dumps({
-            "station_id": station_id, "scope_id": scope_id, "actor_id": actor.id, "action": action,
-            "data": data.model_dump(mode="json", exclude={"request_id"}),
-        }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-        replay = db.scalar(select(CountingScopeRequest).where(
-            CountingScopeRequest.request_id == str(data.request_id)
-        ).with_for_update().execution_options(populate_existing=True))
+        digest = hashlib.sha256(
+            json.dumps(
+                {
+                    "station_id": station_id,
+                    "scope_id": scope_id,
+                    "actor_id": actor.id,
+                    "action": action,
+                    "data": data.model_dump(mode="json", exclude={"request_id"}),
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        replay = db.scalar(
+            select(CountingScopeRequest)
+            .where(CountingScopeRequest.request_id == str(data.request_id))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if replay:
             if replay.digest != digest:
                 raise HTTPException(409, detail={"code": "request_conflict"})
@@ -344,10 +403,14 @@ def counting_scopes_router(
             if current and current.status != "draft" and not data.amendment_reason.strip():
                 raise HTTPException(422, detail={"code": "scope_reason_required"})
             if scope is None:
-                duplicate = db.scalar(select(CountingScope).where(
-                    CountingScope.station_id == station_id,
-                    CountingScope.reference == data.reference,
-                ).with_for_update())
+                duplicate = db.scalar(
+                    select(CountingScope)
+                    .where(
+                        CountingScope.station_id == station_id,
+                        CountingScope.reference == data.reference,
+                    )
+                    .with_for_update()
+                )
                 if duplicate:
                     raise HTTPException(409, detail={"code": "scope_reference_conflict"})
                 scope = CountingScope(station_id=station_id, reference=data.reference)
@@ -357,14 +420,21 @@ def counting_scopes_router(
                 raise HTTPException(422, detail={"code": "scope_reference_immutable"})
             frozen = draft_basis(db, options, data, scope.id)
             current = CountingScopeRevision(
-                scope_id=scope.id, revision=data.expected_revision + 1, status="draft",
-                event_at=event_at, entered_at=now, actor_id=actor.id,
-                notes=data.notes, amendment_reason=data.amendment_reason, data=frozen,
+                scope_id=scope.id,
+                revision=data.expected_revision + 1,
+                status="draft",
+                event_at=event_at,
+                entered_at=now,
+                actor_id=actor.id,
+                notes=data.notes,
+                amendment_reason=data.amendment_reason,
+                data=frozen,
             )
             db.add(current)
             db.execute(delete(CountingScopeBox).where(CountingScopeBox.scope_id == scope.id))
-            db.add_all(CountingScopeBox(box_id=row["id"], scope_id=scope.id)
-                       for row in frozen["box_basis"])
+            db.add_all(
+                CountingScopeBox(box_id=row["id"], scope_id=scope.id) for row in frozen["box_basis"]
+            )
             try:
                 db.flush()
             except IntegrityError:
@@ -375,46 +445,79 @@ def counting_scopes_router(
                 raise HTTPException(409, detail={"code": "scope_state_conflict"})
             view = scope_view(db, scope, current, options["boxes"])
             if view["blockers"]:
-                raise HTTPException(409, detail={
-                    "code": "scope_incomplete", "blockers": view["blockers"]
-                })
+                raise HTTPException(
+                    409, detail={"code": "scope_incomplete", "blockers": view["blockers"]}
+                )
             current.status, current.submitted_at, current.submitted_by = "submitted", now, actor.id
         assert scope is not None
         # Refresh only membership in the already-locked destination box snapshot.
-        member_ids = {box.box_id for box in db.scalars(select(CountingScopeBox).where(
-            CountingScopeBox.scope_id == scope.id
-        ).with_for_update())}
-        boxes = [{**box, "scope_id": scope.id if box["id"] in member_ids else box["scope_id"]}
-                 for box in options["boxes"]]
+        member_ids = {
+            box.box_id
+            for box in db.scalars(
+                select(CountingScopeBox)
+                .where(CountingScopeBox.scope_id == scope.id)
+                .with_for_update()
+            )
+        }
+        boxes = [
+            {**box, "scope_id": scope.id if box["id"] in member_ids else box["scope_id"]}
+            for box in options["boxes"]
+        ]
         result = scope_view(db, scope, current, boxes)
-        db.add(CountingScopeRequest(
-            request_id=str(data.request_id), station_id=station_id, actor_id=actor.id,
-            digest=digest, response=result,
-        ))
-        db.add(AuditEvent(actor_id=actor.id, action="counting_scope_" + action, occurred_at=now,
-                          details={"station_id": station_id, "scope_id": scope.id,
-                                   "revision": current.revision,
-                                   "reason": current.amendment_reason}))
+        db.add(
+            CountingScopeRequest(
+                request_id=str(data.request_id),
+                station_id=station_id,
+                actor_id=actor.id,
+                digest=digest,
+                response=result,
+            )
+        )
+        db.add(
+            AuditEvent(
+                actor_id=actor.id,
+                action="counting_scope_" + action,
+                occurred_at=now,
+                details={
+                    "station_id": station_id,
+                    "scope_id": scope.id,
+                    "revision": current.revision,
+                    "reason": current.amendment_reason,
+                },
+            )
+        )
         db.commit()
         return result
 
     @router.post("", status_code=201)
     def create(
-        station_id: int, data: ScopeDraft, db: Database, actor: Actor, response: Response,
+        station_id: int,
+        data: ScopeDraft,
+        db: Database,
+        actor: Actor,
+        response: Response,
     ) -> dict[str, Any]:
         return execute(station_id, None, "save", data, db, actor, response)
 
     @router.put("/{scope_id}")
     def save(
-        station_id: int, scope_id: int, data: ScopeDraft,
-        db: Database, actor: Actor, response: Response,
+        station_id: int,
+        scope_id: int,
+        data: ScopeDraft,
+        db: Database,
+        actor: Actor,
+        response: Response,
     ) -> dict[str, Any]:
         return execute(station_id, scope_id, "save", data, db, actor, response)
 
     @router.post("/{scope_id}/submit")
     def submit(
-        station_id: int, scope_id: int, data: ScopeCommand,
-        db: Database, actor: Actor, response: Response,
+        station_id: int,
+        scope_id: int,
+        data: ScopeCommand,
+        db: Database,
+        actor: Actor,
+        response: Response,
     ) -> dict[str, Any]:
         return execute(station_id, scope_id, "submit", data, db, actor, response)
 

@@ -14,14 +14,20 @@ from election.server.stock_serials import StockRangeInput
 
 
 def current_special_papers(
-    db: Session, station_id: int, *, lock: bool = False,
+    db: Session,
+    station_id: int,
+    *,
+    lock: bool = False,
 ) -> list[SpecialPaperRevision]:
     query = (
         select(SpecialPaperRevision)
-        .join(SpecialPaperSnapshot, and_(
-            SpecialPaperSnapshot.id == SpecialPaperRevision.snapshot_id,
-            SpecialPaperSnapshot.revision == SpecialPaperRevision.revision,
-        ))
+        .join(
+            SpecialPaperSnapshot,
+            and_(
+                SpecialPaperSnapshot.id == SpecialPaperRevision.snapshot_id,
+                SpecialPaperSnapshot.revision == SpecialPaperRevision.revision,
+            ),
+        )
         .where(SpecialPaperSnapshot.station_id == station_id)
         .order_by(SpecialPaperRevision.event_at, SpecialPaperSnapshot.id)
     )
@@ -52,10 +58,13 @@ def preserve_special_reserves(
         return
     receipts = db.scalars(
         select(StockReceiptRevision)
-        .join(StockReceipt, and_(
-            StockReceipt.id == StockReceiptRevision.receipt_id,
-            StockReceipt.revision == StockReceiptRevision.revision,
-        ))
+        .join(
+            StockReceipt,
+            and_(
+                StockReceipt.id == StockReceiptRevision.receipt_id,
+                StockReceipt.revision == StockReceiptRevision.revision,
+            ),
+        )
         .where(StockReceipt.station_id == station_id)
         .order_by(StockReceipt.id)
         .with_for_update()
@@ -63,15 +72,21 @@ def preserve_special_reserves(
     )
     proposed = [
         _ReserveReceipt(
-            row.series, row.event_at, row.replacement_quantity, row.tendered_quantity,
+            row.series,
+            row.event_at,
+            row.replacement_quantity,
+            row.tendered_quantity,
         )
-        for row in receipts if row.receipt_id != receipt_id
-    ] + [_ReserveReceipt(
-        series,
-        event_at,
-        sum(row.quantity for row in ranges if row.pool == "replacement"),
-        sum(row.quantity for row in ranges if row.pool == "tendered"),
-    )]
+        for row in receipts
+        if row.receipt_id != receipt_id
+    ] + [
+        _ReserveReceipt(
+            series,
+            event_at,
+            sum(row.quantity for row in ranges if row.pool == "replacement"),
+            sum(row.quantity for row in ranges if row.pool == "tendered"),
+        )
+    ]
     for observation in observations:
         available: dict[str, tuple[int, int]] = {}
         for source in proposed:

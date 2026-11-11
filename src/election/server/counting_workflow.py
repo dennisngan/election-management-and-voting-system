@@ -28,9 +28,9 @@ from election.server.counting_totals import physical_approval_blockers
 from election.server.lifecycle_models import ActiveElection
 from election.server.models import Account, AuditEvent
 from election.server.paper_reentry import finish_paper_entry, guard_paper_entry
-from election.server.polling import as_utc
 from election.server.recount_state import scope_recount_state
 from election.server.security import verify_password
+from election.server.timestamps import as_utc
 from election.server.turnout_basis import turnout_scope
 
 

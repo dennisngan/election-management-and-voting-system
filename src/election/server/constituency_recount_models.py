@@ -39,7 +39,8 @@ class ConstituencyRecountMember(Base):
         {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4"},
     )
     instruction_id: Mapped[int] = mapped_column(
-        ForeignKey("constituency_recount_instructions.id"), primary_key=True,
+        ForeignKey("constituency_recount_instructions.id"),
+        primary_key=True,
     )
     scope_id: Mapped[int] = mapped_column(ForeignKey("counting_scopes.id"), primary_key=True)
     station_id: Mapped[int] = mapped_column(ForeignKey("polling_stations.id"))
