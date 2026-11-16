@@ -13,6 +13,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from election import APP_NAME
 from election.server.accounting import accounting_router
 from election.server.accounting_reports import accounting_reports_router
 from election.server.allocation_reports import allocation_reports_router
@@ -113,7 +114,7 @@ def create_app(
         finally:
             engine.dispose()
 
-    app = FastAPI(title="Election management", lifespan=lifespan)
+    app = FastAPI(title=f"{APP_NAME} API", lifespan=lifespan)
     bearer = HTTPBearer(auto_error=False)
 
     def timestamp() -> datetime:

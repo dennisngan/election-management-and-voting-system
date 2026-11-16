@@ -1,8 +1,8 @@
-"""P(19) period review and saved report labels, independent of case forms."""
+"""Period review and saved report labels, independent of case forms."""
 
 COMPLAINT_PERIOD_TRANSLATIONS = {
     "tc": {
-        "complaint_period_title": "P(19) 投訴時段統計",
+        "complaint_period_title": "投訴時段統計",
         "complaint_period_intro": (
             "按已設定時間表準備投訴統計，毋須先記錄實"
             "際開站。收到時間按 [開始, 結束) 分"
@@ -72,13 +72,13 @@ COMPLAINT_PERIOD_TRANSLATIONS = {
         "complaint_period_history": "統計修訂歷史",
         "complaint_period_no_history": "此時段尚無已儲存版本。",
         "complaint_period_view_revision": "查看此版本",
-        "complaint_period_report": "P(19) 報表及匯出",
+        "complaint_period_report": "報表及匯出",
         "complaint_period_report_hint": (
             "報表使用伺服器已儲存資料，不包含未儲存原因。可選所審閱版本或目前全站統計。"
         ),
         "complaint_period_report_scope": "報表基準",
         "complaint_period_report_selected": "所選已儲存時段版本",
-        "complaint_period_report_station": "伺服器目前已儲存的本站 P(19)",
+        "complaint_period_report_station": "伺服器目前已儲存的本站報表",
         "complaint_period_report_selected_hint": (
             "保留所選版本的凍結個案、分類及原確認資料；不混入目前全站摘要。"
         ),
@@ -88,14 +88,12 @@ COMPLAINT_PERIOD_TRANSLATIONS = {
         "complaint_period_report_missing": (
             "所選時段尚無已儲存版本；可先準備統計，或選擇目前全站報表。"
         ),
-        "complaint_report_ready": "P(19) 報表預覽已準備。",
-        "complaint_exported": "P(19) 報表已匯出。",
-        "complaint_export_failed": (
-            "P(19) 報表未能匯出；請核對路徑及連線，已儲存內容及表格仍保留。"
-        ),
+        "complaint_report_ready": "報表預覽已準備。",
+        "complaint_exported": "報表已匯出。",
+        "complaint_export_failed": ("報表未能匯出；請核對路徑及連線，已儲存內容及表格仍保留。"),
     },
     "sc": {
-        "complaint_period_title": "P(19) 投诉时段统计",
+        "complaint_period_title": "投诉时段统计",
         "complaint_period_intro": (
             "按已设定时间表准备投诉统计，无须先记录实"
             "际开站。收到时间按 [开始, 结束) 分"
@@ -165,13 +163,13 @@ COMPLAINT_PERIOD_TRANSLATIONS = {
         "complaint_period_history": "统计修订历史",
         "complaint_period_no_history": "此时段尚无已保存版本。",
         "complaint_period_view_revision": "查看此版本",
-        "complaint_period_report": "P(19) 报表及导出",
+        "complaint_period_report": "报表及导出",
         "complaint_period_report_hint": (
             "报表使用服务器已保存资料，不包含未保存原因。可选所审阅版本或当前全站统计。"
         ),
         "complaint_period_report_scope": "报表依据",
         "complaint_period_report_selected": "所选已保存时段版本",
-        "complaint_period_report_station": "服务器当前已保存的本站 P(19)",
+        "complaint_period_report_station": "服务器当前已保存的本站报表",
         "complaint_period_report_selected_hint": (
             "保留所选版本的冻结个案、分类及原确认资料；不混入当前全站摘要。"
         ),
@@ -181,14 +179,12 @@ COMPLAINT_PERIOD_TRANSLATIONS = {
         "complaint_period_report_missing": (
             "所选时段尚无已保存版本；可先准备统计，或选择当前全站报表。"
         ),
-        "complaint_report_ready": "P(19) 报表预览已准备。",
-        "complaint_exported": "P(19) 报表已导出。",
-        "complaint_export_failed": (
-            "P(19) 报表未能导出；请核对路径及连接，已保存内容及表格仍保留。"
-        ),
+        "complaint_report_ready": "报表预览已准备。",
+        "complaint_exported": "报表已导出。",
+        "complaint_export_failed": ("报表未能导出；请核对路径及连接，已保存内容及表格仍保留。"),
     },
     "en": {
-        "complaint_period_title": ("P(19) complaint period statistics"),
+        "complaint_period_title": ("Complaint period statistics"),
         "complaint_period_intro": (
             "Prepare complaint st"
             "atistics from the co"
@@ -322,7 +318,7 @@ COMPLAINT_PERIOD_TRANSLATIONS = {
         "complaint_period_history": ("Statistics revision history"),
         "complaint_period_no_history": ("No revision has been saved for this period."),
         "complaint_period_view_revision": "View this revision",
-        "complaint_period_report": ("P(19) reports and exports"),
+        "complaint_period_report": ("Reports and exports"),
         "complaint_period_report_hint": (
             "Reports use saved se"
             "rver data and exclud"
@@ -333,7 +329,7 @@ COMPLAINT_PERIOD_TRANSLATIONS = {
         ),
         "complaint_period_report_scope": "Report basis",
         "complaint_period_report_selected": ("Selected saved period revision"),
-        "complaint_period_report_station": ("Current saved station P(19)"),
+        "complaint_period_report_station": ("Current saved station report"),
         "complaint_period_report_selected_hint": (
             "Retains this revisio"
             "n’s frozen cases, ca"
@@ -358,10 +354,10 @@ COMPLAINT_PERIOD_TRANSLATIONS = {
             "or select the curren"
             "t station report."
         ),
-        "complaint_report_ready": ("P(19) report preview is ready."),
-        "complaint_exported": ("P(19) report exported."),
+        "complaint_report_ready": ("Report preview is ready."),
+        "complaint_exported": ("Report exported."),
         "complaint_export_failed": (
-            "P(19) report export "
+            "Report export "
             "failed. Check the de"
             "stination and connec"
             "tion. Saved data and"

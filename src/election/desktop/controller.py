@@ -90,12 +90,13 @@ class DesktopController(QObject):
         }
         self._token = ""
         self._context_writes: set[object] = set()
+        # Retain the original recovery location across the Election Desk product rename.
         journal_directory = os.environ.get("ELECTION_CLIENT_STATE_DIR") or str(
             Path(
-                QStandardPaths.writableLocation(
-                    QStandardPaths.StandardLocation.AppLocalDataLocation
-                )
+                QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericDataLocation)
             )
+            / "Election System Project"
+            / "Election Management"
             / "operational-commands"
         )
         self._command_journal = CommandJournal(Path(journal_directory))

@@ -10,7 +10,7 @@ ApplicationWindow {
     height: 800
     minimumWidth: 900
     minimumHeight: 480
-    title: "Election Management and Voting System"
+    title: Qt.application.displayName
     color: "#f6f8fc"
     Material.theme: Material.Light
     Material.accent: "#1967d2"
@@ -133,9 +133,13 @@ ApplicationWindow {
             anchors.leftMargin: 28
             anchors.rightMargin: 28
             spacing: 16
-            Rectangle {
-                width: 44; height: 44; radius: 14; color: window.accent
-                Label { anchors.centerIn: parent; text: "E"; font.pixelSize: 24; font.weight: Font.Medium; color: "white" }
+            Image {
+                source: "../assets/election-desk.png"
+                sourceSize.width: 88
+                sourceSize.height: 88
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 44
+                fillMode: Image.PreserveAspectFit
                 Accessible.ignored: true
             }
             ColumnLayout {

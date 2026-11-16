@@ -1,8 +1,8 @@
-# Election Management and Voting System
+# Election Desk
 
 **COMP 8500SEF — Software Engineering**
 
-A course project based on **Topic 2: Election Management and Voting System**.
+Election Desk is a course project based on **Topic 2: Election Management and Voting System**.
 
 This desktop application supports election staff from election setup and polling-station
 operations to ballot accounting, manual count recording, recounts, approvals and results reporting.
@@ -74,7 +74,7 @@ Local demo files are stored under `.runtime/`, which is excluded from Git.
 
 For the simplest setup, use Docker for the API and database as shown above. The desktop already
 runs with Python. To run the API without Docker as well, follow the
-[manual Python setup](docs/PYTHON-SETUP.md). This requires a separately installed MySQL 8.4 server,
+[agent development reference](docs/agents/development.md#manual-api-development). This requires a separately installed MySQL 8.4 server,
 a fresh database and localhost HTTPS certificates, so it takes more setup.
 
 ## Main features
@@ -84,10 +84,17 @@ a fresh database and localhost HTTPS certificates, so it takes more setup.
 - Ballot accounting, manual count recording, recounts, approvals and preserved result history.
 - PDF and CSV reports in three languages.
 
+## Build the desktop app
+
+PyInstaller builds a standalone Windows `.exe` or a self-contained macOS `.app`, plus a
+distribution ZIP, with the included ballot-box application icon. Run the build on the target
+operating system; see [macOS and Windows build instructions](docs/BUILDING.md). The build workflow
+also produces downloadable artifacts on native Windows and macOS runners.
+
 ## Further documentation
 
 - [Demo data and presentation walkthrough](demo/README.md)
 - [Requirements and project specification](docs/SPECIFICATION.md)
 - [Server deployment for multiple computers](docs/QUICKSTART.md)
-- [Windows client build and installation](docs/WINDOWS-SETUP.md)
+- [macOS and Windows desktop builds](docs/BUILDING.md)
 - [Architecture and design decisions](docs/adr/) and [domain glossary](GLOSSARY.md)

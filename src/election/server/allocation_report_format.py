@@ -1,4 +1,4 @@
-"""P(14) exports preserve saved allocation provenance and stock scope."""
+"""Exports preserve saved allocation provenance and stock scope."""
 
 import csv
 from io import StringIO

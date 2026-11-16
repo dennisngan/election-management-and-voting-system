@@ -1,7 +1,7 @@
 [project]
-name = "election-management-voting-system"
-version = "0.1.0"
-description = "Staff desktop application for physical-ballot election operations"
+name = "election-desk"
+version = "1.0.0"
+description = "Election Desk desktop application for physical-ballot election operations"
 requires-python = ">=3.14,<3.15"
 dependencies = []
 
@@ -17,7 +17,7 @@ server = [
     "cryptography",
     "pyyaml",
 ]
-desktop = ["pyside6"]
+desktop = ["pyside6", "pydantic", "tzdata"]
 reports = ["reportlab"]
 dev = [
     "ruff",
@@ -25,7 +25,7 @@ dev = [
     "types-PyMySQL",
     "types-PyYAML",
 ]
-build = ["pyinstaller; sys_platform == 'win32'"]
+build = ["pyinstaller", "pillow"]
 
 [tool.uv]
 package = false

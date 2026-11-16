@@ -38,7 +38,7 @@ ColumnLayout {
         label: page.t("accounting_no_turnout")}].concat((editorState.turnout_options || []).map(function(item) {
         var row = item.record
         return {period: row.period_index, revision: row.revision,
-            label: "P(15) " + row.period_index + " · " + page.t("revision") + " " + row.revision
+            label: row.period_index + " · " + page.t("revision") + " " + row.revision
                 + " · " + page.t(row.status) + " · " + page.time(row.end_at)}
     }))
     readonly property var quantityKeys: [
@@ -103,7 +103,7 @@ ColumnLayout {
         pendingLocale = locale
         exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
         exportDialog.defaultSuffix = format
-        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/p18-"
+        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/accounting-"
             + editorState.station_id + "-revision-" + selected.revision + "-" + locale + "." + format
         exportDialog.open()
     }
@@ -411,7 +411,7 @@ ColumnLayout {
             }
             Detail {
                 caption: page.t("accounting_turnout_basis")
-                value: page.turnoutRecord.revision ? "P(15) " + page.turnoutRecord.period_index + " · "
+                value: page.turnoutRecord.revision ? page.turnoutRecord.period_index + " · "
                     + page.t("revision") + " " + page.turnoutRecord.revision + " · "
                     + page.t(page.turnoutRecord.status) : "—"
             }
@@ -458,7 +458,7 @@ ColumnLayout {
                     required property var modelData
                     caption: page.t("fallback_kind_" + modelData.kind) + " · " + page.basis(modelData)
                     value: page.t("accounting_supplied_total") + " " + page.exact(modelData.cumulative_quantity_display)
-                        + " · P(12) #" + modelData.stock_snapshot_id + " · "
+                        + " · #" + modelData.stock_snapshot_id + " · "
                         + page.t("revision") + " " + modelData.stock_snapshot_revision
                 }
             }

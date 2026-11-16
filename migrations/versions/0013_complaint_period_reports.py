@@ -1,4 +1,4 @@
-"""Preserve P19 report bases, received-cohort counts and case membership."""
+"""Preserve report bases, received-cohort counts and case membership."""
 
 import sqlalchemy as sa
 from alembic import op

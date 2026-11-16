@@ -183,7 +183,6 @@ OUTAGE_TRANSLATIONS = {
         "paper_revision_conflict": "紙本參考已有較新修訂，請重新整理及比較。",
         "outage_revision_conflict": "中斷紀錄已有較新修訂，請重新整理及比較。",
         "invalid_credentials": "密碼不正確。結果未改變；請核對後輸入本人密碼重試。",
-        "supervisor_required": "只有獲指派的監督員可核准紙本核對。",
         "request_failed": "伺服器回覆無法核實。請檢查連線並比較伺服器紀錄。",
     },
     "sc": {
@@ -368,7 +367,6 @@ OUTAGE_TRANSLATIONS = {
         "paper_revision_conflict": "纸本参考已有较新修订，请刷新及比较。",
         "outage_revision_conflict": "中断记录已有较新修订，请刷新及比较。",
         "invalid_credentials": "密码不正确。结果未改变；请核对后输入本人密码重试。",
-        "supervisor_required": "只有获指派的监督员可核准纸本核对。",
         "request_failed": "服务器回复无法核实。请检查连接并比较服务器记录。",
     },
     "en": {
@@ -623,9 +621,6 @@ OUTAGE_TRANSLATIONS = {
         "invalid_credentials": (
             "The password is incorrect. No result changed; check it and retry with "
             "your own password."
-        ),
-        "supervisor_required": (
-            "Only an assigned Supervisor can approve the paper reconciliation."
         ),
         "request_failed": (
             "The server response could not be confirmed. Check the connection and "

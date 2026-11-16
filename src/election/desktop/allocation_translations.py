@@ -1,11 +1,11 @@
-"""P(14) ordinary-stock allocation labels for issuance counters."""
+"""Ordinary-stock allocation labels for issuance counters."""
 
 ALLOCATION_TRANSLATIONS = {
     "tc": {
         "allocation_before_return": (
             "此編號範圍是在擬記錄的派發時間之後才退回。請將派發時間設為該次退回時間或之後。"
         ),
-        "allocation_title": "P(14) 櫃台選票派發",
+        "allocation_title": "櫃台選票派發",
         "allocation_record": "櫃台派發記錄",
         "allocation_records": "已儲存的櫃台派發記錄",
         "allocation_new": "新增櫃台派發",
@@ -55,7 +55,7 @@ ALLOCATION_TRANSLATIONS = {
         "allocation_allocated": "目前已派發至櫃台",
         "allocation_available": "尚可派發至櫃台",
         "allocation_no_stock": "本站尚無可供派發的普通選票編號範圍。請先核對接收記錄。",
-        "allocation_report": "P(14) 選票派發報表",
+        "allocation_report": "選票派發報表",
         "allocation_report_scope": "報表基準",
         "allocation_report_station": "伺服器目前已儲存的全站庫存及派發",
         "allocation_report_selected": "所選已儲存的派發修訂版本",
@@ -64,16 +64,16 @@ ALLOCATION_TRANSLATIONS = {
             "所選版本報表保留該次派發及其接收基礎，不混入目前全站庫存。"
             "兩者均不包含未儲存的表格內容。"
         ),
-        "allocation_report_ready": "P(14) 報表預覽已準備。",
-        "allocation_exported": "P(14) 報表已儲存至所選檔案。",
-        "allocation_export_failed": "P(14) 報表未能匯出。請檢查檔案位置及連線後重試。",
+        "allocation_report_ready": "報表預覽已準備。",
+        "allocation_exported": "報表已儲存至所選檔案。",
+        "allocation_export_failed": "報表未能匯出。請檢查檔案位置及連線後重試。",
         "allocation_basis": "此派發版本的接收記錄基礎",
     },
     "sc": {
         "allocation_before_return": (
             "此编号范围是在拟记录的派发时间之后才退回。请将派发时间设为该次退回时间或之后。"
         ),
-        "allocation_title": "P(14) 柜台选票派发",
+        "allocation_title": "柜台选票派发",
         "allocation_record": "柜台派发记录",
         "allocation_records": "已保存的柜台派发记录",
         "allocation_new": "新增柜台派发",
@@ -123,7 +123,7 @@ ALLOCATION_TRANSLATIONS = {
         "allocation_allocated": "当前已派发至柜台",
         "allocation_available": "尚可派发至柜台",
         "allocation_no_stock": "本站尚无可供派发的普通选票编号范围。请先核对接收记录。",
-        "allocation_report": "P(14) 选票派发报表",
+        "allocation_report": "选票派发报表",
         "allocation_report_scope": "报表依据",
         "allocation_report_station": "服务器当前已保存的全站库存及派发",
         "allocation_report_selected": "所选已保存的派发修订版本",
@@ -132,9 +132,9 @@ ALLOCATION_TRANSLATIONS = {
             "所选版本报表保留该次派发及其接收依据，不混入当前全站库存。"
             "两者均不包含未保存的表单内容。"
         ),
-        "allocation_report_ready": "P(14) 报表预览已准备。",
-        "allocation_exported": "P(14) 报表已保存至所选文件。",
-        "allocation_export_failed": "P(14) 报表未能导出。请检查文件位置及连接后重试。",
+        "allocation_report_ready": "报表预览已准备。",
+        "allocation_exported": "报表已保存至所选文件。",
+        "allocation_export_failed": "报表未能导出。请检查文件位置及连接后重试。",
         "allocation_basis": "此派发版本的接收记录依据",
     },
     "en": {
@@ -145,7 +145,7 @@ ALLOCATION_TRANSLATIONS = {
             " or after the return that rele"
             "ases this range."
         ),
-        "allocation_title": "P(14) Counter stock allocations",
+        "allocation_title": "Counter stock allocations",
         "allocation_record": "Counter allocation",
         "allocation_records": "Saved counter allocations",
         "allocation_new": "New counter allocation",
@@ -216,7 +216,7 @@ ALLOCATION_TRANSLATIONS = {
             "No ordinary serial ranges are available for allocation at this station. "
             "Check the stock receipts first."
         ),
-        "allocation_report": "P(14) Stock allocation statement",
+        "allocation_report": "Stock allocation statement",
         "allocation_report_scope": "Report basis",
         "allocation_report_station": "Current saved station stock and allocations",
         "allocation_report_selected": "Selected saved allocation revision",
@@ -225,10 +225,10 @@ ALLOCATION_TRANSLATIONS = {
             "ranges. A selected revision retains that allocation and its receipt basis without "
             "mixing in current station stock. Neither includes unsaved form input."
         ),
-        "allocation_report_ready": "The P(14) statement preview is ready.",
-        "allocation_exported": "The P(14) statement has been saved to the selected file.",
+        "allocation_report_ready": "The statement preview is ready.",
+        "allocation_exported": "The statement has been saved to the selected file.",
         "allocation_export_failed": (
-            "The P(14) statement could not be exported. "
+            "The statement could not be exported. "
             "Check the file location and connection, then retry."
         ),
         "allocation_basis": "Receipt basis for this allocation revision",

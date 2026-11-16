@@ -52,7 +52,7 @@ uv run --locked python -m election.desktop --server https://localhost:8444 --ca 
 ```
 
 For an existing native Windows client, pass the same server address and the full path to
-`ca.pem` to `Election Desk.exe`, as described in [Windows setup](../docs/WINDOWS-SETUP.md).
+`ca.pem` to `Election Desk.exe`, as described in [client configuration](../docs/BUILDING.md#configure-and-upgrade-clients).
 Sign in using the private account sheet and select the Harbour Community Hall station.
 
 ## Advance through the demonstration
@@ -60,7 +60,7 @@ Sign in using the private account sheet and select the Harbour Community Hall st
 | Stage | Prepared records |
 | --- | --- |
 | `polling` | Active election, approved opening, received stock, allocations, remaining-stock snapshot, approved turnout, zero special-paper observation, an open complaint and a queue observation |
-| `counting` | Polling closure approved, P(18) accounting approved, local ballot box received, counting scope prepared and a complete draft count |
+| `counting` | Polling closure approved, accounting approved, local ballot box received, counting scope prepared and a complete draft count |
 | `results` | Count approved and selected, election finalized, results exported |
 
 Advance after saving any desktop edits:

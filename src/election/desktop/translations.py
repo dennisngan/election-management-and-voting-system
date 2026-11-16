@@ -1,5 +1,6 @@
 """Staff-facing interface labels for the three supported desktop languages."""
 
+from election import APP_NAME
 from election.desktop.accounting_translations import ACCOUNTING_TRANSLATIONS
 from election.desktop.allocation_translations import ALLOCATION_TRANSLATIONS
 from election.desktop.box_translations import BOX_EVENT_WORDS
@@ -26,8 +27,7 @@ from election.desktop.stock_snapshot_translations import STOCK_SNAPSHOT_TRANSLAT
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
-        "workspace_uncertain_request": "請先查核不確定請求的結果，再切換票站。",
-        "app_name": "選舉管理及投票系統",
+        "app_name": APP_NAME,
         "election_management": "選舉管理",
         "tagline": "清楚記錄每項票站工作。",
         "sign_in": "登入",
@@ -69,10 +69,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "disconnected": "未能連線",
         "certificate_error": "無法驗證伺服器憑證。請檢查伺服器位址及信任憑證設定。",
         "invalid_server": "請輸入有效的 HTTPS 伺服器位址。",
-        "invalid_credentials": "帳戶名稱或密碼不正確。",
         "session_expired": "登入時段已到期或失效，請重新登入。",
         "database_unavailable": "伺服器目前無法連接資料庫，請稍後重試。",
-        "request_failed": "未能完成要求。請檢查連線後重試。",
         "validation_error": "請檢查輸入資料後重試。",
         "password_mismatch": "兩次輸入的新密碼不相同。",
         "password_changed": "密碼已在其他地方更改，請重新登入。",
@@ -296,7 +294,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "active_election_required": "只可記錄進行中選舉的票站事項。請先由管理員啟用選舉。",
         "polling_officer_required": "只有獲指派的投票站職員可填寫及提交此事項。",
-        "supervisor_required": "只有獲指派的主管可確認此事項。",
         "polling_state_conflict": (
             "事項狀態已改變，無法完成此操作。您的輸入已保留，請重新載入後核對。"
         ),
@@ -324,10 +321,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "伺服器資料或確認狀態已有變更。您審閱的版本及未儲存內容已保留，請重新載入並比較。"
         ),
         "external_manual": "人工提供的外部數字",
-        "turnout_title": "正常模式投票人數",
-        "turnout_intro": (
-            "人工填寫外部提供的時段及累計投票人數，無須 EPR 連線、P(12) 快照或已確認的開站記錄。"
-        ),
         "turnout_approved_coverage": "連續有效的主管確認範圍",
         "turnout_coverage_hint": (
             "只計入從首時段開始連續且仍有效的主管確認。缺漏、草稿、待確認或須重新覆核的時段，"
@@ -391,19 +384,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_basis_revision": "所依據的前一時段確認版本",
         "turnout_basis_record": "記錄編號",
         "turnout_first_baseline": "首時段起始累計基礎：0",
-        "turnout_report": "P(15) 時段及累計投票人數報表",
+        "turnout_report": "時段及累計投票人數報表",
         "turnout_report_hint": (
             "請選擇審閱版本或本站目前報表；兩者均使用已儲存資料，不包含未儲存內容。"
         ),
         "turnout_report_scope": "選擇報表基準",
         "turnout_report_selected": "目前審閱的時段版本",
-        "turnout_report_station": "本站目前 P(15) 總覽",
+        "turnout_report_station": "本站目前總覽",
         "turnout_report_selected_hint": "保留您審閱的確切版本，包括歷史數字、來源及原確認資料。",
         "turnout_report_station_hint": "使用伺服器目前已儲存的全部時段及連續有效確認範圍。",
         "turnout_report_missing": "此時段尚無已儲存版本；可改選本站目前總覽。",
-        "turnout_report_ready": "P(15) 投票人數報表預覽已準備好。",
-        "turnout_exported": "P(15) 投票人數報表已儲存至所選檔案。",
-        "turnout_export_failed": "未能儲存 P(15) 投票人數報表，請檢查位置及連線後重試。",
+        "turnout_report_ready": "投票人數報表預覽已準備好。",
+        "turnout_exported": "投票人數報表已儲存至所選檔案。",
+        "turnout_export_failed": "未能儲存投票人數報表，請檢查位置及連線後重試。",
         "boxes": "票箱交收與點票事項",
         "box_list": "已儲存的票箱記錄",
         "box_new": "新增票箱",
@@ -605,8 +598,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "unsaved_station_changes": "表格有未儲存的內容。請先儲存，或捨棄變更後繼續。",
     },
     "sc": {
-        "workspace_uncertain_request": "请先核查不确定请求的结果，再切换票站。",
-        "app_name": "选举管理及投票系统",
+        "app_name": APP_NAME,
         "election_management": "选举管理",
         "tagline": "清楚记录每项票站工作。",
         "sign_in": "登录",
@@ -648,10 +640,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "disconnected": "无法连接",
         "certificate_error": "无法验证服务器证书。请检查服务器地址及信任证书设置。",
         "invalid_server": "请输入有效的 HTTPS 服务器地址。",
-        "invalid_credentials": "账户名称或密码不正确。",
         "session_expired": "登录会话已到期或失效，请重新登录。",
         "database_unavailable": "服务器当前无法连接数据库，请稍后重试。",
-        "request_failed": "无法完成请求。请检查连接后重试。",
         "validation_error": "请检查输入资料后重试。",
         "password_mismatch": "两次输入的新密码不相同。",
         "password_changed": "密码已在其他地方更改，请重新登录。",
@@ -875,7 +865,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "active_election_required": "只可记录进行中选举的票站事项。请先由管理员启用选举。",
         "polling_officer_required": "只有获指派的投票站职员可填写及提交此事项。",
-        "supervisor_required": "只有获指派的主管可确认此事项。",
         "polling_state_conflict": (
             "事项状态已改变，无法完成此操作。您的输入已保留，请重新载入后核对。"
         ),
@@ -903,10 +892,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "服务器资料或确认状态已有变更。您审阅的版本及未保存内容已保留，请重新载入并比较。"
         ),
         "external_manual": "人工提供的外部数字",
-        "turnout_title": "正常模式投票人数",
-        "turnout_intro": (
-            "人工填写外部提供的时段及累计投票人数，无须 EPR 连接、P(12) 快照或已确认的开站记录。"
-        ),
         "turnout_approved_coverage": "连续有效的主管确认范围",
         "turnout_coverage_hint": (
             "只计入从首时段开始连续且仍有效的主管确认。缺漏、草稿、待确认或须重新复核的时段，"
@@ -970,19 +955,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_basis_revision": "所依据的前一时段确认版本",
         "turnout_basis_record": "记录编号",
         "turnout_first_baseline": "首时段起始累计基础：0",
-        "turnout_report": "P(15) 时段及累计投票人数报表",
+        "turnout_report": "时段及累计投票人数报表",
         "turnout_report_hint": (
             "请选择审阅版本或本站当前报表；两者均使用已保存数据，不包含未保存内容。"
         ),
         "turnout_report_scope": "选择报表基准",
         "turnout_report_selected": "当前审阅的时段版本",
-        "turnout_report_station": "本站当前 P(15) 总览",
+        "turnout_report_station": "本站当前总览",
         "turnout_report_selected_hint": "保留您审阅的确切版本，包括历史数字、来源及原确认数据。",
         "turnout_report_station_hint": "使用服务器当前已保存的全部时段及连续有效确认范围。",
         "turnout_report_missing": "此时段尚无已保存版本；可改选本站当前总览。",
-        "turnout_report_ready": "P(15) 投票人数报表预览已准备好。",
-        "turnout_exported": "P(15) 投票人数报表已保存至所选文件。",
-        "turnout_export_failed": "未能保存 P(15) 投票人数报表，请检查位置及连接后重试。",
+        "turnout_report_ready": "投票人数报表预览已准备好。",
+        "turnout_exported": "投票人数报表已保存至所选文件。",
+        "turnout_export_failed": "未能保存投票人数报表，请检查位置及连接后重试。",
         "boxes": "票箱交收与点票事项",
         "box_list": "已保存的票箱记录",
         "box_new": "新增票箱",
@@ -1184,10 +1169,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "unsaved_station_changes": "表格有未保存的内容。请先保存，或放弃更改后继续。",
     },
     "en": {
-        "workspace_uncertain_request": (
-            "Check the uncertain request before switching polling stations."
-        ),
-        "app_name": "Election Management and Voting System",
+        "app_name": APP_NAME,
         "election_management": "Election management",
         "tagline": "A clear record of station work.",
         "sign_in": "Sign in",
@@ -1229,10 +1211,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "disconnected": "Unable to connect",
         "certificate_error": "Cannot verify server certificate. Check the address and trusted CA.",
         "invalid_server": "Enter a valid HTTPS server address.",
-        "invalid_credentials": "The username or password is incorrect.",
         "session_expired": "Your session has expired or is no longer valid. Sign in again.",
         "database_unavailable": "The server cannot reach the database. Try again later.",
-        "request_failed": "The request could not be completed. Check the connection and try again.",
         "validation_error": "Check your entries and try again.",
         "password_mismatch": "The new passwords do not match.",
         "password_changed": "Password changed elsewhere; sign in again.",
@@ -1512,7 +1492,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "polling_officer_required": (
             "Only an assigned Polling Officer can prepare and submit this event."
         ),
-        "supervisor_required": "Only an assigned Supervisor can approve this event.",
         "polling_state_conflict": (
             "The event status has changed. Your input is retained; reload the "
             "saved record and review it before continuing."
@@ -1566,11 +1545,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "are retained. Reload and compare before continuing."
         ),
         "external_manual": "Manually supplied external figures",
-        "turnout_title": "Normal-mode turnout",
-        "turnout_intro": (
-            "Enter externally supplied period and cumulative turnout. An EPR connection, "
-            "P(12) snapshot or approved opening record is not required."
-        ),
         "turnout_approved_coverage": "Continuous valid approved coverage",
         "turnout_coverage_hint": (
             "Only consecutive periods with still-valid Supervisor approvals are included, "
@@ -1645,14 +1619,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_basis_revision": "Preceding approved revision used as the basis",
         "turnout_basis_record": "Record ID",
         "turnout_first_baseline": "First-period starting cumulative baseline: 0",
-        "turnout_report": "P(15) period and cumulative turnout report",
+        "turnout_report": "Period and cumulative turnout report",
         "turnout_report_hint": (
             "Choose the reviewed revision or the current station report. Both use saved "
             "records and exclude unsaved input."
         ),
         "turnout_report_scope": "Choose the report basis",
         "turnout_report_selected": "Currently reviewed period revision",
-        "turnout_report_station": "Current station P(15) overview",
+        "turnout_report_station": "Current station overview",
         "turnout_report_selected_hint": (
             "Keep the exact revision you reviewed, including its historical figures, "
             "source and original approval details."
@@ -1663,11 +1637,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_report_missing": (
             "This period has no saved revision. Choose the current station overview instead."
         ),
-        "turnout_report_ready": "The P(15) turnout report preview is ready.",
-        "turnout_exported": "The P(15) turnout report was saved to the selected file.",
+        "turnout_report_ready": "The turnout report preview is ready.",
+        "turnout_exported": "The turnout report was saved to the selected file.",
         "turnout_export_failed": (
-            "Could not save the P(15) turnout report. "
-            "Check the location and connection, then retry."
+            "Could not save the turnout report. Check the location and connection, then retry."
         ),
         "boxes": "Box handover and milestones",
         "box_list": "Saved box records",
@@ -1944,68 +1917,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
 }
 
-for language, complaint_labels in COMPLAINT_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(complaint_labels)
-
-for language, period_labels in COMPLAINT_PERIOD_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(period_labels)
-
-for language, allocation_labels in ALLOCATION_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(allocation_labels)
-
-for language, snapshot_labels in STOCK_SNAPSHOT_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(snapshot_labels)
-
-for language, return_labels in COUNTER_RETURN_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(return_labels)
-
-for language, special_labels in SPECIAL_PAPER_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(special_labels)
-
-for language, fallback_labels in FALLBACK_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(fallback_labels)
-
-for language, fallback_turnout_labels in FALLBACK_TURNOUT_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(fallback_turnout_labels)
-
-for language, accounting_labels in ACCOUNTING_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(accounting_labels)
-
-for language, counting_scope_labels in COUNTING_SCOPE_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(counting_scope_labels)
-
-for language, invalid_reason_labels in INVALID_REASON_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(invalid_reason_labels)
-
-for language, counting_round_labels in COUNTING_ROUND_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(counting_round_labels)
-
-for language, outcome_labels in COUNT_OUTCOME_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(outcome_labels)
-
-for language, event_labels in BOX_EVENT_WORDS.items():
-    TRANSLATIONS[language].update(event_labels)
-
-for language, labels in RECOVERY_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(labels)
-
-for language, labels in OUTAGE_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(labels)
-
-for language, labels in PAPER_REENTRY_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(labels)
-for language, discrepancy_labels in COUNT_DISCREPANCY_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(discrepancy_labels)
-for language, result_labels in CONSTITUENCY_RESULT_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(result_labels)
-for language, backup_labels in SERVER_BACKUP_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(backup_labels)
-
-for language, recount_labels in LOCAL_RECOUNT_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(recount_labels)
-
-for language, labels in CONSTITUENCY_RECOUNT_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(labels)
-
-for language, completion_labels in ELECTION_COMPLETION_TRANSLATIONS.items():
-    TRANSLATIONS[language].update(completion_labels)
+for translation_group in (
+    COMPLAINT_TRANSLATIONS,
+    COMPLAINT_PERIOD_TRANSLATIONS,
+    ALLOCATION_TRANSLATIONS,
+    STOCK_SNAPSHOT_TRANSLATIONS,
+    COUNTER_RETURN_TRANSLATIONS,
+    SPECIAL_PAPER_TRANSLATIONS,
+    FALLBACK_TRANSLATIONS,
+    FALLBACK_TURNOUT_TRANSLATIONS,
+    ACCOUNTING_TRANSLATIONS,
+    COUNTING_SCOPE_TRANSLATIONS,
+    INVALID_REASON_TRANSLATIONS,
+    COUNTING_ROUND_TRANSLATIONS,
+    COUNT_OUTCOME_TRANSLATIONS,
+    BOX_EVENT_WORDS,
+    RECOVERY_TRANSLATIONS,
+    OUTAGE_TRANSLATIONS,
+    PAPER_REENTRY_TRANSLATIONS,
+    COUNT_DISCREPANCY_TRANSLATIONS,
+    CONSTITUENCY_RESULT_TRANSLATIONS,
+    SERVER_BACKUP_TRANSLATIONS,
+    LOCAL_RECOUNT_TRANSLATIONS,
+    CONSTITUENCY_RECOUNT_TRANSLATIONS,
+    ELECTION_COMPLETION_TRANSLATIONS,
+):
+    for language, labels in translation_group.items():
+        TRANSLATIONS[language].update(labels)

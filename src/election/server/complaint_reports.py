@@ -1,4 +1,4 @@
-"""Saved P(19) received-cohort statements with immutable case membership."""
+"""Saved received-cohort statements with immutable case membership."""
 
 import csv
 from collections.abc import Callable
@@ -28,14 +28,14 @@ type ReportLocale = Literal["tc", "sc", "en"]
 HKT = timezone(timedelta(hours=8), "HKT")
 LABELS: dict[ReportLocale, dict[str, str]] = {
     "tc": {
-        "title": "P(19) 投訴時段統計報表",
+        "title": "投訴時段統計報表",
         "election": "選舉",
         "election_status": "選舉狀態",
         "constituency": "選區",
         "station": "投票站",
         "report_scope": "報表基準",
         "basis_note": "報表涵蓋說明",
-        "station_current": "伺服器目前已儲存的本站 P(19)",
+        "station_current": "伺服器目前已儲存的本站報表",
         "period_revision": "所選已儲存時段版本",
         "revision_state": "版本狀態",
         "current": "目前版本",
@@ -130,14 +130,14 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "page": "頁",
     },
     "sc": {
-        "title": "P(19) 投诉时段统计报表",
+        "title": "投诉时段统计报表",
         "election": "选举",
         "election_status": "选举状态",
         "constituency": "选区",
         "station": "投票站",
         "report_scope": "报表依据",
         "basis_note": "报表覆盖说明",
-        "station_current": "服务器当前已保存的本站 P(19)",
+        "station_current": "服务器当前已保存的本站报表",
         "period_revision": "所选已保存时段版本",
         "revision_state": "版本状态",
         "current": "当前版本",
@@ -232,14 +232,14 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "page": "页",
     },
     "en": {
-        "title": "P(19) complaint period statistics",
+        "title": "complaint period statistics",
         "election": "Election",
         "election_status": "Election status",
         "constituency": "Constituency",
         "station": "Polling station",
         "report_scope": "Report basis",
         "basis_note": "Coverage and frozen basis",
-        "station_current": "Current saved station P(19)",
+        "station_current": "Current saved station report",
         "period_revision": "Selected saved period revision",
         "revision_state": "Revision state",
         "current": "Current revision",

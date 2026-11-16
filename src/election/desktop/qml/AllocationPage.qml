@@ -97,9 +97,9 @@ ColumnLayout {
         pendingLocale = locale
         exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
         exportDialog.defaultSuffix = format
-        let name = selectedReport ? "allocation-" + selected.id + "-r" + selected.revision
+        let name = selectedReport ? selected.id + "-r" + selected.revision
             : "station-" + editorState.station_id + "-current"
-        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/p14-"
+        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/allocation-"
             + name + "-" + pendingLocale + "." + format
         exportDialog.open()
     }

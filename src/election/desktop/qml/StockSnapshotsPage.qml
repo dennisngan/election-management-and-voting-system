@@ -61,7 +61,7 @@ ColumnLayout {
         pendingLocale = locale
         exportDialog.nameFilters = format === "pdf" ? ["PDF (*.pdf)"] : ["CSV (*.csv)"]
         exportDialog.defaultSuffix = format
-        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/p12-snapshot-"
+        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/stock-snapshot-"
             + selected.id + "-r" + selected.revision + "-" + pendingLocale + "." + format
         exportDialog.open()
     }

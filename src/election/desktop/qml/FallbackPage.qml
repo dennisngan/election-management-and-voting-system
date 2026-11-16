@@ -381,7 +381,7 @@ ColumnLayout {
             Heading { text: page.t("fallback_frozen_source") }
             FormCaption {
                 objectName: "fallbackSnapshotReference"
-                text: "P(12) " + page.amount(page.selected.stock_snapshot_id) + " · "
+                text: page.amount(page.selected.stock_snapshot_id) + " · "
                     + page.t("revision") + " " + page.amount(page.selected.stock_snapshot_revision)
                     + " · " + page.time(page.snapshot.event_at)
             }

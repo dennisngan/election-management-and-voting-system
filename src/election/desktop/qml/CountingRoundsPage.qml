@@ -471,7 +471,7 @@ ColumnLayout {
                 model: page.scope.accounting_basis || []
                 FormCaption {
                     required property var modelData
-                    text: modelData.context.station.code + " · P(18) #" + modelData.id
+                    text: modelData.context.station.code + " · #" + modelData.id
                         + " · " + page.t("revision") + " " + modelData.revision
                 }
             }
@@ -664,7 +664,7 @@ ColumnLayout {
                 model: (page.selected.scope_basis || {}).accounting_basis || []
                 FormCaption {
                     required property var modelData
-                    text: modelData.context.station.code + " · P(18) #" + modelData.id
+                    text: modelData.context.station.code + " · #" + modelData.id
                         + " · " + page.t("revision") + " " + modelData.revision
                 }
             }

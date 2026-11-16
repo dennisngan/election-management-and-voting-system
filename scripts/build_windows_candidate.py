@@ -1,4 +1,4 @@
-"""Build a fresh Windows11x64 onedir package from the reviewed locked environment."""
+"""Build a fresh Windows11x64 onefile package from the reviewed locked environment."""
 
 import argparse
 import platform
@@ -60,13 +60,6 @@ def main() -> None:
         if installed != packages[name]["version"]:
             raise SystemExit(f"Installed build dependency differs from uv.lock: {name}")
         tool_versions[name] = installed
-    qml = root / "src/election/desktop/qml"
-    qml_files = sorted(qml.rglob("*.qml"))
-    if not (qml / "Main.qml").is_file() or not qml_files:
-        raise SystemExit("The tracked desktop QML source is incomplete")
-    for path in qml_files:
-        if path.is_symlink() or not path.is_file():
-            raise SystemExit("Refuse non-regular QML input")
     source = source_identity(root)
     release_version = args.release_version or project["project"]["version"]
     backend_release = args.backend_release or "source-" + source["inputs_sha256"]
@@ -81,35 +74,22 @@ def main() -> None:
         raise SystemExit("Refuse a redirected or non-directory .runtime build root")
     build_root = runtime_root / ("windows-package-" + args.run_name)
     build_root.mkdir(parents=True, exist_ok=False)
-    entry = build_root / "desktop-entry.py"
-    with entry.open("x", encoding="utf-8") as output:
-        output.write("from election.desktop.__main__ import main\nmain()\n")
     command = [
         sys.executable,
         "-m",
         "PyInstaller",
-        "--windowed",
-        "--onedir",
+        "--clean",
         "--noconfirm",
-        "--name",
-        "Election Desk",
         "--distpath",
         str(build_root / "dist"),
         "--workpath",
         str(build_root / "work"),
-        "--specpath",
-        str(build_root / "spec"),
-        "--paths",
-        str(root / "src"),
+        str(root / "election-desk.spec"),
     ]
-    for path in qml_files:
-        destination = (Path("election/desktop/qml") / path.relative_to(qml).parent).as_posix()
-        command.extend(["--add-data", f"{path}:{destination}"])
-    command.append(str(entry))
     subprocess.run(command, cwd=root, check=True)
-    executable = build_root / "dist/Election Desk/Election Desk.exe"
+    executable = build_root / "dist/Election Desk.exe"
     if not executable.is_file():
-        raise SystemExit("PyInstaller did not produce the expected onedir executable")
+        raise SystemExit("PyInstaller did not produce the expected onefile executable")
     print(executable)
     build = build_identity(native_windows_build=True, tool_versions=tool_versions)
     build.update(run_name=args.run_name, windows_build=sys.getwindowsversion().build)

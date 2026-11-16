@@ -216,14 +216,14 @@ ColumnLayout {
                 model: [{id: 0, revision: 0}].concat(page.editorState.basis_options)
                 currentIndex: Math.max(0, model.findIndex(row => row.id === page.basis.id
                     && row.revision === page.basis.revision))
-                displayText: page.basis.id ? "P(12) " + page.basis.id + " · "
+                displayText: page.basis.id ? page.basis.id + " · "
                     + page.t("revision") + " " + page.basis.revision + " · "
                     + page.papers.formatTime(page.basis.event_at || "") : page.t("special_choose_basis")
                 Accessible.name: page.t("special_basis")
                 delegate: ItemDelegate {
                     required property var modelData
                     width: basisPicker.width
-                    text: modelData.id ? "P(12) " + modelData.id + " · " + page.t("revision")
+                    text: modelData.id ? modelData.id + " · " + page.t("revision")
                         + " " + modelData.revision + " · " + page.papers.formatTime(modelData.event_at)
                         : page.t("special_choose_basis")
                 }

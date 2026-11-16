@@ -1,8 +1,8 @@
-"""P(18) labels keep estimates, observed papers and source approvals distinct."""
+"""Labels keep estimates, observed papers and source approvals distinct."""
 
 ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
-        "accounting_title": "P(18) 選票帳目",
+        "accounting_title": "選票帳目",
         "accounting_provenance_external_manual": "人工提供的外部數字",
         "accounting_provenance_fallback_stock": "後備普通庫存推算",
         "accounting_provenance_mixed": "正常及後備涵蓋時段",
@@ -17,7 +17,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "accounting_choose_special": "請選擇來源觀察",
         "accounting_turnout_source": "投票人數來源（可不選）",
         "accounting_no_turnout": "未選投票人數來源",
-        "accounting_source_hint": "來源觀察包含 P(12) 櫃台存量、收到選票及各類選票的版本。",
+        "accounting_source_hint": "來源觀察包含櫃台存量、收到選票及各類選票的版本。",
         "accounting_turnout_hint": (
             "保留已提供人數及核准狀態。只有有效核准的累計人數用作人數基礎估算。"
         ),
@@ -35,7 +35,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
             "實際點算張數尚未觀察；「—」不代表零。帳目不會代填實際點算張數。"
         ),
         "accounting_provenance": "已儲存來源版本",
-        "accounting_stock_basis": "P(12) 櫃台存量來源",
+        "accounting_stock_basis": "櫃台存量來源",
         "accounting_special_basis": "特別及未用選票來源",
         "accounting_turnout_basis": "投票人數及其來源",
         "accounting_supplied_total": "提供的累計投票人數",
@@ -47,7 +47,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "accounting_newer_revision": "伺服器資料已更新。保留目前輸入；請重新載入並核對後繼續。",
         "accounting_read_only": "此帳戶可查看帳目；只有已指派的點票人員可準備及提交。",
         "accounting_historical": "正在查看保留的歷史版本，只供閱讀及匯出。",
-        "accounting_no_record": "尚未儲存 P(18) 帳目。請選擇來源並準備草稿。",
+        "accounting_no_record": "尚未儲存帳目。請選擇來源並準備草稿。",
         "accounting_reload": "重新載入目前版本",
         "accounting_history": "保留版本",
         "accounting_report": "帳目預覽及匯出",
@@ -83,7 +83,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "accounting_observed_counted_quantity": "實際點算張數（尚未觀察）",
     },
     "sc": {
-        "accounting_title": "P(18) 选票账目",
+        "accounting_title": "选票账目",
         "accounting_provenance_external_manual": "人工提供的外部数字",
         "accounting_provenance_fallback_stock": "后备普通库存推算",
         "accounting_provenance_mixed": "正常及后备涵盖时段",
@@ -98,7 +98,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "accounting_choose_special": "请选择来源观察",
         "accounting_turnout_source": "投票人数来源（可不选）",
         "accounting_no_turnout": "未选投票人数来源",
-        "accounting_source_hint": "来源观察包含 P(12) 柜台存量、收到选票及各类选票的版本。",
+        "accounting_source_hint": "来源观察包含柜台存量、收到选票及各类选票的版本。",
         "accounting_turnout_hint": (
             "保留已提供人数及核准状态。只有有效核准的累计人数用作人数基础估算。"
         ),
@@ -116,7 +116,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
             "实际点算张数尚未观察；「—」不代表零。账目不会代填实际点算张数。"
         ),
         "accounting_provenance": "已保存来源版本",
-        "accounting_stock_basis": "P(12) 柜台存量来源",
+        "accounting_stock_basis": "柜台存量来源",
         "accounting_special_basis": "特别及未用选票来源",
         "accounting_turnout_basis": "投票人数及其来源",
         "accounting_supplied_total": "提供的累计投票人数",
@@ -128,7 +128,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "accounting_newer_revision": "服务器数据已更新。保留目前输入；请重新载入并核对后继续。",
         "accounting_read_only": "此账户可查看账目；只有已指派的点票人员可准备及提交。",
         "accounting_historical": "正在查看保留的历史版本，只供阅读及导出。",
-        "accounting_no_record": "尚未保存 P(18) 账目。请选择来源并准备草稿。",
+        "accounting_no_record": "尚未保存账目。请选择来源并准备草稿。",
         "accounting_reload": "重新载入目前版本",
         "accounting_history": "保留版本",
         "accounting_report": "账目预览及导出",
@@ -164,7 +164,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "accounting_observed_counted_quantity": "实际点算张数（尚未观察）",
     },
     "en": {
-        "accounting_title": "P(18) stock accounting",
+        "accounting_title": "Stock accounting",
         "accounting_provenance_external_manual": "Manually supplied external figures",
         "accounting_provenance_fallback_stock": "Fallback ordinary stock",
         "accounting_provenance_mixed": "Normal and fallback intervals",
@@ -188,8 +188,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "accounting_turnout_source": "Turnout source (optional)",
         "accounting_no_turnout": "No turnout source selected",
         "accounting_source_hint": (
-            "The observation preserves P(12) desk "
-            "balances, received stock and paper-category revisions."
+            "The observation preserves desk balances, received stock and paper-category revisions."
         ),
         "accounting_turnout_hint": (
             "Supplied figures and approval remain separate. Only a "
@@ -211,7 +210,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
             "An em dash means missing, and does not mean zero."
         ),
         "accounting_provenance": "Saved source revisions",
-        "accounting_stock_basis": "P(12) desk-stock basis",
+        "accounting_stock_basis": "Desk-stock basis",
         "accounting_special_basis": "Special and retrieved-paper basis",
         "accounting_turnout_basis": "Turnout and its provenance",
         "accounting_supplied_total": "Supplied cumulative turnout",
@@ -233,9 +232,7 @@ ACCOUNTING_TRANSLATIONS: dict[str, dict[str, str]] = {
         "accounting_historical": (
             "Viewing a preserved historical revision for reading and export."
         ),
-        "accounting_no_record": (
-            "No P(18) accounting is saved yet. Select sources to prepare a draft."
-        ),
+        "accounting_no_record": ("No accounting is saved yet. Select sources to prepare a draft."),
         "accounting_reload": "Reload current revision",
         "accounting_history": "Preserved revisions",
         "accounting_report": "Accounting preview and export",

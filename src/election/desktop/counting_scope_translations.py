@@ -3,9 +3,7 @@
 COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
         "counting_scopes_title": "點票範圍",
-        "counting_scopes_intro": (
-            "選取此點票站收到的票箱，並保留來源票站 P(18) 帳目版本作為點票依據。"
-        ),
+        "counting_scopes_intro": ("選取此點票站收到的票箱，並保留來源票站帳目版本作為點票依據。"),
         "counting_scope_context": "點票站及選區",
         "counting_scope_list": "已儲存點票範圍",
         "counting_scope_new": "新增點票範圍",
@@ -16,11 +14,11 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_boxes": "目前可用票箱",
         "counting_scope_box_basis": "已選票箱依據",
         "counting_scope_frozen_box_basis": "已保存票箱依據",
-        "counting_scope_accounting": "可選的目前來源 P(18) 版本",
+        "counting_scope_accounting": "可選的目前來源版本",
         "counting_scope_accounting_basis": "已保存來源帳目依據",
-        "counting_scope_p18_reference": "P(18) 編號及版本",
-        "counting_scope_source_received_quantity": "來源 P(18) 收到選票總數",
-        "counting_scope_source_replacement_quantity": "來源 P(18) 未用補發儲備",
+        "counting_scope_p18_reference": "編號及版本",
+        "counting_scope_source_received_quantity": "來源收到選票總數",
+        "counting_scope_source_replacement_quantity": "來源未用補發儲備",
         "counting_scope_report": "點票範圍預覽及匯出",
         "counting_scope_preview": "預覽此點票範圍版本",
         "counting_scope_report_ready": "已載入所選點票範圍版本的預覽。",
@@ -46,7 +44,7 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_coverage": "來源票站票箱涵蓋",
         "counting_scope_source": "來源票站",
         "counting_scope_no_accounting": "尚無可供選用的來源帳目。",
-        "counting_scope_current_accounting": "使用目前 P(18) 第 %1 版",
+        "counting_scope_current_accounting": "使用目前第 %1 版",
         "counting_scope_no_accounting_selected": "不選帳目版本",
         "counting_scope_read_only": "此帳戶可查看點票範圍；只有已指派的點票人員可準備或提交。",
         "counting_scope_historical": "正在查看保留版本，只供閱讀。",
@@ -62,11 +60,6 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_estimate_warning": (
             "不同來源票箱一併點算時，候選人票數不可歸屬至 個別來源票站。"
         ),
-        "counting_scope_blocker_box_receipt_missing": "尚未記錄收箱。",
-        "counting_scope_blocker_scope_boxes_missing": "尚未選取票箱。",
-        "counting_scope_blocker_source_accounting_missing": "尚未選取此來源票站的 P(18) 帳目。",
-        "counting_scope_blocker_source_accounting_unapproved": "來源 P(18) 帳目尚未核准。",
-        "counting_scope_blocker_scope_basis_stale": "票箱或來源帳目已變更，現有依據已失效。",
         "scope_reason_required": "已提交點票範圍的更正必須說明原因。",
         "scope_state_conflict": "另一位職員已變更此點票範圍的提交狀態；請重新載入後再繼續。",
         "scope_reference_conflict": "此點票站已使用該點票範圍編號。",
@@ -80,9 +73,7 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "sc": {
         "counting_scopes_title": "点票范围",
-        "counting_scopes_intro": (
-            "选择此点票站收到的票箱，并保留来源票站 P(18) 账目版本作为点票依据。"
-        ),
+        "counting_scopes_intro": ("选择此点票站收到的票箱，并保留来源票站账目版本作为点票依据。"),
         "counting_scope_context": "点票站及选区",
         "counting_scope_list": "已保存点票范围",
         "counting_scope_new": "新增点票范围",
@@ -93,11 +84,11 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_boxes": "目前可用票箱",
         "counting_scope_box_basis": "已选票箱依据",
         "counting_scope_frozen_box_basis": "已保存票箱依据",
-        "counting_scope_accounting": "可选的目前来源 P(18) 版本",
+        "counting_scope_accounting": "可选的目前来源版本",
         "counting_scope_accounting_basis": "已保存来源账目依据",
-        "counting_scope_p18_reference": "P(18) 编号及版本",
-        "counting_scope_source_received_quantity": "来源 P(18) 收到选票总数",
-        "counting_scope_source_replacement_quantity": "来源 P(18) 未用补发储备",
+        "counting_scope_p18_reference": "编号及版本",
+        "counting_scope_source_received_quantity": "来源收到选票总数",
+        "counting_scope_source_replacement_quantity": "来源未用补发储备",
         "counting_scope_report": "点票范围预览及导出",
         "counting_scope_preview": "预览此点票范围版本",
         "counting_scope_report_ready": "已载入所选点票范围版本的预览。",
@@ -123,7 +114,7 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_coverage": "来源票站票箱涵盖",
         "counting_scope_source": "来源票站",
         "counting_scope_no_accounting": "尚无可供选择的来源账目。",
-        "counting_scope_current_accounting": "使用目前 P(18) 第 %1 版",
+        "counting_scope_current_accounting": "使用目前第 %1 版",
         "counting_scope_no_accounting_selected": "不选账目版本",
         "counting_scope_read_only": "此账户可查看点票范围；只有已指派的点票人员可准备或提交。",
         "counting_scope_historical": "正在查看保留版本，只供阅读。",
@@ -139,11 +130,6 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_estimate_warning": (
             "不同来源票箱一并点算时，候选人票数不可归属至 个别来源票站。"
         ),
-        "counting_scope_blocker_box_receipt_missing": "尚未记录收箱。",
-        "counting_scope_blocker_scope_boxes_missing": "尚未选择票箱。",
-        "counting_scope_blocker_source_accounting_missing": "尚未选择此来源票站的 P(18) 账目。",
-        "counting_scope_blocker_source_accounting_unapproved": "来源 P(18) 账目尚未核准。",
-        "counting_scope_blocker_scope_basis_stale": "票箱或来源账目已变更，现有依据已失效。",
         "scope_reason_required": "已提交点票范围的更正必须说明原因。",
         "scope_state_conflict": "另一位职员已更改此点票范围的提交状态；请重新加载后再继续。",
         "scope_reference_conflict": "此点票站已使用该点票范围编号。",
@@ -159,7 +145,7 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scopes_title": "Counting scopes",
         "counting_scopes_intro": (
             "Choose boxes received at this counting station and retain each source station’s "
-            "P(18) revision as count provenance."
+            "revision as count provenance."
         ),
         "counting_scope_context": "Counting station and constituency",
         "counting_scope_list": "Saved counting scopes",
@@ -171,11 +157,11 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_boxes": "Current box records",
         "counting_scope_box_basis": "Selected box basis",
         "counting_scope_frozen_box_basis": "Saved box basis",
-        "counting_scope_accounting": "Current available source P(18) revision",
+        "counting_scope_accounting": "Current available source revision",
         "counting_scope_accounting_basis": "Saved source accounting basis",
-        "counting_scope_p18_reference": "P(18) record and revision",
-        "counting_scope_source_received_quantity": "Source P(18) papers received",
-        "counting_scope_source_replacement_quantity": "Source P(18) unused replacement reserve",
+        "counting_scope_p18_reference": "Record and revision",
+        "counting_scope_source_received_quantity": "Source papers received",
+        "counting_scope_source_replacement_quantity": "Source unused replacement reserve",
         "counting_scope_report": "Counting scope preview and export",
         "counting_scope_preview": "Preview this counting scope revision",
         "counting_scope_report_ready": "Preview loaded for the selected counting scope revision.",
@@ -204,7 +190,7 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_coverage": "Source station box coverage",
         "counting_scope_source": "Source station",
         "counting_scope_no_accounting": "No source accounting revision is available.",
-        "counting_scope_current_accounting": "Use current P(18) revision %1",
+        "counting_scope_current_accounting": "Use current revision %1",
         "counting_scope_no_accounting_selected": "No accounting revision",
         "counting_scope_read_only": (
             "This account can view counting scopes; only an assigned Counting Officer can "
@@ -230,17 +216,6 @@ COUNTING_SCOPE_TRANSLATIONS: dict[str, dict[str, str]] = {
         "counting_scope_estimate_warning": (
             "When boxes from different source stations are counted together, candidate votes "
             "cannot be attributed to each source station."
-        ),
-        "counting_scope_blocker_box_receipt_missing": "Receipt has not been recorded for this box.",
-        "counting_scope_blocker_scope_boxes_missing": "Select at least one box.",
-        "counting_scope_blocker_source_accounting_missing": (
-            "Select the P(18) accounting revision for this source station."
-        ),
-        "counting_scope_blocker_source_accounting_unapproved": (
-            "The source P(18) accounting is not approved."
-        ),
-        "counting_scope_blocker_scope_basis_stale": (
-            "A box or source accounting record changed; this scope basis is stale."
         ),
         "scope_reason_required": "A reason is required to amend a submitted counting scope.",
         "scope_state_conflict": (

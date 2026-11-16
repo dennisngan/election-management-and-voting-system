@@ -1,4 +1,4 @@
-"""P19 received-cohort snapshots with explicit zero and revision-bound review."""
+"""Received-cohort snapshots with explicit zero and revision-bound review."""
 
 import hashlib
 import json

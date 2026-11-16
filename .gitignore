@@ -5,6 +5,8 @@
 /.vscode
 /.idea
 /.runtime
+/.scratch/
+/docs/
 .env
 .env.*
 !.env.example
@@ -32,7 +34,7 @@ demo-results.csv
 demo-results.pdf
 
 # Keep demo/scenario.json, example configuration, source and project documents in Git.
-# Do not ignore all JSON, CSV or PDF files, or the .scratch specifications.
+# Do not ignore all JSON, CSV or PDF files.
 
 # Python, test and analysis caches.
 __pycache__/

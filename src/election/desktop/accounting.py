@@ -1,4 +1,4 @@
-"""Source-station P(18) preparation and review through authenticated HTTP."""
+"""Source-station preparation and review through authenticated HTTP."""
 
 import json
 from copy import deepcopy

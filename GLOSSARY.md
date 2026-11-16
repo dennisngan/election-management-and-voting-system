@@ -1,4 +1,4 @@
-# Election Management and Voting System
+# Election Desk
 
 Terms for the staff application that administers physical-ballot polling and records counting results.
 

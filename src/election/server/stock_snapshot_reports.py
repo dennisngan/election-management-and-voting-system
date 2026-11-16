@@ -1,4 +1,4 @@
-"""Selected P(12) statements preserve the exact saved snapshot and its stock basis."""
+"""Selected statements preserve the exact saved snapshot and its stock basis."""
 
 import csv
 from collections.abc import Callable, Generator
@@ -19,7 +19,7 @@ from election.server.stock_snapshots import snapshot_view
 
 LABELS: dict[ReportLocale, dict[str, str]] = {
     "tc": {
-        "title": "P(12) 發票櫃台結餘及發票紀錄",
+        "title": "發票櫃台結餘及發票紀錄",
         "field": "項目",
         "value": "內容",
         "reporting_status": "填報狀態",
@@ -78,7 +78,7 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "return_id": "退回記錄編號",
     },
     "sc": {
-        "title": "P(12) 发票柜台结余及发票记录",
+        "title": "发票柜台结余及发票记录",
         "field": "项目",
         "value": "内容",
         "reporting_status": "填报状态",
@@ -137,7 +137,7 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
         "return_id": "退回记录编号",
     },
     "en": {
-        "title": "P(12) Counter remaining stock and issuance",
+        "title": "Counter remaining stock and issuance",
         "field": "Field",
         "value": "Value",
         "reporting_status": "Reporting status",
@@ -403,7 +403,8 @@ def stock_snapshot_reports_router(
     timestamp: Callable[[], datetime],
 ) -> APIRouter:
     router = APIRouter(
-        prefix="/api/workspace/stations/{station_id}/stock-snapshots", tags=["P(12) statements"]
+        prefix="/api/workspace/stations/{station_id}/stock-snapshots",
+        tags=["Stock snapshot statements"],
     )
     Database = Annotated[Session, Depends(database)]
     Ready = Annotated[Account, Depends(ready_account)]
@@ -459,7 +460,7 @@ def stock_snapshot_reports_router(
         locale: ReportLocale = "tc",
     ) -> Response:
         projection = statement(station_id, db, actor, snapshot_id, revision, locale)
-        filename = f"p12-snapshot-{snapshot_id}-r{revision}-{locale}.csv"
+        filename = f"stock-snapshot-{snapshot_id}-r{revision}-{locale}.csv"
         return Response(
             _csv_report(projection),
             media_type="text/csv; charset=utf-8",
@@ -476,7 +477,7 @@ def stock_snapshot_reports_router(
         locale: ReportLocale = "tc",
     ) -> Response:
         projection = statement(station_id, db, actor, snapshot_id, revision, locale)
-        filename = f"p12-snapshot-{snapshot_id}-r{revision}-{locale}.pdf"
+        filename = f"stock-snapshot-{snapshot_id}-r{revision}-{locale}.pdf"
         return Response(
             _pdf_report(projection),
             media_type="application/pdf",

@@ -1,4 +1,4 @@
-"""Retain source-station P(18) accounting and exact command outcomes."""
+"""Retain source-station accounting and exact command outcomes."""
 
 import sqlalchemy as sa
 from alembic import op

@@ -18,12 +18,12 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         "special_new": "新增特殊選票觀察",
         "special_observation": "特殊選票數量觀察",
         "special_event_time": "原始觀察時間（香港時間 YYYY-MM-DD HH:mm，可輸入秒及微秒）",
-        "special_basis": "P(12) 結餘觀察基礎",
+        "special_basis": "結餘觀察基礎",
         "special_basis_hint": (
-            "選擇不晚於本次觀察時間、目前有效且所有櫃台已申報的 P(12) 版本。"
+            "選擇不晚於本次觀察時間、目前有效且所有櫃台已申報的版本。"
             "核算會保留該版本及本次適用的接收／儲備基礎。"
         ),
-        "special_choose_basis": "選擇目前完整的 P(12) 版本",
+        "special_choose_basis": "選擇目前完整的版本",
         "special_series": "已接收的選票系列",
         "special_count_hint": (
             "為每個已接收系列填寫截至原始觀察時間的六項累計數量。空白表示尚未填報；"
@@ -36,16 +36,16 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         "special_saved_totals": "所選已儲存版本的數量",
         "special_historical": "此為歷史版本，只供查看。請重新載入目前版本後才修訂。",
         "special_basis_stale": (
-            "所選版本的原有數字及來源基礎仍保留。相關庫存或 P(12) 基礎已有修訂；"
+            "所選版本的原有數字及來源基礎仍保留。相關庫存或基礎已有修訂；"
             "請核對目前有效的結餘後，再儲存新的觀察或修訂。"
         ),
         "special_report": "所選特殊選票核算版本報表",
         "special_report_hint": (
-            "預覽及匯出保留所選已儲存版本的數量、接收及 P(12) 來源基礎，包括歷史版本。"
+            "預覽及匯出保留所選已儲存版本的數量、接收及來源基礎，包括歷史版本。"
             "未儲存內容不會納入；報表標籤使用目前所選語言。票箱選票數量屬庫存估計。"
         ),
         "special_paper_validation": (
-            "請核對原始香港時間、目前完整的 P(12) 版本及所有已接收系列。"
+            "請核對原始香港時間、目前完整的版本及所有已接收系列。"
             "每項數量須填非負整數；修訂須填寫原因。"
         ),
         "special_paper_saved": "特殊選票觀察已儲存至中央伺服器。",
@@ -56,8 +56,7 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
             "伺服器已有較新版本；您審閱的版本及未儲存數量仍保留。請比較後再重新載入。"
         ),
         "special_paper_bounds": (
-            "填報數量超出適用的已接收儲備或普通已發出選票基礎。"
-            "請核對所選 P(12) 版本、系列及各項累計數量。"
+            "填報數量超出適用的已接收儲備或普通已發出選票基礎。請核對所選版本、系列及各項累計數量。"
         ),
         "replacement_spoilt_mismatch": (
             "補發選票數量須與已收回並註銷的損壞原票數量配對一致。請核對兩項數量。"
@@ -74,11 +73,11 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "special_paper_not_found": "找不到所選特殊選票觀察或修訂版本，請重新整理後再選擇。",
         "stock_snapshot_incomplete": (
-            "請選擇所有櫃台均已申報結餘的 P(12) 版本。尚未申報的結餘不可當作零。"
+            "請選擇所有櫃台均已申報結餘的版本。尚未申報的結餘不可當作零。"
         ),
         "stock_snapshot_basis_stale": (
-            "所選 P(12) 基礎已有變更，或其時間晚於本次觀察。請核對接收、派發及退回記錄，"
-            "儲存目前有效且完整的 P(12) 結餘，再選擇不晚於本次觀察時間的版本。"
+            "所選基礎已有變更，或其時間晚於本次觀察。請核對接收、派發及退回記錄，"
+            "儲存目前有效且完整的結餘，再選擇不晚於本次觀察時間的版本。"
         ),
         "special_received_quantity": "接收選票總數",
         "special_ordinary_issued_quantity": "庫存推算普通發票數量",
@@ -112,12 +111,12 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         "special_new": "新增特殊选票观察",
         "special_observation": "特殊选票数量观察",
         "special_event_time": "原始观察时间（香港时间 YYYY-MM-DD HH:mm，可输入秒及微秒）",
-        "special_basis": "P(12) 结余观察依据",
+        "special_basis": "结余观察依据",
         "special_basis_hint": (
-            "选择不晚于本次观察时间、当前有效且所有柜台已申报的 P(12) 版本。"
+            "选择不晚于本次观察时间、当前有效且所有柜台已申报的版本。"
             "核算会保留该版本及本次适用的接收／储备依据。"
         ),
-        "special_choose_basis": "选择当前完整的 P(12) 版本",
+        "special_choose_basis": "选择当前完整的版本",
         "special_series": "已接收的选票系列",
         "special_count_hint": (
             "为每个已接收系列填写截至原始观察时间的六项累计数量。空白表示尚未填报；"
@@ -130,16 +129,16 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         "special_saved_totals": "所选已保存版本的数量",
         "special_historical": "此为历史版本，仅供查看。请重新载入当前版本后才修订。",
         "special_basis_stale": (
-            "所选版本的原有数字及来源依据仍保留。相关库存或 P(12) 依据已有修订；"
+            "所选版本的原有数字及来源依据仍保留。相关库存或依据已有修订；"
             "请核对当前有效的结余后，再保存新的观察或修订。"
         ),
         "special_report": "所选特殊选票核算版本报表",
         "special_report_hint": (
-            "预览及导出保留所选已保存版本的数量、接收及 P(12) 来源依据，包括历史版本。"
+            "预览及导出保留所选已保存版本的数量、接收及来源依据，包括历史版本。"
             "未保存内容不会纳入；报表标签使用当前所选语言。票箱选票数量属于库存估计。"
         ),
         "special_paper_validation": (
-            "请核对原始香港时间、当前完整的 P(12) 版本及所有已接收系列。"
+            "请核对原始香港时间、当前完整的版本及所有已接收系列。"
             "每项数量须填非负整数；修订须填写原因。"
         ),
         "special_paper_saved": "特殊选票观察已保存至中央服务器。",
@@ -150,8 +149,7 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
             "服务器已有较新版本；您审阅的版本及未保存数量仍保留。请比较后再重新载入。"
         ),
         "special_paper_bounds": (
-            "填报数量超出适用的已接收储备或普通已发出选票依据。"
-            "请核对所选 P(12) 版本、系列及各项累计数量。"
+            "填报数量超出适用的已接收储备或普通已发出选票依据。请核对所选版本、系列及各项累计数量。"
         ),
         "replacement_spoilt_mismatch": (
             "补发选票数量须与已收回并注销的损坏原票数量配对一致。请核对两项数量。"
@@ -168,11 +166,11 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "special_paper_not_found": "找不到所选特殊选票观察或修订版本，请刷新后再选择。",
         "stock_snapshot_incomplete": (
-            "请选择所有柜台均已申报结余的 P(12) 版本。尚未申报的结余不可当作零。"
+            "请选择所有柜台均已申报结余的版本。尚未申报的结余不可当作零。"
         ),
         "stock_snapshot_basis_stale": (
-            "所选 P(12) 依据已有变更，或其时间晚于本次观察。请核对接收、派发及退回记录，"
-            "保存当前有效且完整的 P(12) 结余，再选择不晚于本次观察时间的版本。"
+            "所选依据已有变更，或其时间晚于本次观察。请核对接收、派发及退回记录，"
+            "保存当前有效且完整的结余，再选择不晚于本次观察时间的版本。"
         ),
         "special_received_quantity": "接收选票总数",
         "special_ordinary_issued_quantity": "库存推算普通发票数量",
@@ -212,12 +210,12 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         "special_event_time": (
             "Original observation time (HKT YYYY-MM-DD HH:mm; optional seconds and microseconds)"
         ),
-        "special_basis": "P(12) balance observation basis",
+        "special_basis": "Balance observation basis",
         "special_basis_hint": (
-            "Choose a current, complete P(12) revision at or before this observation time. "
+            "Choose a current, complete revision at or before this observation time. "
             "The accounting retains that revision and the applicable receipt/reserve basis."
         ),
-        "special_choose_basis": "Choose a current, complete P(12) revision",
+        "special_choose_basis": "Choose a current, complete revision",
         "special_series": "Received ballot series",
         "special_count_hint": (
             "Enter all six cumulative category counts for every received series as of the "
@@ -233,18 +231,18 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
             "This historical revision is read-only. Reload the current revision before amending."
         ),
         "special_basis_stale": (
-            "Saved figures and their original basis are retained. Related stock or P(12) "
+            "Saved figures and their original basis are retained. Related stock or "
             "sources have changed. Review a current valid balance before saving another "
             "observation or amendment."
         ),
         "special_report": "Selected special-paper accounting statement",
         "special_report_hint": (
-            "Preview and export retain the selected saved quantities and original receipt/P(12) "
+            "Preview and export retain the selected saved quantities and original receipt "
             "basis, including historical revisions. Unsaved input is excluded. Report labels "
             "use the selected language. Box-paper quantities are stock-derived estimates."
         ),
         "special_paper_validation": (
-            "Check the original HKT time, a current complete P(12) revision and all received "
+            "Check the original HKT time, a current complete revision and all received "
             "series. Enter every quantity as a nonnegative whole number. "
             "Amendments require a reason."
         ),
@@ -259,7 +257,7 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "special_paper_bounds": (
             "Reported quantities exceed the applicable received reserves or ordinary "
-            "issued-paper basis. Check the selected P(12) revision, series and cumulative counts."
+            "issued-paper basis. Check the selected revision, series and cumulative counts."
         ),
         "replacement_spoilt_mismatch": (
             "Replacement issues must match the surrendered/cancelled spoilt originals "
@@ -282,12 +280,12 @@ SPECIAL_PAPER_TRANSLATIONS: dict[str, dict[str, str]] = {
             "Refresh and select it again."
         ),
         "stock_snapshot_incomplete": (
-            "Choose a P(12) revision with every counter balance reported. "
+            "Choose a revision with every counter balance reported. "
             "An unreported balance cannot be treated as zero."
         ),
         "stock_snapshot_basis_stale": (
-            "The selected P(12) basis changed or is later than this observation. Review receipts, "
-            "allocations and returns, save a current complete P(12) balance, then choose a "
+            "The selected basis changed or is later than this observation. Review receipts, "
+            "allocations and returns, save a current complete balance, then choose a "
             "revision at or before this observation time."
         ),
         "special_received_quantity": "Total papers received",

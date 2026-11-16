@@ -86,7 +86,7 @@ ColumnLayout {
         if (row.source_accounting_revisions && row.source_accounting_revisions.length)
             parts.push(row.source_accounting_revisions.map(function(source) {
                 return t("constituency_results_station") + " #" + source.station_id
-                    + " · P(18) #" + source.record_id + " · "
+                    + " · #" + source.record_id + " · "
                     + t("constituency_results_accounting_revision") + " " + source.revision
                     + " · " + (words[source.status] || source.status)
                     + " · " + t("constituency_results_source_current") + ": "

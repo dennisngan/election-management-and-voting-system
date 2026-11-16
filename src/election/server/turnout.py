@@ -78,7 +78,7 @@ class TurnoutDraft(TurnoutCommand):
             raise ValueError("Recovery identifiers require recovery mode")
         if self.mode == "fallback":
             if any(value is None for value in sources):
-                raise ValueError("Select the confirmed activation and endpoint P(12) revision")
+                raise ValueError("Select the confirmed activation and endpoint revision")
             if self.supplied_hourly is not None or self.supplied_cumulative is not None:
                 raise ValueError("Fallback turnout is calculated from ordinary stock")
         elif any(value is not None for value in sources):

@@ -579,7 +579,7 @@ class SpecialPapersController(QObject):
             selected, basis = self._state["selected"], self._state["basis"]
             event = parse_event_time(self._state["forms"]["event_time"], selected.get("event_at"))
             if not basis or basis.get("complete") is not True:
-                raise ValueError("Select a complete saved P(12) revision")
+                raise ValueError("Select a complete saved revision")
             rows = []
             for row in self._state["series_reports"]:
                 if not all(

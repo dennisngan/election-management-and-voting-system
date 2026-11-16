@@ -1,4 +1,4 @@
-"""Frozen P19 received-cohort revisions and exact immutable case membership."""
+"""Frozen received-cohort revisions and exact immutable case membership."""
 
 from datetime import datetime
 from typing import Any

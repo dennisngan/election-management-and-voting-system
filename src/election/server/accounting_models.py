@@ -1,4 +1,4 @@
-"""P(18) content revisions and replay receipts retain their exact frozen sources."""
+"""Content revisions and replay receipts retain their exact frozen sources."""
 
 from datetime import datetime
 from typing import Any

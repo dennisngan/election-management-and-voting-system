@@ -6,7 +6,7 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_mode_normal": "正常外部數字模式",
         "fallback_mode_stock": "後備庫存推算模式",
         "fallback_intro": (
-            "使用原始事件時間、已確認的外部累計數字及同時刻完整 P(12) "
+            "使用原始事件時間、已確認的外部累計數字及同時刻完整"
             "結餘。主管確認後才啟用後備推算；此應用程式仍連接中央伺服器。"
         ),
         "fallback_records": "啟用與恢復記錄",
@@ -15,10 +15,10 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_activation": "後備啟用基礎",
         "fallback_event_time": "原始事件時間（香港時間 YYYY-MM-DD HH:mm，可含秒及微秒）",
         "fallback_cumulative": "事件時的外部累計人數",
-        "fallback_snapshot_id": "P(12) 記錄編號",
-        "fallback_snapshot_revision": "P(12) 修訂版本",
+        "fallback_snapshot_id": "記錄編號",
+        "fallback_snapshot_revision": "修訂版本",
         "fallback_snapshot_hint": (
-            "選擇與事件時間完全相同、目前有效且所有櫃台已申報的 P(12) 記錄及版本。"
+            "選擇與事件時間完全相同、目前有效且所有櫃台已申報的記錄及版本。"
         ),
         "fallback_source": "外部數字來源及涵蓋說明",
         "fallback_save": "儲存啟用草稿",
@@ -47,14 +47,14 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "unsaved_fallback_changes": (
             "後備模式表格有未儲存內容。請儲存，或明確捨棄後才切換記錄、版本或重新載入。"
         ),
-        "fallback_validation": "請核對原始香港時間、非負整數累計人數、P(12) 記錄／版本及來源說明。",
+        "fallback_validation": "請核對原始香港時間、非負整數累計人數、記錄／版本及來源說明。",
         "fallback_review_required": "所選來源或時間表已有變更，請重新載入目前版本並覆核。",
         "fallback_state_conflict": "此記錄的狀態已改變，請重新載入後再操作。",
         "fallback_record_not_found": "找不到所選後備模式記錄，請重新整理。",
         "fallback_revision_not_found": "找不到所選修訂版本，請重新整理。",
-        "fallback_balance_time_required": "P(12) 觀察時間必須與啟用／恢復事件時間相同。",
+        "fallback_balance_time_required": "觀察時間必須與啟用／恢復事件時間相同。",
         "fallback_source_conflict": "所選後備來源與目前已確認的模式事件不一致，請核對記錄。",
-        "fallback_stock_regression": "普通發票數量比啟用基礎更低，請核對所選 P(12) 版本。",
+        "fallback_stock_regression": "普通發票數量比啟用基礎更低，請核對所選版本。",
         "fallback_new_activation": "新增後備啟用",
         "fallback_new_recovery": "記錄恢復外部數字",
         "fallback_recovery": "恢復核對基礎",
@@ -68,8 +68,8 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_recovered_cumulative": "恢復後外部累計人數",
         "fallback_reconciliation_difference": "外部與庫存推算差額",
         "fallback_reconciliation_hint": (
-            "保留伺服器計算的庫存基礎與外部恢復數字。主管確認後返回外部數字模式；相關 "
-            "P(15) 仍須重新覆核。"
+            "保留伺服器計算的庫存基礎與外部恢復數字。主管確認後返回外部數字模式；相關"
+            "投票人數報表仍須重新覆核。"
         ),
         "fallback_begin_amend": "建立有原因的修正",
         "fallback_correction": "有原因的修正",
@@ -81,7 +81,7 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_mode_normal": "正常外部数字模式",
         "fallback_mode_stock": "后备库存推算模式",
         "fallback_intro": (
-            "使用原始事件时间、已确认的外部累计数字及同时刻完整 P(12) "
+            "使用原始事件时间、已确认的外部累计数字及同时刻完整"
             "结余。主管确认后才启用后备推算；此应用程序仍连接中央服务器。"
         ),
         "fallback_records": "启用与恢复记录",
@@ -90,10 +90,10 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_activation": "后备启用依据",
         "fallback_event_time": "原始事件时间（香港时间 YYYY-MM-DD HH:mm，可含秒及微秒）",
         "fallback_cumulative": "事件时的外部累计人数",
-        "fallback_snapshot_id": "P(12) 记录编号",
-        "fallback_snapshot_revision": "P(12) 修订版本",
+        "fallback_snapshot_id": "记录编号",
+        "fallback_snapshot_revision": "修订版本",
         "fallback_snapshot_hint": (
-            "选择与事件时间完全相同、当前有效且所有柜台已申报的 P(12) 记录及版本。"
+            "选择与事件时间完全相同、当前有效且所有柜台已申报的记录及版本。"
         ),
         "fallback_source": "外部数字来源及覆盖说明",
         "fallback_save": "保存启用草稿",
@@ -122,14 +122,14 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "unsaved_fallback_changes": (
             "后备模式表格有未保存内容。请保存，或明确舍弃后才切换记录、版本或重新载入。"
         ),
-        "fallback_validation": "请核对原始香港时间、非负整数累计人数、P(12) 记录／版本及来源说明。",
+        "fallback_validation": "请核对原始香港时间、非负整数累计人数、记录／版本及来源说明。",
         "fallback_review_required": "所选来源或时间表已有变更，请重新载入当前版本并复核。",
         "fallback_state_conflict": "此记录的状态已改变，请重新载入后再操作。",
         "fallback_record_not_found": "找不到所选后备模式记录，请重新整理。",
         "fallback_revision_not_found": "找不到所选修订版本，请重新整理。",
-        "fallback_balance_time_required": "P(12) 观察时间必须与启用／恢复事件时间相同。",
+        "fallback_balance_time_required": "观察时间必须与启用／恢复事件时间相同。",
         "fallback_source_conflict": "所选后备来源与当前已确认的模式事件不一致，请核对记录。",
-        "fallback_stock_regression": "普通发票数量比启用依据更低，请核对所选 P(12) 版本。",
+        "fallback_stock_regression": "普通发票数量比启用依据更低，请核对所选版本。",
         "fallback_new_activation": "新增后备启用",
         "fallback_new_recovery": "记录恢复外部数字",
         "fallback_recovery": "恢复核对依据",
@@ -143,8 +143,8 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_recovered_cumulative": "恢复后外部累计人数",
         "fallback_reconciliation_difference": "外部与库存推算差额",
         "fallback_reconciliation_hint": (
-            "保留服务器计算的库存依据与外部恢复数字。主管确认后返回外部数字模式；相关 "
-            "P(15) 仍须重新复核。"
+            "保留服务器计算的库存依据与外部恢复数字。主管确认后返回外部数字模式；相关"
+            "投票人数报表仍须重新复核。"
         ),
         "fallback_begin_amend": "建立有原因的修正",
         "fallback_correction": "有原因的修正",
@@ -157,7 +157,7 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_mode_stock": "Stock-derived fallback mode",
         "fallback_intro": (
             "Use the original event time, confirmed supplied cumulative turnout and a "
-            "complete P(12) balance at that time. Supervisor confirmation activates "
+            "complete balance at that time. Supervisor confirmation activates "
             "fallback derivation while this app stays connected to the central server."
         ),
         "fallback_records": "Activation and recovery records",
@@ -168,10 +168,10 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
             "Original event time (HKT YYYY-MM-DD HH:mm; optional seconds/microseconds)"
         ),
         "fallback_cumulative": "Supplied cumulative turnout at the event",
-        "fallback_snapshot_id": "P(12) record ID",
-        "fallback_snapshot_revision": "P(12) revision",
+        "fallback_snapshot_id": "Record ID",
+        "fallback_snapshot_revision": "Revision",
         "fallback_snapshot_hint": (
-            "Use the current complete P(12) record/revision at exactly the same time, with "
+            "Use the current complete record/revision at exactly the same time, with "
             "every counter balance reported."
         ),
         "fallback_source": "Supplied figure source and coverage context",
@@ -208,7 +208,7 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "fallback_validation": (
             "Check the original HKT time, nonnegative whole-number cumulative turnout, "
-            "P(12) record/revision and source context."
+            "record/revision and source context."
         ),
         "fallback_review_required": (
             "The selected source or schedule changed. Reload the current revision and "
@@ -220,15 +220,14 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "fallback_revision_not_found": "The selected revision was not found. Refresh the list.",
         "fallback_balance_time_required": (
-            "The P(12) balance time must match the activation/recovery event time."
+            "The balance time must match the activation/recovery event time."
         ),
         "fallback_source_conflict": (
             "The selected fallback source conflicts with confirmed mode events. Review the "
             "saved records."
         ),
         "fallback_stock_regression": (
-            "Ordinary issuance is lower than the activation basis. Review the selected "
-            "P(12) revisions."
+            "Ordinary issuance is lower than the activation basis. Review the selected revisions."
         ),
         "fallback_new_activation": "New fallback activation",
         "fallback_new_recovery": "Record external recovery",
@@ -244,7 +243,7 @@ FALLBACK_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_reconciliation_difference": "Recovered minus stock-derived difference",
         "fallback_reconciliation_hint": (
             "Retain the server-calculated stock basis and recovered external total. "
-            "Supervisor confirmation returns to external-figure mode; affected P(15) "
+            "Supervisor confirmation returns to external-figure mode; affected "
             "periods still require renewed review."
         ),
         "fallback_begin_amend": "Prepare a reasoned correction",

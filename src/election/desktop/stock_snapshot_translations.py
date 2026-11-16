@@ -1,4 +1,4 @@
-"""P(12) counter balance labels in the supported desktop languages."""
+"""Counter balance labels in the supported desktop languages."""
 
 STOCK_SNAPSHOT_TRANSLATIONS = {
     "tc": {
@@ -10,7 +10,7 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "remaining_outside_owned_stock": (
             "此剩餘範圍超出該櫃台於觀察時間持有的普通選票。請核對派發、未發出選票退回、系列及編號。"
         ),
-        "snapshot_report": "P(12) 所選結餘版本報表",
+        "snapshot_report": "所選結餘版本報表",
         "snapshot_report_hint": (
             "預覽及匯出保留所選已儲存版本的範圍、數量與基礎，包括歷史版本"
             "。未儲存的內容不會納入；報表使用目前所選語言。"
@@ -27,7 +27,7 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "unsaved_stock_snapshot_changes": (
             "結餘表格有未儲存內容。儲存或明確捨棄後，才會切換所審閱的觀察或版本。"
         ),
-        "snapshot_title": "P(12) 櫃台結餘與發票",
+        "snapshot_title": "櫃台結餘與發票",
         "snapshot_intro": (
             "按同一原始時間記錄每個櫃台的普通選票結餘，保留該次接收、派發及退回基礎。"
         ),
@@ -66,7 +66,7 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "remaining_outside_owned_stock": (
             "此剩余范围超出该柜台于观察时间持有的普通选票。请核对派发、未发出选票退回、系列及编号。"
         ),
-        "snapshot_report": "P(12) 所选结余版本报表",
+        "snapshot_report": "所选结余版本报表",
         "snapshot_report_hint": (
             "预览及导出保留所选已保存版本的范围、数量与依据，包括历史版本"
             "。未保存的内容不会纳入；报表使用当前所选语言。"
@@ -83,7 +83,7 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
         "unsaved_stock_snapshot_changes": (
             "结余表格有未保存内容。保存或明确舍弃后，才会切换所审阅的观察或版本。"
         ),
-        "snapshot_title": "P(12) 柜台结余与发票",
+        "snapshot_title": "柜台结余与发票",
         "snapshot_intro": (
             "按同一原始时间记录每个柜台的普通选票结余，保留该次接收、派发及退回依据。"
         ),
@@ -135,7 +135,7 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
             "me. Check allocations, unissue"
             "d returns, series and serials."
         ),
-        "snapshot_report": "P(12) selected balance revision statement",
+        "snapshot_report": "Selected balance revision statement",
         "snapshot_report_hint": (
             "Preview and export retain the "
             "selected saved ranges, figures"
@@ -167,7 +167,7 @@ STOCK_SNAPSHOT_TRANSLATIONS = {
             "eviewed observation or revisio"
             "n."
         ),
-        "snapshot_title": "P(12) Counter balances",
+        "snapshot_title": "Counter balances",
         "snapshot_intro": (
             "Observe ordinary stock at ever"
             "y counter at one original even"

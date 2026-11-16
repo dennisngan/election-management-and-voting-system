@@ -1,4 +1,4 @@
-"""Source-station P(18) conservation, frozen revisions and exact review."""
+"""Source-station conservation, frozen revisions and exact review."""
 
 import hashlib
 import json

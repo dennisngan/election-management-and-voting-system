@@ -61,7 +61,7 @@ ColumnLayout {
         exportDialog.defaultSuffix = format
         var basis = pendingStationReport ? "station-current"
             : "period-" + selected.period_index_display + "-revision-" + selected.revision
-        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/p19-"
+        exportDialog.selectedFile = exportDialog.currentFolder.toString() + "/complaint-period-"
             + editorState.station_id + "-" + basis + "-" + locale + "." + format
         exportDialog.open()
     }

@@ -1,4 +1,4 @@
-"""Package an existing complete Windows onedir runtime; packaging does not prove Windows smoke."""
+"""Package a standalone Windows onefile executable; packaging does not prove Windows smoke."""
 
 import argparse
 import hashlib
@@ -16,27 +16,6 @@ class ReleaseError(ValueError):
     """A safe packaging failure without local paths, contents or connection settings."""
 
 
-def _private_name(path: Path) -> bool:
-    private_parts = {
-        "operational-commands",
-        "journals",
-        "journal",
-        "backups",
-        "restore-jobs",
-        "private",
-        "logs",
-    }
-    for part in path.parts:
-        name = part.casefold()
-        if name.startswith(".") or name in private_parts:
-            return True
-        if any(marker in name for marker in (".env", ".sql", ".log")):
-            return True
-        if Path(name).suffix in {".pem", ".key", ".p12", ".pfx", ".db", ".sqlite", ".sqlite3"}:
-            return True
-    return False
-
-
 def _regular_object(path: Path) -> bool:
     details = path.lstat()
     if getattr(details, "st_file_attributes", 0) & 0x400:
@@ -44,18 +23,6 @@ def _regular_object(path: Path) -> bool:
     if not (stat.S_ISREG(details.st_mode) or stat.S_ISDIR(details.st_mode)):
         raise ReleaseError("Refuse nonregular release input")
     return stat.S_ISREG(details.st_mode)
-
-
-def _windows_path(path: Path) -> None:
-    for part in path.parts:
-        reserved = part.split(".", 1)[0].upper()
-        if (
-            part.rstrip(" .") != part
-            or any(ord(char) < 32 or char in '\\/:*?"<>|' for char in part)
-            or reserved in {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
-            or re.fullmatch(r"(?:COM|LPT)[1-9]", reserved)
-        ):
-            raise ReleaseError("Runtime contains a name unsafe for Windows extraction")
 
 
 def _tree(root: Path) -> list[Path]:
@@ -93,8 +60,15 @@ def source_identity(root: Path) -> dict[str, Any]:
         for name in (
             "pyproject.toml",
             "uv.lock",
+            "build.py",
+            "election-desk.spec",
+            "scripts/desktop_entry.py",
+            "scripts/generate_app_icons.py",
             "scripts/build_windows_candidate.py",
             "scripts/package_windows_release.py",
+            "src/election/desktop/assets/election-desk.png",
+            "src/election/desktop/assets/election-desk.ico",
+            "src/election/desktop/assets/election-desk.icns",
         )
     ]
     inputs.extend(
@@ -133,7 +107,10 @@ def source_identity(root: Path) -> dict[str, Any]:
         pass
     return {
         "git_head": revision,
-        "scope": "Application Python/QML, native build/package helpers, pyproject.toml and uv.lock",
+        "scope": (
+            "Application Python/QML/icons, native build/spec/package helpers, "
+            "pyproject.toml and uv.lock"
+        ),
         "inputs_sha256": hashlib.sha256(_json(files)).hexdigest(),
         "lock_sha256": next(row["sha256"] for row in files if row["path"] == "uv.lock"),
         "files": files,
@@ -145,10 +122,11 @@ def build_identity(
 ) -> dict[str, Any]:
     """Record host/tool facts separately from unavailable native acceptance evidence."""
     return {
-        "native_windows_build": "Windows11_x64" if native_windows_build else "NOT_VERIFIED",
+        "native_windows_build": "Windows_x64" if native_windows_build else "NOT_VERIFIED",
         "host": {
             "system": platform.system(),
             "release": platform.release(),
+            "version": platform.version(),
             "machine": platform.machine(),
         },
         "python": platform.python_version(),
@@ -175,24 +153,14 @@ def package_release(
         raise ReleaseError("Application/build inputs changed during the native build")
     source = current_source
     runtime, output = runtime.absolute(), output.absolute()
-    if output == runtime or runtime in output.parents:
-        raise ReleaseError("Keep release output outside the input runtime")
+    if output == runtime:
+        raise ReleaseError("Keep release output separate from the input directory")
     entries = _tree(runtime)
-    for path in entries:
-        _windows_path(path.relative_to(runtime))
-    if len({path.relative_to(runtime).as_posix().casefold() for path in entries}) != len(entries):
-        raise ReleaseError("Runtime names collide on Windows")
-    paths = [path for path in entries if path.is_file()]
-    if not (runtime / "Election Desk.exe").is_file() or not (runtime / "_internal").is_dir():
-        raise ReleaseError("A complete Election Desk onedir runtime is required")
-    # Classify the complete pathname inventory before opening or hashing runtime bytes.
-    if any(_private_name(path.relative_to(runtime)) for path in entries):
-        raise ReleaseError("Runtime contains private material; packaging refused")
-    empty_directories = [
-        path.relative_to(runtime).as_posix()
-        for path in entries
-        if path.is_dir() and not any(path.iterdir())
-    ]
+    executable = runtime / "Election Desk.exe"
+    # Accept only the onefile artifact, so sidecar runtime or private files cannot ship.
+    if entries != [executable] or not executable.is_file():
+        raise ReleaseError("Input directory must contain only the onefile Election Desk.exe")
+    paths = [executable]
     files = [
         {
             "path": path.relative_to(runtime).as_posix(),
@@ -205,6 +173,7 @@ def package_release(
         "format": "election-windows-release-v1",
         "release_version": release_version,
         "platform": "Windows11_x64",
+        "bundle_mode": "onefile",
         "source": source,
         "build": build or build_identity(),
         "backend_pair": {"backend_release": backend_release, "windows_smoke": "INCOMPLETE"},
@@ -214,18 +183,20 @@ def package_release(
             "dacl_scaling_languages_printer": "INCOMPLETE",
         },
         "runtime_files": files,
-        "runtime_empty_directories": empty_directories,
+        "runtime_empty_directories": [],
     }
     instructions = f"""Election Desk {release_version} — Windows 11 native x64
 
-Keep the entire Election Desk folder together. Extract to a new versioned installation
-folder, then launch outside the source checkout. Client PCs need no separate Python,
-MySQL or Docker installation. This package contains no deployment-specific server or CA.
+Extract Election Desk.exe to a new versioned installation folder, then launch outside
+the source checkout. The EXE includes its runtime; no _internal folder is needed.
+It unpacks support files to a temporary directory on launch, which can take a moment.
+Client PCs need no separate Python, MySQL or Docker installation. This package contains
+no deployment-specific server or CA.
 
 Configure the stable private-network HTTPS endpoint and public CA separately:
-  & \".\\Election Desk\\Election Desk.exe\" `
-    --server \"https://<trusted-server>:8443\" `
-    --ca \"C:\\ElectionClientTrust\\public-ca.pem\"
+  & ".\\Election Desk.exe" `
+    --server "https://<trusted-server>:8443" `
+    --ca "C:\\ElectionClientTrust\\public-ca.pem"
 The existing ELECTION_SERVER_URL and ELECTION_CA_FILE environment options also apply.
 Keep certificate name, trust and expiry failures visible; never bypass verification.
 
@@ -235,7 +206,7 @@ backend source/image identity and actual Windows build/clean-client smoke eviden
 declaring this pair tested. Verify sign-in/password change, save/read and PDF/CSV export.
 
 Coordinate backend/client upgrades in one maintenance window. Resolve uncertain saves,
-then close clients. Install the new whole runtime folder and preserve the configured
+then close clients. Replace the executable and preserve the configured
 stable endpoint, public CA and each user's private recovery journal. The normal journal
 lives in the per-user application-data operational-commands directory, outside installed
 runtime folders; preserve any ELECTION_CLIENT_STATE_DIR override separately. Never copy a
@@ -249,16 +220,14 @@ acceptance remain INCOMPLETE until their evidence is recorded separately.
     archive = output / f"Election-Desk-{release_version}-windows-x64.zip"
     prefix = f"Election-Desk-{release_version}"
     with ZipFile(archive, "x", compression=ZIP_DEFLATED) as release:
-        for directory in empty_directories:
-            release.writestr(f"{prefix}/Election Desk/{directory}/", b"")
         for path in paths:
-            release.write(path, f"{prefix}/Election Desk/{path.relative_to(runtime).as_posix()}")
+            release.write(path, f"{prefix}/{path.relative_to(runtime).as_posix()}")
         release.writestr(f"{prefix}/RELEASE.json", _json(identity))
         release.writestr(f"{prefix}/README.txt", instructions)
     # Verify delivered bytes against the recorded input map before publishing the receipt.
     with ZipFile(archive) as release:
         for row in files:
-            info = release.getinfo(f"{prefix}/Election Desk/{row['path']}")
+            info = release.getinfo(f"{prefix}/{row['path']}")
             with release.open(info) as delivered:
                 actual = _stream_hash(delivered)
             if info.file_size != row["size_bytes"] or actual != row["sha256"]:
@@ -283,7 +252,12 @@ acceptance remain INCOMPLETE until their evidence is recorded separately.
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--runtime-dir", type=Path, required=True)
+    parser.add_argument(
+        "--runtime-dir",
+        type=Path,
+        required=True,
+        help="Directory containing only Election Desk.exe",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--release-version", required=True)
     parser.add_argument("--backend-release", required=True)

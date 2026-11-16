@@ -1,4 +1,4 @@
-"""Reviewed P19 periods remain separate from live cohort and approval changes."""
+"""Reviewed periods remain separate from live cohort and approval changes."""
 
 import json
 from copy import deepcopy

@@ -1,4 +1,4 @@
-"""Selected P(18) statements preserve frozen quantities and source revisions."""
+"""Selected statements preserve frozen quantities and source revisions."""
 
 import csv
 from collections.abc import Callable, Generator
@@ -409,7 +409,7 @@ def _pdf(report: dict[str, Any]) -> bytes:
     labels = report["labels"]
     footer = (
         report["scope"]["station"]["code"]
-        + " · P(18) · "
+        + " · "
         + labels["revision"]
         + " "
         + str(report["revision"])
@@ -424,7 +424,7 @@ def accounting_reports_router(
 ) -> APIRouter:
     router = APIRouter(
         prefix="/api/workspace/stations/{station_id}/accounting/revisions/{revision}",
-        tags=["P(18) statements"],
+        tags=["Accounting statements"],
     )
     Database = Annotated[Session, Depends(database)]
     Ready = Annotated[Account, Depends(ready_account)]
@@ -472,7 +472,7 @@ def accounting_reports_router(
         locale: ReportLocale = "tc",
     ) -> Response:
         report = projection(station_id, revision, locale, db, actor)
-        filename = f"p18-station-{station_id}-r{revision}-{locale}.csv"
+        filename = f"accounting-station-{station_id}-r{revision}-{locale}.csv"
         return Response(
             _csv(report),
             media_type="text/csv; charset=utf-8",
@@ -488,7 +488,7 @@ def accounting_reports_router(
         locale: ReportLocale = "tc",
     ) -> Response:
         report = projection(station_id, revision, locale, db, actor)
-        filename = f"p18-station-{station_id}-r{revision}-{locale}.pdf"
+        filename = f"accounting-station-{station_id}-r{revision}-{locale}.pdf"
         return Response(
             _pdf(report),
             media_type="application/pdf",

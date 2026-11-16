@@ -1,0 +1,73 @@
+name: Build desktop apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.platform }} ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            platform: windows
+            architecture: x64
+          - runner: macos-15
+            platform: macos
+            architecture: arm64
+          - runner: macos-15-intel
+            platform: macos
+            architecture: x64
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-suffix: ${{ matrix.platform }}-${{ matrix.architecture }}
+
+      - name: Install locked project dependencies
+        # uv reads Python 3.14 from .python-version and installs it for this native runner.
+        run: uv sync --locked
+
+      - name: Build and package native app
+        run: >-
+          uv run --locked --no-sync
+          python build.py --run-name ci
+
+      - name: Upload application ZIP
+        # Build artifacts only; connected-client and Windows 11 qualification are separate checks.
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/${{ matrix.platform }}/*-ci/release/*.zip
+          # Preserve the packaged ZIP without adding another archive around it.
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build receipts
+        uses: actions/upload-artifact@v7
+        with:
+          name: election-desk-${{ matrix.platform }}-${{ matrix.architecture }}-receipts
+          path: |
+            dist/${{ matrix.platform }}/*-ci/release/release-manifest.json
+            dist/${{ matrix.platform }}/*-ci/release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

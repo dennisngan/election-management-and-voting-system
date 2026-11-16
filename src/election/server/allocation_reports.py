@@ -1,4 +1,4 @@
-"""P(14) projections keep exact saved revisions separate from current availability."""
+"""Projections keep exact saved revisions separate from current availability."""
 
 from collections.abc import Callable, Generator
 from datetime import UTC, datetime
@@ -26,7 +26,7 @@ from election.server.stock_reports import ReportLocale
 LABELS: dict[ReportLocale, dict[str, str]] = {
     "tc": {
         **STOCK_LABELS["tc"],
-        "title": "P(14) 發票櫃台選票派發紀錄",
+        "title": "發票櫃台選票派發紀錄",
         "station_current": "本站目前已儲存資料",
         "allocation_revision": "所選派票修訂版本",
         "allocation_id": "派票記錄編號",
@@ -52,7 +52,7 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
     },
     "sc": {
         **STOCK_LABELS["sc"],
-        "title": "P(14) 发票柜台选票分配记录",
+        "title": "发票柜台选票分配记录",
         "station_current": "本站当前已保存资料",
         "allocation_revision": "所选分配修订版本",
         "allocation_id": "分配记录编号",
@@ -78,7 +78,7 @@ LABELS: dict[ReportLocale, dict[str, str]] = {
     },
     "en": {
         **STOCK_LABELS["en"],
-        "title": "P(14) Counter ballot allocations",
+        "title": "Counter ballot allocations",
         "station_current": "Current saved station records",
         "allocation_revision": "Selected allocation revision",
         "allocation_id": "Allocation ID",
@@ -116,7 +116,7 @@ def allocation_reports_router(
     timestamp: Callable[[], datetime],
 ) -> APIRouter:
     router = APIRouter(
-        prefix="/api/workspace/stations/{station_id}/allocations", tags=["P(14) statements"]
+        prefix="/api/workspace/stations/{station_id}/allocations", tags=["Allocation statements"]
     )
     Database = Annotated[Session, Depends(database)]
     Ready = Annotated[Account, Depends(ready_account)]
@@ -188,14 +188,16 @@ def allocation_reports_router(
     ) -> Response:
         projection = statement(station_id, db, actor, allocation_id, revision, locale)
         identity = (
-            f"allocation-{allocation_id}-r{revision}"
+            f"{allocation_id}-r{revision}"
             if allocation_id is not None
             else f"station-{station_id}-current"
         )
         return Response(
             csv_report(projection),
             media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="p14-{identity}-{locale}.csv"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="allocation-{identity}-{locale}.csv"'
+            },
         )
 
     @router.get("/statement.pdf")
@@ -209,14 +211,16 @@ def allocation_reports_router(
     ) -> Response:
         projection = statement(station_id, db, actor, allocation_id, revision, locale)
         identity = (
-            f"allocation-{allocation_id}-r{revision}"
+            f"{allocation_id}-r{revision}"
             if allocation_id is not None
             else f"station-{station_id}-current"
         )
         return Response(
             pdf_report(projection),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="p14-{identity}-{locale}.pdf"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="allocation-{identity}-{locale}.pdf"'
+            },
         )
 
     return router

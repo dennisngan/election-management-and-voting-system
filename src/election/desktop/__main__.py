@@ -4,15 +4,16 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from election import APP_NAME, APP_TITLE
 from election.desktop.controller import DesktopController
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Election Management desktop client")
+    parser = argparse.ArgumentParser(description=f"{APP_NAME} desktop client")
     parser.add_argument(
         "--server", default=os.getenv("ELECTION_SERVER_URL", "https://localhost:8443")
     )
@@ -30,9 +31,10 @@ def main() -> None:
     QQuickStyle.setStyle("Material")
     app = QGuiApplication(sys.argv[:1])
     app.styleHints().setTabFocusBehavior(Qt.TabFocusBehavior.TabFocusAllControls)
-    app.setApplicationName("Election Management")
+    app.setApplicationName(APP_NAME)
     app.setOrganizationName("Election System Project")
-    app.setApplicationDisplayName("Election Management and Voting System")
+    app.setApplicationDisplayName(APP_TITLE)
+    app.setWindowIcon(QIcon(str(Path(__file__).with_name("assets") / "election-desk.png")))
     controller = DesktopController(args.server, args.ca)
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("controller", controller)

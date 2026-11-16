@@ -1,8 +1,8 @@
-"""P(15) source-selection and frozen coverage labels for the Material desktop."""
+"""Source-selection and frozen coverage labels for the Material desktop."""
 
 FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
     "tc": {
-        "turnout_title": "P(15) 時段投票人數",
+        "turnout_title": "時段投票人數",
         "turnout_intro": (
             "選擇正常外部數字、已確認後備庫存來源或恢復核對來源。每個已儲存版本保留來源與"
             "涵蓋時段，再提交主管確認。"
@@ -12,7 +12,7 @@ FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_mode_fallback": "後備普通庫存推算",
         "turnout_mode_recovery": "恢復外部數字核對",
         "turnout_fallback_source_hint": (
-            "選擇已確認的啟用版本及本時段末完整 P(12) 版本。人數由普通發票變化推算；"
+            "選擇已確認的啟用版本及本時段末完整版本。人數由普通發票變化推算；"
             "本時段及累計外部人數須留空。"
         ),
         "turnout_recovery_source_hint": (
@@ -21,8 +21,8 @@ FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "turnout_activation_id": "已確認啟用記錄編號",
         "turnout_activation_revision": "已確認啟用版本",
-        "turnout_snapshot_id": "時段末 P(12) 記錄編號",
-        "turnout_snapshot_revision": "時段末 P(12) 版本",
+        "turnout_snapshot_id": "時段末記錄編號",
+        "turnout_snapshot_revision": "時段末版本",
         "turnout_recovery_id": "已確認恢復記錄編號",
         "turnout_recovery_revision": "已確認恢復版本",
         "turnout_frozen_source_basis": "已儲存的來源及涵蓋時段",
@@ -39,7 +39,7 @@ FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_source_required": "此時段涵蓋模式變更，請選擇相符的已確認來源版本。",
     },
     "sc": {
-        "turnout_title": "P(15) 时段投票人数",
+        "turnout_title": "时段投票人数",
         "turnout_intro": (
             "选择正常外部数字、已确认后备库存来源或恢复核对来源。每个已保存版本保留来源与"
             "涵盖时段，再提交主管确认。"
@@ -49,7 +49,7 @@ FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_mode_fallback": "后备普通库存推算",
         "turnout_mode_recovery": "恢复外部数字核对",
         "turnout_fallback_source_hint": (
-            "选择已确认的启用版本及本时段末完整 P(12) 版本。人数由普通发票变化推算；"
+            "选择已确认的启用版本及本时段末完整版本。人数由普通发票变化推算；"
             "本时段及累计外部人数须留空。"
         ),
         "turnout_recovery_source_hint": (
@@ -58,8 +58,8 @@ FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "turnout_activation_id": "已确认启用记录编号",
         "turnout_activation_revision": "已确认启用版本",
-        "turnout_snapshot_id": "时段末 P(12) 记录编号",
-        "turnout_snapshot_revision": "时段末 P(12) 版本",
+        "turnout_snapshot_id": "时段末记录编号",
+        "turnout_snapshot_revision": "时段末版本",
         "turnout_recovery_id": "已确认恢复记录编号",
         "turnout_recovery_revision": "已确认恢复版本",
         "turnout_frozen_source_basis": "已保存的来源及涵盖时段",
@@ -76,7 +76,7 @@ FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "fallback_source_required": "此时段涵盖模式变更，请选择相符的已确认来源版本。",
     },
     "en": {
-        "turnout_title": "P(15) period turnout",
+        "turnout_title": "Period turnout",
         "turnout_intro": (
             "Select supplied figures, confirmed ordinary-stock fallback sources, or a confirmed "
             "recovery. Saved revisions retain their sources and interval coverage for "
@@ -87,7 +87,7 @@ FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
         "turnout_mode_fallback": "Fallback ordinary stock",
         "turnout_mode_recovery": "Reconciled external recovery",
         "turnout_fallback_source_hint": (
-            "Select the confirmed activation revision and complete period-end P(12) revision. "
+            "Select the confirmed activation revision and complete period-end revision. "
             "Turnout uses ordinary issuance changes; leave supplied period and cumulative "
             "counts blank."
         ),
@@ -98,8 +98,8 @@ FALLBACK_TURNOUT_TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "turnout_activation_id": "Confirmed activation record ID",
         "turnout_activation_revision": "Confirmed activation revision",
-        "turnout_snapshot_id": "Period-end P(12) record ID",
-        "turnout_snapshot_revision": "Period-end P(12) revision",
+        "turnout_snapshot_id": "Period-end record ID",
+        "turnout_snapshot_revision": "Period-end revision",
         "turnout_recovery_id": "Confirmed recovery record ID",
         "turnout_recovery_revision": "Confirmed recovery revision",
         "turnout_frozen_source_basis": "Saved sources and interval coverage",
