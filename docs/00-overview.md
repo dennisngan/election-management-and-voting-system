@@ -53,11 +53,6 @@ In scope:
   supervisor.
 
 Out of scope:
-
-- Elector registration and the electronic poll register (EPR). The EPR is an external system;
-  Election Desk only records turnout figures copied from it, or estimated from stock when the
-  EPR is unavailable. In an e-polling election the polling officer checks eligibility outside
-  the system.
 - Remote or online voting (voting outside a polling station).
 - Public result publication.
 - For e-polling elections in v1.1.0: turnout reports, constituency results and election
@@ -76,10 +71,10 @@ Decisions taken when turning the manual into requirements:
 
 | Manual (existing system) | Election Desk (our system) | Reason |
 | --- | --- | --- |
-| Tablet application managed by MDM | Desktop client (Windows 11, macOS) with a central server | No tablet fleet or MDM is available to a course project; a desktop client can be installed by any member |
-| PRO and APRO(S) accounts | Four roles: Administrator, Polling Officer, Counting Officer, Supervisor | Separation of duties: the person who enters a figure is not the person who approves it |
+| Tablet application | Desktop client (Windows 11, macOS) with a central server | No tablet fleet or MDM is available to a course project; a desktop client can be installed by any member |
+| Accounts | Four roles: Administrator, Polling Officer, Counting Officer, Supervisor | Separation of duties: the person who enters a figure is not the person who approves it |
 | Password of 8 or more characters with complexity rules | Password of 12 to 128 characters, different from the current password | Length is a stronger and simpler rule than composition rules |
-| Records uploaded to SIC by hand at fixed times | Records saved on a central server immediately and approved by the Supervisor | One shared source of truth for all desks |
+| Records uploaded to Central Server | Records saved on a central server immediately and approved by the Supervisor | One shared source of truth for all desks |
 | One language | Three languages, switchable at run time | Requirement of the Hong Kong context |
 | Screens only | Screens plus CSV and PDF statements | Paper evidence is still required on election night |
 | Paper ballots only | Paper ballots or in-person e-polling, chosen for each election | The topic is an election management and voting system. E-polling is not in the manual; it was specified by the group and added as a new increment in v1.1.0 |
@@ -89,9 +84,9 @@ Decisions taken when turning the manual into requirements:
 | Stakeholder | Interest | System role |
 | --- | --- | --- |
 | Election administrator | Prepares the election before polling day and manages staff accounts | `administrator` — set-up only, no access to operational records |
-| Polling staff (APRO(S) in the manual) | Records station work during the poll | `polling_officer` |
+| Polling staff | Records station work during the poll | `polling_officer` |
 | Counting staff | Records stock accounting and the count | `counting_officer` |
-| Presiding officer (PRO in the manual) | Reviews and approves records, orders recounts, finalises | `supervisor` |
+| Presiding officer | Reviews and approves records, orders recounts, finalises | `supervisor` |
 | Electors | Secrecy of the vote; a vote that is counted exactly once | No account. In an e-polling election the elector uses the voting screen that a polling officer opens |
 | Candidates | Trustworthy, auditable figures | No account (indirect stakeholders) |
 | Election authority | Audit trail, retention of records | No account (indirect stakeholder) |
