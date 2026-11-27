@@ -111,19 +111,21 @@ System tests (manual, on a rehearsal copy of the paper-ballot demo server, stage
 
 | ID | Requirement | Pre-condition | Steps | Expected result | Result |
 | --- | --- | --- | --- | --- | --- |
-| TC-STK-01 | FR-STK-01, FR-STK-07 | Signed in as `demo_polling` | Open "Received stock and reserves" and "Counter stock allocations". | 500 ordinary, 10 replacement, 10 tendered; two allocations of 200; 100 held centrally | `TODO(Harriet)` + screenshot |
-| TC-STK-02 | FR-STK-05 | Same | Allocate `DEMO` 000401–000450 to Counter 1. | Saved; central ordinary stock becomes 50 | `TODO(Harriet)` |
-| TC-STK-03 | FR-STK-06 | TC-STK-02 done | Allocate `DEMO` 000440–000460 to Counter 2. | Rejected as overlapping; nothing saved | `TODO(Harriet)` |
-| TC-STK-04 | FR-STK-06 | Same | Allocate `DEMO` 000505–000506 (replacement reserve) to Counter 1. | Rejected: not ordinary stock | `TODO(Harriet)` |
-| TC-STK-05 | FR-STK-09 | TC-STK-02 done | Correct the TC-STK-02 allocation to 000401–000440 without a reason, then with a reason. | Without reason: rejected. With reason: revision 2 saved; revision 1 visible in history | `TODO(Harriet)` |
-| TC-STK-06 | FR-STK-03 | Same | Record a new receipt of series `DEMO` 000500–000600 as ordinary. | Rejected as overlapping received stock | `TODO(Harriet)` |
-| TC-STK-07 | FR-STK-11 | Same | Export the allocation statement as PDF in English and in Traditional Chinese. | Two files; serial numbers keep leading zeros | `TODO(Harriet)` |
+| TC-STK-01 | FR-STK-01, FR-STK-07 | Signed in as `demo_polling` | Open "Received stock and reserves" and "Counter stock allocations". | 500 ordinary, 10 replacement, 10 tendered; two allocations of 200; 100 held centrally | NOT RUN — paper-ballot rehearsal server unavailable |
+| TC-STK-02 | FR-STK-05 | Same | Allocate `DEMO` 000401–000450 to Counter 1. | Saved; central ordinary stock becomes 50 | NOT RUN — ballot rehearsal server unavailable |
+| TC-STK-03 | FR-STK-06 | TC-STK-02 done | Allocate `DEMO` 000440–000460 to Counter 2. | Rejected as overlapping; nothing saved | NOT RUN — ballot rehearsal server unavailable |
+| TC-STK-04 | FR-STK-06 | Same | Allocate `DEMO` 000505–000506 (replacement reserve) to Counter 1. | Rejected: not ordinary stock | NOT RUN — ballot rehearsal server unavailable |
+| TC-STK-05 | FR-STK-09 | TC-STK-02 done | Correct the TC-STK-02 allocation to 000401–000440 without a reason, then with a reason. | Without reason: rejected. With reason: revision 2 saved; revision 1 visible in history | NOT RUN — ballot rehearsal server unavailable |
+| TC-STK-06 | FR-STK-03 | Same | Record a new receipt of series `DEMO` 000500–000600 as ordinary. | Rejected as overlapping received stock | NOT RUN — ballot rehearsal server unavailable |
+| TC-STK-07 | FR-STK-11 | Same | Export the allocation statement as PDF in English and in Traditional Chinese. | Two files; serial numbers keep leading zeros | NOT RUN — ballot rehearsal server unavailable |
 
 Equivalence partitions for an allocation range: inside free ordinary stock (valid), partly
 owned by another desk (invalid), inside a reserve pool (invalid), outside received stock
 (invalid), `serial_from` greater than `serial_to` (invalid).
 
-Automated tests (unit / API level, from the project history):
+The seven manual system tests above have not been executed in the reported run. The automated results below do not establish their system-level outcomes.
+
+Automated tests (unit / API level, from the project history; not rerun as part of this execution):
 
 | Test | Requirement |
 | --- | --- |
@@ -135,6 +137,7 @@ Automated tests (unit / API level, from the project history):
 | `test_allocation_api.py::test_reasoned_amendment_preserves_history_and_releases_only_the_old_current_range` | FR-STK-09 |
 | `test_allocation_api.py::test_receipt_correction_cannot_remove_stock_already_owned_by_a_counter` | FR-STK-10 |
 
+
 ## 7. Differences from the reference manual
 
 | Manual | Election Desk | Reason |
@@ -142,3 +145,65 @@ Automated tests (unit / API level, from the project history):
 | P(14) starts at distribution to desks | A stock receipt with three pools is recorded first | Allocation can then be validated against what the station actually holds |
 | P(14) records uploaded to SIC at 15 minutes past every hour | Records are on the central server as soon as they are saved | No manual upload step |
 | A note in the group's draft says serial tracking is "not suitable for our case" | Serial ranges are tracked | `TODO(Harriet)`: remove the note from the draft; the implemented system tracks serial ranges and that is the requirement |
+
+## 8. Actual automated unit test execution results
+
+Executed by Harriet on 27 November 2026 (date of reported run), on her Mac in the project virtual environment.
+
+| Environment | Value |
+| --- | --- |
+| OS | macOS (Darwin) |
+| Python | 3.14.10 |
+| pytest | 9.2.0 |
+| Configuration | `pyproject.toml` |
+| Tested revision | Exact Git commit not recorded in execution log |
+| Compatibility runner | Not used |
+
+Command executed from the project root:
+
+```bash
+.venv/bin/python -m pytest tests/test_p14_allocation_validation.py tests/unit/test_stock_serials.py -v 2>&1 | tee P14_OFFICIAL_TEST_RESULTS.txt
+```
+
+| Scope | Executed | Passed | Failed | Not run |
+| --- | ---: | ---: | ---: | ---: |
+| P14 allocation validation | 11 | 11 | 0 | 0 |
+| Stock serial unit tests | 12 | 12 | 0 | 0 |
+| Assigned manual system tests | 0 | 0 | 0 | 7 |
+
+Actual pytest summary: `23 passed, 4 subtests passed in 0.02s`. The four subtests are reported separately, not counted as four additional collected test cases.
+
+### Individual observed results
+
+| ID | Test identifier (pytest) | Actual result | Status |
+| --- | --- | --- | --- |
+| UT-P14-01 | `test_blank_series_is_rejected` | pytest reported PASSED | PASS |
+| UT-P14-02 | `test_correction_requires_reason` | pytest reported PASSED | PASS |
+| UT-P14-03 | `test_inclusive_quantity` | pytest reported PASSED | PASS |
+| UT-P14-04 | `test_long_serial_is_rejected` | pytest reported PASSED | PASS |
+| UT-P14-05 | `test_naive_time_is_rejected` | pytest reported PASSED | PASS |
+| UT-P14-06 | `test_non_ascii_digits_are_rejected` | pytest reported PASSED | PASS |
+| UT-P14-07 | `test_received_pool_totals_remain_separate` | pytest reported PASSED | PASS |
+| UT-P14-08 | `test_received_range_overlap_is_rejected` | pytest reported PASSED | PASS |
+| UT-P14-09 | `test_request_id_does_not_change_payload_digest` | pytest reported PASSED | PASS |
+| UT-P14-10 | `test_reversed_range_is_rejected` | pytest reported PASSED | PASS |
+| UT-P14-11 | `test_single_serial_is_one_paper` | pytest reported PASSED | PASS |
+| UT-STK-01 | `test_inclusive_range_preserves_printed_serials[one-digit-zero]` | pytest reported PASSED | PASS |
+| UT-STK-02 | `test_inclusive_range_preserves_printed_serials[inclusive-leading-zeroes]` | pytest reported PASSED | PASS |
+| UT-STK-03 | `test_inclusive_range_preserves_printed_serials[18-digit-exact]` | pytest reported PASSED | PASS |
+| UT-STK-04 | `test_invalid_serial_range_is_rejected[reversed]` | pytest reported PASSED | PASS |
+| UT-STK-05 | `test_invalid_serial_range_is_rejected[empty]` | pytest reported PASSED | PASS |
+| UT-STK-06 | `test_invalid_serial_range_is_rejected[19-digits]` | pytest reported PASSED | PASS |
+| UT-STK-07 | `test_invalid_serial_range_is_rejected[negative]` | pytest reported PASSED | PASS |
+| UT-STK-08 | `test_invalid_serial_range_is_rejected[fraction]` | pytest reported PASSED | PASS |
+| UT-STK-09 | `test_invalid_serial_range_is_rejected[non-ascii-digits]` | pytest reported PASSED | PASS |
+| UT-STK-10 | `test_invalid_serial_range_is_rejected[numeric-input]` | pytest reported PASSED | PASS |
+| UT-STK-11 | `test_adjacent_ranges_are_counted_in_their_own_pools` | pytest reported PASSED | PASS |
+| UT-STK-12 | `test_same_serial_in_two_pools_is_an_overlap_despite_different_padding` | pytest reported PASSED | PASS |
+
+### Coverage and limitations
+
+The selected tests exercise input validation, inclusive quantity calculation, preservation of printed serials, separation of stock pools, overlap checks on input ranges, correction reason validation and request payload digest consistency. They include boundary-value and negative-input cases. This is unit/model-level evidence only: it does not establish database-backed allocation ownership, full revision persistence, API retry idempotency, GUI behaviour or report export correctness. Historical API tests listed in Section 6 have not been verified by this run.
+
+Evidence: [P14_OFFICIAL_TEST_RESULTS.txt](P14_OFFICIAL_TEST_RESULTS.txt). The shareable log preserves the pytest results and replaces only the personal local filesystem path with `<project-root>`.
+
