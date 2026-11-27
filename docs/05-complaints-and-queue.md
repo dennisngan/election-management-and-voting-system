@@ -151,15 +151,24 @@ System tests (manual, on a rehearsal copy of the paper-ballot demo server, stage
 
 | ID | Requirement | Pre-condition | Steps | Expected result | Result |
 | --- | --- | --- | --- | --- | --- |
-| TC-CMP-01 | FR-CMP-01 | Signed in as `demo_polling` | Open "Complaint cases"; add a case with a new reference, category "Polling arrangements", a received time on the election date. | Case listed as "in progress" | `TODO(John)` + screenshot |
-| TC-CMP-02 | FR-CMP-01 | TC-CMP-01 done | Add another case with the same reference. | Rejected: reference already used | `TODO(John)` |
-| TC-CMP-03 | FR-CMP-03 | Seeded open complaint exists | Mark the seeded case "completed" with a completion time. | Status "completed"; history shows two revisions | `TODO(John)` |
-| TC-CMP-04 | FR-CMP-06 | Same | Open "Complaint period statistics"; prepare and submit period 1; sign in as `demo_supervisor` and approve. | Counts per category match the case list; status "Approved" | `TODO(John)` |
-| TC-CMP-05 | FR-CMP-02 | Signed in as `demo_admin` | Open "Complaint categories"; rename one category. Sign in as `demo_polling` and view an existing case of that category. | New cases use the new name; the existing case keeps the old name | `TODO(John)` |
-| TC-QUE-01 | FR-QUE-01, FR-QUE-03 | Signed in as `demo_polling` | Open "Queue waiting times"; "Save new observation" with band "30–59 minutes" at 08:58 on the election date. | Latest observation updated; "Next update due" is 09:28 | `TODO(John)` + screenshot |
-| TC-QUE-02 | FR-QUE-02, FR-QUE-04 | TC-QUE-01 done | Press "Confirm band unchanged" with a later time. | A confirmation entry is added to the history; the observation is unchanged | `TODO(John)` |
-| TC-QUE-03 | NFR-SEC-04 | Signed in as `demo_counting` | Open "Queue waiting times". | History is readable; saving is not possible | `TODO(John)` |
+| TC-CMP-01 | FR-CMP-01 | Signed in as `demo_polling` | Open "Complaint cases"; add a case with a new reference, category "Polling arrangements", a received time on the election date. | Case listed as "in progress" | **PASS (with deviation)** — Complaint case `TEST-JOHN-001` was saved successfully with "In progress" status at Revision 1. The received time was outside the configured reporting period, so the case was retained without being assigned to a reporting period. [Screenshot](evidence/john/TC-CMP-01.png) |
+| TC-CMP-02 | FR-CMP-01 | TC-CMP-01 done | Add another case with the same reference. | Rejected: reference already used | **PASS** — A second attempt to create complaint case `TEST-JOHN-001` was rejected and a validation error was displayed. [Screenshot](evidence/john/TC-CMP-02.png) |
+| TC-CMP-03 | FR-CMP-03 | Seeded open complaint exists | Mark the seeded case "completed" with a completion time. | Status "completed"; history shows two revisions | **PASS (with deviation)** — Complaint case `TEST-JOHN-001` was updated from "In progress" to "Completed". The revision history preserved both Revision 1 and Revision 2, with a completion time of 2026-11-28 01:18 HKT. A newly created test case was used instead of a seeded case. [Screenshot](evidence/john/TC-CMP-03-01.png) |
+| TC-CMP-04 | FR-CMP-06 | Same | Open "Complaint period statistics"; prepare and submit period 1; sign in as `demo_supervisor` and approve. | Counts per category match the case list; status "Approved" | **PASS** — The Polling Officer successfully submitted the complaint period statistics, and the Supervisor approved the report. The status changed from "Submitted for review" to "Approved". One complaint was outside the configured reporting coverage; therefore, the workflow was verified. [Submission](evidence/john/TC-CMP-04-01.png), [Approval](evidence/john/TC-CMP-04-02.png) |
+| TC-CMP-05 | FR-CMP-02 | Signed in as `demo_admin` | Open "Complaint categories"; rename one category. Sign in as `demo_polling` and view an existing case of that category. | New cases use the new name; the existing case keeps the old name | **PASS** — The Administrator successfully saved the complaint category configuration at Revision . [Category configuration](evidence/john/TC-CMP-05-01.png), [Complaint case](evidence/john/TC-CMP-05-02.png) |
+| TC-QUE-01 | FR-QUE-01, FR-QUE-03 | Signed in as `demo_polling` | Open "Queue waiting times"; "Save new observation" with band "30–59 minutes" at 08:58 on the election date. | Latest observation updated; "Next update due" is 09:28 | **PASS** — A new queue observation with the waiting-time band of 30–59 minutes was successfully recorded at 2026-11-27 08:58 HKT and appeared as the latest observation at Revision 2. The observation was saved successfully. [Screenshot](evidence/john/TC-QUE-01.png) |
+| TC-QUE-02 | FR-QUE-02, FR-QUE-04 | TC-QUE-01 done | Press "Confirm band unchanged" with a later time. | A confirmation entry is added to the history; the observation is unchanged | **PASS** — An unchanged-band confirmation was successfully recorded at 2026-11-27 09:28 HKT as Revision 3. The waiting-time band remained 30–59 minutes, previous observations were preserved in the history, and the next update due was 09:58 HKT. [Confirmation history](evidence/john/TC-QUE-02.png), [Latest observation](evidence/john/TC-QUE-03.png) |
+| TC-QUE-03 | NFR-SEC-04 | Signed in as `demo_counting` | Open "Queue waiting times". | History is readable; saving is not possible | **PASS** — The Counting Officer successfully accessed the queue observation and confirmation history in read-only mode. No controls for saving new observations or confirming unchanged bands were available. The interface stated that only assigned Polling Officers could record queue observations while the election was active. [Screenshot](evidence/john/TC-QUE-03.png) |
+### Manual test execution details
 
+- Tester: John
+- Test date: 28 November 2026
+- Application version: Election Desk v1.1.0
+- Environment: Shared e-polling demo server
+- Platform: macOS
+- Roles tested: Polling Officer, Supervisor, Administrator and Counting Officer
+- Evidence: 10 screenshots stored in `docs/evidence/john/`
+- Limitations: Testing was conducted using the shared e-polling environment rather than the prescribed paper-ballot rehearsal environment. Deviations and incomplete verification are documented in the individual test results.
 Equivalence partitions for the waiting time: 0–29 minutes, 30–59, 60–90, more than 90.
 Boundary values to try when choosing a band: 29, 30, 59, 60, 90, 91 minutes.
 
