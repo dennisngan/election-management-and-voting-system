@@ -116,16 +116,19 @@ sequenceDiagram
 
 ## 6. Test cases
 
-System tests (manual, on a rehearsal copy of the paper-ballot demo server, stage `polling`):
+**Recorded run — 27 November 2026, 23:45–23:50 HKT.** Using Election Desk v1.1.0
+on macOS, with the shared e-polling demo. All six cases passed at
+Harbour Community Hall (`DEMO-S01`) in Demo Election — Harbour District. The paper-ballot
+rehearsal remains untested. [Station and voting method](evidence/dennis-polling-times/environment.png)
 
 | ID | Requirement | Pre-condition | Steps | Expected result | Result |
 | --- | --- | --- | --- | --- | --- |
-| TC-POL-01 | FR-POL-01, FR-POL-08 | Signed in as `demo_polling` | Open "Polling operations"; view "Actual opening" and its history. | The seeded opening is shown as "Approved" with entry and approval history | `TODO(Dennis)` + screenshot |
-| TC-POL-02 | FR-POL-05 | Same | Select "Closure to new arrivals"; enter a time after the opening and not in the future; "Save event draft"; "Submit this revision". | Status becomes "Submitted for review" | `TODO(Dennis)` |
-| TC-POL-03 | FR-POL-06 | TC-POL-02 done; signed in as `demo_supervisor` | Open the same event; enter a wrong password and approve; then the correct password. | First attempt refused; second attempt sets "Approved" | `TODO(Dennis)` |
-| TC-POL-04 | FR-POL-04 | Signed in as `demo_polling` | Create an amendment of "Closure to new arrivals" with a time earlier than the opening. | Rejected with a validation message; saved record unchanged | `TODO(Dennis)` |
-| TC-POL-05 | FR-POL-07 | TC-POL-03 done | "Create amendment draft" without a reason, then with a reason. | Without reason: rejected. With reason: new draft revision; old revision still in history | `TODO(Dennis)` |
-| TC-POL-06 | FR-POL-06, NFR-SEC-04 | Signed in as `demo_counting` | Open "Polling operations". | Records are readable; no save, submit or approve is possible | `TODO(Dennis)` |
+| TC-POL-01 | FR-POL-01, FR-POL-08 | Signed in as `demo_polling` | Open "Polling operations"; view "Actual opening" and its history. | The seeded opening is shown as "Approved" with entry and approval history | **Pass.** Revision 1 showed “Approved” and “On time” for 20 Nov at 08:00 HKT. History showed account 6 entered and submitted it, and account 5 approved it. [Opening](evidence/dennis-polling-times/TC-POL-01.png) · [History](evidence/dennis-polling-times/TC-POL-01-history.png) |
+| TC-POL-02 | FR-POL-05 | Same | Select "Closure to new arrivals"; enter a time after the opening and not in the future; "Save event draft"; "Submit this revision". | Status becomes "Submitted for review" | **Pass.** The officer saved the 20 Nov 18:00 HKT closure as revision 1. Submitting it changed the status to “Submitted for review”. [Draft](evidence/dennis-polling-times/TC-POL-02-draft.png) · [Submitted](evidence/dennis-polling-times/TC-POL-02.png) |
+| TC-POL-03 | FR-POL-06 | TC-POL-02 done; signed in as `demo_supervisor` | Open the same event; enter a wrong password and approve; then the correct password. | First attempt refused; second attempt sets "Approved" | **Pass.** The app reported an incorrect password and kept revision 1 at “Submitted for review”. The correct password changed the same revision to “Approved”. [Refusal](evidence/dennis-polling-times/TC-POL-03-refused.png) · [Approval](evidence/dennis-polling-times/TC-POL-03-approved.png) |
+| TC-POL-04 | FR-POL-04 | Signed in as `demo_polling` | Create an amendment of "Closure to new arrivals" with a time earlier than the opening. | Rejected with a validation message; saved record unchanged | **Pass.** With a reason supplied, the app rejected 07:59 HKT on 20 Nov and said recorded events must be in order. Reloading showed approved revision 1 at 18:00 HKT. [Input](evidence/dennis-polling-times/TC-POL-04-input.png) · [Validation](evidence/dennis-polling-times/TC-POL-04-rejected.png) · [Reloaded record](evidence/dennis-polling-times/TC-POL-04-reloaded.png) |
+| TC-POL-05 | FR-POL-07 | TC-POL-03 done | "Create amendment draft" without a reason, then with a reason. | Without reason: rejected. With reason: new draft revision; old revision still in history | **Pass.** With the corrected time of 18:01 HKT and a blank reason, “Create amendment draft” was disabled. Adding a reason created draft revision 2. History showed the reason and retained approved revision 1 at 18:00 HKT. [Blank reason](evidence/dennis-polling-times/TC-POL-05-no-reason.png) · [New draft](evidence/dennis-polling-times/TC-POL-05-draft.png) · [Both revisions](evidence/dennis-polling-times/TC-POL-05-history.png) · [Saved reason](evidence/dennis-polling-times/TC-POL-05-reason.png) |
+| TC-POL-06 | FR-POL-06, NFR-SEC-04 | Signed in as `demo_counting` | Open "Polling operations". | Records are readable; no save, submit or approve is possible | **Pass.** The Counting Officer could read the closure draft and its approved predecessor. The desktop form offered no save, submit or approval action. [Counting Officer view](evidence/dennis-polling-times/TC-POL-06.png) · [Readable history](evidence/dennis-polling-times/TC-POL-06-history.png) |
 
 Equivalence partitions for the opening time: before or equal to planned (on time, no reason),
 after planned and not in the future (delayed, reason required), in the future (invalid).
