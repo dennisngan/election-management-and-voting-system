@@ -215,7 +215,7 @@ Fill in after execution. Numbers must come from the tables in the module documen
 | 02 | 6 | | | | Dennis | |
 | 03 | 7 | | | | Harriet | |
 | 04 | 9 | 0 | 0 | 9 | Toby | 26 Nov 2026 |
-| 05 | 8 | | | | John | |
+| 05 | 8 | 8 | 0 | 0 | John | 28 Nov 2026 |
 | 06 | 8 | | | | Mody | |
 | 07 | 8 | | | | Lam | |
 | 08 | 6 | | | | Salina | |
