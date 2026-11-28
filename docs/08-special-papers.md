@@ -133,15 +133,18 @@ and the later stages are built on it.
 
 | ID | Requirement | Pre-condition | Steps | Expected result | Result |
 | --- | --- | --- | --- | --- | --- |
-| TC-SPP-01 | FR-SPP-03, FR-SPP-08 | Signed in as `demo_polling` | Open "Special ballot stock accounting"; select the seeded observation. | All entered quantities 0; total received 520; ordinary issuance 300; never-issued stock 220; estimated box papers 300 | `TODO(Salina)` + screenshot |
-| TC-SPP-02 | FR-SPP-04 | Same | Prepare an amendment with replacement papers issued = 2 and spoilt originals = 1, with a reason. | Rejected: replacements and spoilt originals must match | `TODO(Salina)` |
-| TC-SPP-03 | FR-SPP-05 | Same | Prepare an amendment with tendered papers issued = 11 (reserve is 10). | Rejected: exceeds the reserve | `TODO(Salina)` |
-| TC-SPP-04 | FR-SPP-09 | Same | Prepare an amendment with replacement = 1, spoilt = 1, tendered = 1, refused = 2; first without a reason, then with a reason. | Without reason: rejected. With reason: revision 2 saved; unused replacement reserve 9; unused tendered reserve 9; estimated box papers 298 | `TODO(Salina)` |
-| TC-SPP-05 | FR-SPP-10 | TC-SPP-04 done | Open "Period turnout". | Approved turnout is still 300 | `TODO(Salina)` |
-| TC-SPP-06 | FR-SPP-11 | Same | Export the statement as PDF in Traditional Chinese. | The file shows the saved revision and its basis | `TODO(Salina)` |
+| TC-SPP-01 | FR-SPP-03, FR-SPP-08 | Signed in as `demo_polling` | Open "Special ballot stock accounting"; select the seeded observation. | All entered quantities 0; total received 520; ordinary issuance 300; never-issued stock 220; estimated box papers 300 | **NOT RUN** - due to phtsical ballot server not available |
+| TC-SPP-02 | FR-SPP-04 | Same | Prepare an amendment with replacement papers issued = 2 and spoilt originals = 1, with a reason. | Rejected: replacements and spoilt originals must match | **NOT RUN** - due to phtsical ballot server not available |
+| TC-SPP-03 | FR-SPP-05 | Same | Prepare an amendment with tendered papers issued = 11 (reserve is 10). | Rejected: exceeds the reserve | **NOT RUN** - due to phtsical ballot server not available |
+| TC-SPP-04 | FR-SPP-09 | Same | Prepare an amendment with replacement = 1, spoilt = 1, tendered = 1, refused = 2; first without a reason, then with a reason. | Without reason: rejected. With reason: revision 2 saved; unused replacement reserve 9; unused tendered reserve 9; estimated box papers 298 | **NOT RUN** - due to phtsical ballot server not available |
+| TC-SPP-05 | FR-SPP-10 | TC-SPP-04 done | Open "Period turnout". | Approved turnout is still 300 | **NOT RUN** - due to phtsical ballot server not available |
+| TC-SPP-06 | FR-SPP-11 | Same | Export the statement as PDF in Traditional Chinese. | The file shows the saved revision and its basis | **NOT RUN** - due to phtsical ballot server not available |
 
 Equivalence partitions for tendered papers issued (reserve 10): negative (invalid), 0 to 10
 (valid; test 0 and 10), above 10 (invalid; test 11), not a whole number (invalid).
+
+Status (28 Nov 2027 by Salina): Manual Test cases TC-SPP-01 to TC-SPP-06 were **NOT RUN** as paper-ballot server is not yet deployed in this stage. These cases will be examine in next release when the pyhsical pallot server is available.
+
 
 Automated tests (unit / API level, from the project history):
 
@@ -151,8 +154,6 @@ Automated tests (unit / API level, from the project history):
 | `test_accounting_edges_api.py::test_corrected_special_source_invalidates_approval_without_changing_frozen_values` | FR-SPP-09 (effect on P(18)) |
 | `test_accounting_freshness_api.py::test_older_cumulative_special_observation_is_not_offered_as_current_p18_source` | FR-SPP-07 |
 
-`TODO(Salina)`: after the test suite is restored, list the remaining `test_special_paper_*`
-tests here by name.
 
 ## 8. Differences from the reference manual
 
