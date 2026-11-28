@@ -218,7 +218,7 @@ Fill in after execution. Numbers must come from the tables in the module documen
 | 05 | 8 | 8 | 0 | 0 | John | 28 Nov 2026 |
 | 06 | 8 | | | | Mody | |
 | 07 | 8 | | | | Lam | |
-| 08 | 6 | | | | Salina | |
+| 08 | 6 | 0 | 0 | 6 | Salina | 28 Nov 2026 |
 | 09 | 17 | 0 | 0 | 17 | Toby | 26 Nov 2026 |
 | 10 | 12 | | | | Lam | |
 | 14 | 14 | | | | Dennis | |
