@@ -1,17 +1,21 @@
-# 1. Copy this file to config.yml. Edit the settings below.
-# 2. docker compose -f config.yml up -d --build
-# config.yml contains temporary passwords and is excluded from Git.
+# 1. Copy this file to config.yml and restrict permissions:
+#      cp <this-file> config.yml && chmod 600 config.yml
+# 2. Edit the settings under `x-election` below (config.yml is git-ignored).
+# 3. Start the stack:
+#      docker compose -f config.yml up -d --build
+# 4. Optional admin CLI (e.g., check status):
+#      docker compose -f config.yml --profile tools run --rm admin status
 name: election-server
 
 x-election:
   server:
-    host: localhost                    # Certificate hostname/IP used by desktop clients
-    bind: &server_bind 127.0.0.1        # Use a private interface for LAN/VPN access
+    host: localhost                    # Hostname or IP clients connect to (used for TLS certificate)
+    bind: &server_bind 127.0.0.1        # 127.0.0.1 = local only; set to LAN/VPN IP for remote access
     port: &server_port 8443
   storage:
-    mysql: &mysql_data ./data/mysql     # Persistent DATABASE directory on this machine
+    mysql: &mysql_data ./data/mysql     # Persistent database directory on the host
   accounts:                            # Initial creation only; existing accounts are preserved
-    # Use $$ for a literal dollar in a password (standard Compose escaping).
+    # Escape literal `$` characters as `$$` (standard Docker Compose interpolation escaping).
     - username: admin
       display_name: Administrator
       role: administrator
@@ -21,29 +25,47 @@ x-election:
     #   role: supervisor
     #   password: CHANGE_ME_TO_ANOTHER_TEMPORARY_PASSWORD
 
-# No settings below this line need editing.
-x-image: &image
+# ==============================================================================
+# Reusable anchors — no settings below this line normally need editing.
+# ==============================================================================
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-app: &app
   image: election-server:local
   build:
     context: .
     dockerfile: deploy/Dockerfile
+  security_opt:
+    - no-new-privileges:true
+  logging: *logging
+
+x-config-mount: &config_mount
+  type: bind
+  source: ./config.yml
+  target: /config.yml
+  read_only: true
+  bind:
+    create_host_path: false
 
 services:
   configure:
-    <<: *image
+    <<: *app
     user: "0:0"
+    restart: "no"
     entrypoint: [python, -m, election.deployment.quickstart, prepare]
+    networks:
+      - backend
     volumes:
-      - type: bind
-        source: ./config.yml
-        target: /config.yml
-        read_only: true
-        bind: {create_host_path: false}
+      - *config_mount
       - bootstrap:/bootstrap
       - runtime:/run/election
       - database-secrets:/db-secrets
       - backups:/var/lib/election/backups
-
+      # Mounted read-only so `prepare` can detect an already-initialized database
       - type: bind
         source: *mysql_data
         target: /mysql-data
@@ -52,69 +74,94 @@ services:
   db:
     image: mysql:8.4@sha256:a0225d1ea6631c8bc2385dc4c2faba17bbf1834ecf369e1659a9a382bd8d5dd7
     restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
     depends_on:
-      configure: {condition: service_completed_successfully}
+      configure:
+        condition: service_completed_successfully
+    networks:
+      - backend
     environment:
       MYSQL_DATABASE: election
       MYSQL_USER: election
-      MYSQL_ROOT_HOST: "%"
+      MYSQL_ROOT_HOST: "%"              # Required so the `admin` container can connect over `backend`
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/root-password
       MYSQL_PASSWORD_FILE: /run/secrets/app-password
-    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci]
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     volumes:
       - type: bind
         source: *mysql_data
         target: /var/lib/mysql
       - database-secrets:/run/secrets:ro
     healthcheck:
-      test: [CMD, mysql, --defaults-extra-file=/run/secrets/health.cnf, --execute=SELECT 1]
+      test: ["CMD", "mysql", "--defaults-extra-file=/run/secrets/health.cnf", "--execute=SELECT 1"]
       interval: 3s
       timeout: 3s
       retries: 40
       start_period: 20s
 
   initialize:
-    <<: *image
+    <<: *app
     user: "0:0"
+    restart: "no"
     entrypoint: [python, -m, election.deployment.quickstart, initialize]
     depends_on:
-      db: {condition: service_healthy}
+      db:
+        condition: service_healthy
+    networks:
+      - backend
     volumes:
-      - type: bind
-        source: ./config.yml
-        target: /config.yml
-        read_only: true
-        bind: {create_host_path: false}
+      - *config_mount
       - runtime:/run/election
       - backups:/var/lib/election/backups
 
   api:
-    <<: *image
+    <<: *app
+    init: true
     restart: unless-stopped
+    cap_drop:
+      - ALL
     depends_on:
-      initialize: {condition: service_completed_successfully}
+      db:
+        condition: service_healthy
+      initialize:
+        condition: service_completed_successfully
+    networks:
+      - frontend
+      - backend
     environment:
       ELECTION_ENV_FILE: /run/election/server.env
     ports:
       - target: 8443
         published: *server_port
         host_ip: *server_bind
+        protocol: tcp
     volumes:
       - runtime:/run/election:ro
       - backups:/var/lib/election/backups
     healthcheck:
-      test: [CMD, python, -m, election.deployment, health]
+      test: ["CMD", "python", "-m", "election.deployment", "health"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 10s
 
   admin:
-    <<: *image
+    <<: *app
     profiles: [tools]
     user: "0:0"
+    restart: "no"
     entrypoint: [python, -m, election.deployment]
     command: [status]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
     environment:
       ELECTION_ENV_FILE: /run/election/server.env
       ELECTION_MYSQL_ROOT_PASSWORD_FILE: /run/election/admin-secrets/root-password
@@ -122,6 +169,11 @@ services:
       - runtime:/run/election
       - database-secrets:/run/election/admin-secrets:ro
       - backups:/var/lib/election/backups
+
+networks:
+  frontend:
+  backend:
+    internal: true
 
 volumes:
   bootstrap:
